@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from itertools import count
 
 import pytest
 from httpx import AsyncClient
@@ -168,7 +169,7 @@ async def test_full_match_scoring_standings_and_stats(
         headers=admin_headers,
         json=[{"player_id": player.json()["id"], "appeared": True, "minutes_played": 90}],
     )
-    assert stats.status_code == 200
+    assert stats.status_code == 200, stats.text
     assert stats.json()[0]["goals"] == 1
 
     match_payload["status"] = "finished"
@@ -237,3 +238,129 @@ async def test_media_presign_can_be_disabled(
 
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "media_disabled"
+
+@pytest.mark.asyncio
+async def test_stat_leaders_rank_by_metric_and_age_group(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    squad = await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={"name": "AIMZ U13", "age_group": "U13", "season": "2026/27", "is_aimz": True},
+    )
+    other = await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={"name": "AIMZ U15", "age_group": "U15", "season": "2026/27", "is_aimz": True},
+    )
+    opponent = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "Giza Lions"}
+    )
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Youth League", "season": "2026/27", "type": "league"},
+    )
+    scorer = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Mariam Adel", "team_id": squad.json()["id"], "position": "Forward"},
+    )
+    creator = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Hana Samir", "team_id": squad.json()["id"], "position": "Midfielder"},
+    )
+    outsider = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Layla Tarek", "team_id": other.json()["id"], "position": "Forward"},
+    )
+
+    def payload_for(team_id: str, status: str) -> dict[str, str]:
+        return {
+            "competition_id": competition.json()["id"],
+            "home_team_id": team_id,
+            "away_team_id": opponent.json()["id"],
+            "kickoff_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "venue": "AIMZ Training Ground",
+            "status": status,
+        }
+
+    operations = count()
+
+    async def play(team_id: str, tallies: list[tuple[str, str, int]]) -> str:
+        """Create a match and log `count` events of `type` for each player."""
+        created = await client.post(
+            "/api/v1/matches", headers=admin_headers, json=payload_for(team_id, "scheduled")
+        )
+        assert created.status_code == 201, created.text
+        match_id = created.json()["id"]
+        started = await client.patch(
+            f"/api/v1/matches/{match_id}", headers=admin_headers, json=payload_for(team_id, "live")
+        )
+        assert started.status_code == 200, started.text
+        for player_id, event_type, tally in tallies:
+            for index in range(tally):
+                event = await client.post(
+                    f"/api/v1/matches/{match_id}/events",
+                    headers=admin_headers,
+                    json={
+                        "type": event_type,
+                        "minute": 10 + index,
+                        "team_id": team_id,
+                        "player_id": player_id,
+                        "client_operation_id": f"leaders-op-{next(operations)}",
+                    },
+                )
+                assert event.status_code == 201, event.text
+        return match_id
+
+    squad_match = await play(
+        squad.json()["id"],
+        [
+            (scorer.json()["id"], "goal", 3),
+            (scorer.json()["id"], "assist", 1),
+            (creator.json()["id"], "goal", 1),
+            (creator.json()["id"], "assist", 4),
+        ],
+    )
+    other_match = await play(other.json()["id"], [(outsider.json()["id"], "goal", 5)])
+
+    # Only finished matches count toward the leaderboards.
+    assert (
+        await client.get("/api/v1/stats/leaders?metric=goals", headers=admin_headers)
+    ).json() == []
+    for match_id, team_id in ((squad_match, squad.json()["id"]), (other_match, other.json()["id"])):
+        finished = await client.patch(
+            f"/api/v1/matches/{match_id}",
+            headers=admin_headers,
+            json=payload_for(team_id, "finished"),
+        )
+        assert finished.status_code == 200, finished.text
+
+    scorers = await client.get("/api/v1/stats/leaders?metric=goals", headers=admin_headers)
+    assert scorers.status_code == 200, scorers.text
+    assert [(row["rank"], row["player"]["name"], row["goals"]) for row in scorers.json()] == [
+        (1, "Layla Tarek", 5),
+        (2, "Mariam Adel", 3),
+        (3, "Hana Samir", 1),
+    ]
+    assert scorers.json()[0]["appearances"] == 1
+
+    assisters = await client.get("/api/v1/stats/leaders?metric=assists", headers=admin_headers)
+    assert [(row["player"]["name"], row["assists"]) for row in assisters.json()] == [
+        ("Hana Samir", 4),
+        ("Mariam Adel", 1),
+    ]
+
+    scoped = await client.get(
+        "/api/v1/stats/leaders?metric=goals&age_group=U13", headers=admin_headers
+    )
+    assert [row["player"]["name"] for row in scoped.json()] == ["Mariam Adel", "Hana Samir"]
+    assert scoped.json()[0]["team"]["age_group"] == "U13"
+
+    season_scoped = await client.get(
+        "/api/v1/stats/leaders?metric=goals&season=2030%2F31", headers=admin_headers
+    )
+    assert season_scoped.json() == []

@@ -17,6 +17,18 @@ export type PlayerSeasonSummary = Schema['PlayerSeasonSummary'];
 
 export type Page<T> = { items: T[]; total: number; limit: number; offset: number };
 
+// Mirrors backend PlayerLeaderRow; move to the generated schema after the next `npm run api:types`.
+export type PlayerLeaderRow = {
+  rank: number;
+  player: Player;
+  team: Team;
+  goals: number;
+  assists: number;
+  appearances: number;
+};
+
+export type LeaderMetric = 'goals' | 'assists';
+
 export type Team = Omit<Schema['TeamRead'], 'squad_code' | 'age_group' | 'season' | 'logo_key'> & {
   squad_code: string | null;
   age_group: string | null;
