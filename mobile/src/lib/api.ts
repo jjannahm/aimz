@@ -85,9 +85,9 @@ export async function waitUntilReady(onWaiting?: () => void): Promise<void> {
         if (await readinessProbe()) return;
       }
       throw new ApiError(
-        'The free preview server is taking longer than expected to wake up. Wait a minute and retry.',
+        'The AIMZ preview API is temporarily unavailable. Wait a moment and retry.',
         undefined,
-        'server_waking',
+        'preview_unavailable',
       );
     })().finally(() => {
       readinessPromise = null;
@@ -155,15 +155,15 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     if (error instanceof Error && error.name === 'AbortError') {
       throw new ApiError(
         appConfig.isStaging
-          ? 'The free preview server is still waking up. Wait a moment and try again.'
+          ? 'The AIMZ preview API did not respond. Wait a moment and try again.'
           : 'The server did not respond in time.',
         undefined,
-        appConfig.isStaging ? 'server_waking' : 'timeout',
+        appConfig.isStaging ? 'preview_unavailable' : 'timeout',
       );
     }
     throw new ApiError(
       appConfig.isStaging
-        ? 'Cannot reach the AIMZ preview server. It may be waking up; wait a moment and try again.'
+        ? 'Cannot reach the AIMZ preview API right now. Wait a moment and try again.'
         : 'Cannot reach the AIMZ server. Check that it is running and try again.',
       undefined,
       'unreachable',

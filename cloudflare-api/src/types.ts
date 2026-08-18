@@ -1,0 +1,118 @@
+export type UserRole = "player" | "admin";
+export type CompetitionType = "league" | "tournament" | "friendly";
+export type MatchStatus = "scheduled" | "live" | "finished";
+export type EventType = "goal" | "assist" | "yellow_card" | "red_card" | "substitution";
+
+export interface UserRow {
+  id: string;
+  name: string;
+  email: string;
+  password_hash: string;
+  role: UserRole;
+  player_id: string | null;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamRow {
+  id: string;
+  name: string;
+  squad_code: string | null;
+  age_group: string | null;
+  season: string | null;
+  is_aimz: number;
+  is_active: number;
+  logo_key: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompetitionRow {
+  id: string;
+  name: string;
+  season: string;
+  type: CompetitionType;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlayerRow {
+  id: string;
+  name: string;
+  team_id: string;
+  position: string;
+  jersey_number: number | null;
+  photo_key: string | null;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MatchRow {
+  id: string;
+  competition_id: string;
+  home_team_id: string;
+  away_team_id: string;
+  kickoff_datetime: string;
+  venue: string;
+  status: MatchStatus;
+  home_score: number;
+  away_score: number;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EventRow {
+  id: string;
+  match_id: string;
+  type: EventType;
+  minute: number | null;
+  team_id: string;
+  player_id: string | null;
+  secondary_player_id: string | null;
+  related_event_id: string | null;
+  notes: string | null;
+  client_operation_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LineupRow {
+  id: string;
+  match_id: string;
+  player_id: string;
+  team_id: string;
+  is_starter: number;
+  position: string | null;
+  jersey_number: number | null;
+}
+
+export interface StatRow {
+  id: string;
+  match_id: string;
+  player_id: string;
+  appeared: number;
+  minutes_played: number;
+  goals: number;
+  assists: number;
+  yellow_cards: number;
+  red_cards: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InviteRow {
+  id: string;
+  label: string;
+  code_hash: string;
+  expires_at: string | null;
+  max_uses: number | null;
+  use_count: number;
+  is_active: number;
+  created_by_id: string | null;
+  created_at: string;
+}
+
+export type JsonObject = Record<string, unknown>;

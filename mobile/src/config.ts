@@ -13,6 +13,6 @@ export const appConfig = {
   enableMedia: parseFlag(process.env.EXPO_PUBLIC_ENABLE_MEDIA, true),
   enablePasswordReset: parseFlag(process.env.EXPO_PUBLIC_ENABLE_PASSWORD_RESET, true),
   livePollingIntervalMs: 12_000,
-  requestTimeoutMs: isStaging ? 75_000 : 8_000,
-  wakeTimeoutMs: 90_000,
+  requestTimeoutMs: isStaging ? 15_000 : 8_000,
+  wakeTimeoutMs: 15_000,
 } as const;
