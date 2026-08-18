@@ -26,7 +26,7 @@ describe('ConnectionStatus', () => {
     });
 
     const screen = await render(<ConnectionStatus />);
-    await waitFor(() => expect(screen.getByText('Preview server is waking up')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Retrying preview API')).toBeTruthy());
 
     await act(async () => resolveReadiness?.());
     await waitFor(() => expect(screen.getByText('Preview server ready')).toBeTruthy());

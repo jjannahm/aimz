@@ -31,6 +31,15 @@ jobs:
       - run: pytest
       - name: Verify migration SQL generation
         run: alembic upgrade head --sql > /tmp/aimz-migration.sql
+      - name: Install Cloudflare API dependencies
+        run: npm ci
+        working-directory: cloudflare-api
+      - name: Typecheck Cloudflare API
+        run: npm run typecheck
+        working-directory: cloudflare-api
+      - name: Validate Cloudflare Worker bundle
+        run: npm run deploy:dry-run
+        working-directory: cloudflare-api
 
   mobile:
     name: Mobile

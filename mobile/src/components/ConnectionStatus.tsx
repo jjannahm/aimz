@@ -5,7 +5,7 @@ import { appConfig } from '@/src/config';
 import { api } from '@/src/lib/api';
 import { theme } from '@/src/theme';
 
-type ConnectionState = 'checking' | 'waking' | 'connected' | 'unreachable';
+type ConnectionState = 'checking' | 'retrying' | 'connected' | 'unreachable';
 
 export function ConnectionStatus() {
   const [state, setState] = useState<ConnectionState>('checking');
@@ -13,7 +13,7 @@ export function ConnectionStatus() {
   const checkConnection = useCallback(async () => {
     setState('checking');
     try {
-      await api.waitUntilReady(() => setState('waking'));
+      await api.waitUntilReady(() => setState('retrying'));
       setState('connected');
     } catch {
       setState('unreachable');
@@ -26,12 +26,12 @@ export function ConnectionStatus() {
 
   const connected = state === 'connected';
   const checking = state === 'checking';
-  const waking = state === 'waking';
-  const waiting = checking || waking;
+  const retrying = state === 'retrying';
+  const waiting = checking || retrying;
   const label = checking
     ? 'Checking preview server'
-    : waking
-      ? 'Preview server is waking up'
+    : retrying
+      ? 'Retrying preview API'
       : connected
         ? 'Preview server ready'
         : 'Preview server unavailable';
@@ -51,7 +51,7 @@ export function ConnectionStatus() {
       <View style={styles.copy}>
         <Text style={styles.label}>{label}</Text>
         <Text numberOfLines={1} style={styles.detail}>
-          {waking ? 'Free hosting can take up to a minute to restart.' : appConfig.apiBaseUrl}
+          {retrying ? 'Cloudflare is retrying the API connection.' : appConfig.apiBaseUrl}
         </Text>
       </View>
       <Text style={styles.action}>{waiting ? 'WAIT' : connected ? 'READY' : 'RETRY'}</Text>

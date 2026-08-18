@@ -1,0 +1,24 @@
+{
+  "name": "aimz-cloudflare-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy --minify",
+    "deploy:dry-run": "wrangler deploy --dry-run --minify",
+    "db:migrate:local": "wrangler d1 migrations apply aimz-staging-db --local",
+    "db:migrate:remote": "wrangler d1 migrations apply aimz-staging-db --remote",
+    "typecheck": "tsc --noEmit",
+    "types": "wrangler types worker-configuration.d.ts --include-runtime false"
+  },
+  "dependencies": {
+    "hono": "^4.9.6"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260818.1",
+    "@types/node": "^26.2.0",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.123.0"
+  }
+}

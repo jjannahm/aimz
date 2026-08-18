@@ -4,11 +4,9 @@ An iOS-first scores and academy operations app for AIMZ Egypt's girls' football 
 
 ## Shared staging preview
 
-The shared browser preview uses Cloudflare Pages for the Expo web app, Render Free for FastAPI, and Neon Free for PostgreSQL. It displays a permanent **Staging — fictional data only** marker, handles API cold starts, and disables photo upload and password reset.
+The shared browser preview now runs entirely on Cloudflare's free tier: Pages hosts the Expo web export, a Worker provides the staging API, and D1 stores fictional preview data. It displays a permanent **Staging — fictional data only** marker and disables photo upload and password reset.
 
-Open the current preview at [aimz-egypt-staging.pages.dev](https://aimz-egypt-staging.pages.dev/). Apply the API-only Render Blueprint after creating the owner-controlled Neon and Render accounts:
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/jjannahm/aimz)
+Open the current preview at [aimz-egypt-staging.pages.dev](https://aimz-egypt-staging.pages.dev/). The staging API is available at [aimz-api-staging.shared-links.workers.dev](https://aimz-api-staging.shared-links.workers.dev/api/v1/health/ready).
 
 Follow [STAGING.md](STAGING.md) for the exact secret, CORS, deployment, verification, and contributor steps. Never put real player or academy data in the public preview.
 
@@ -30,14 +28,14 @@ The app intentionally does not include Kafka, Redis, WebSockets, push notificati
 - `backend/migrations/`: PostgreSQL Alembic history
 - `backend/tests/`: isolated API integration tests
 - `backend/scripts/load_live.py`: configurable 1,000-client polling probe
+- `cloudflare-api/`: Cloudflare Worker, D1 migrations, authentication, scoring, standings, and staging deployment config
 - `mobile/app/`: Expo Router auth, player, admin, detail, and live-scoring routes
 - `mobile/src/`: typed API client, generated OpenAPI types, auth state, theme, and components
 - `mobile/TESTFLIGHT_CHECKLIST.md`: release and review handoff
 - `mobile/assets/branding/`: placeholder branding and official-asset replacement instructions
-- `render.yaml`: free Render API Blueprint
 - `mobile/public/`: Cloudflare Pages routing and preview headers
 - `.github/workflows/ci.yml`: backend and mobile deployment gates
-- `STAGING.md`: Neon, Render, CORS, and collaboration runbook
+- `STAGING.md`: Cloudflare Pages, Workers, D1, secrets, and collaboration runbook
 
 ## Local setup
 
@@ -107,7 +105,7 @@ Configure `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_
 6. Standings and player totals update from finished-match data automatically.
 7. Generate and distribute new player invitation codes from Manage → Invites.
 
-Admin authorization is enforced by FastAPI. Hiding the Manage tab is not the security boundary.
+Admin authorization is enforced by the active API runtime. Hiding the Manage tab is not the security boundary.
 
 ## API types and tests
 

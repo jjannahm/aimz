@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "aimz-api-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-18",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "vars": {
+    "ENVIRONMENT": "staging",
+    "FRONTEND_ORIGIN": "https://aimz-egypt-staging.pages.dev",
+    "ADMIN_NAME": "AIMZ Staging Admin",
+    "ACCESS_TOKEN_SECONDS": "900",
+    "REFRESH_TOKEN_DAYS": "30"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "aimz-staging-db",
+      "database_id": "09e5f039-a7ed-4249-975d-a3b3e4467dc0",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "logs": { "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  }
+}
