@@ -4,7 +4,9 @@ An iOS-first scores and academy operations app for AIMZ Egypt's girls' football 
 
 ## Shared staging preview
 
-The repository includes a free Render/Neon staging setup for browser collaboration. It displays a permanent **Staging — fictional data only** marker, handles Render cold starts, and disables photo upload and password reset. Apply the Blueprint after creating the owner-controlled Neon and Render accounts:
+The shared browser preview uses Cloudflare Pages for the Expo web app, Render Free for FastAPI, and Neon Free for PostgreSQL. It displays a permanent **Staging — fictional data only** marker, handles API cold starts, and disables photo upload and password reset.
+
+Open the current preview at [aimz-egypt-staging.pages.dev](https://aimz-egypt-staging.pages.dev/). Apply the API-only Render Blueprint after creating the owner-controlled Neon and Render accounts:
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/jjannahm/aimz)
 
@@ -32,7 +34,8 @@ The app intentionally does not include Kafka, Redis, WebSockets, push notificati
 - `mobile/src/`: typed API client, generated OpenAPI types, auth state, theme, and components
 - `mobile/TESTFLIGHT_CHECKLIST.md`: release and review handoff
 - `mobile/assets/branding/`: placeholder branding and official-asset replacement instructions
-- `render.yaml`: free Render API/static-site Blueprint
+- `render.yaml`: free Render API Blueprint
+- `mobile/public/`: Cloudflare Pages routing and preview headers
 - `.github/workflows/ci.yml`: backend and mobile deployment gates
 - `STAGING.md`: Neon, Render, CORS, and collaboration runbook
 
