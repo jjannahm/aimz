@@ -4,12 +4,12 @@ This environment is a disposable browser preview for collaboration. Use fictiona
 
 ## Services
 
-- **Web:** Render Static Site built from `mobile/`
+- **Web:** Cloudflare Pages project `aimz-egypt-staging` built from `mobile/`
 - **API:** Render Free Web Service built from `backend/`
 - **Database:** Neon Free PostgreSQL in a European region
 - **Deployments:** `main`, after the GitHub `Backend` and `Mobile` checks pass
 
-The Render API sleeps after inactivity and can take about a minute to restart. The web app shows its wake-up progress and retries readiness for up to 90 seconds. Photo upload and password-reset UI are disabled in staging because object storage and outbound email are intentionally excluded.
+The Render API sleeps after inactivity and can take about a minute to restart. The Cloudflare web app shows its wake-up progress and retries readiness for up to 90 seconds. Photo upload and password-reset UI are disabled in staging because object storage and outbound email are intentionally excluded.
 
 ## Owner setup
 
@@ -20,9 +20,9 @@ The Render API sleeps after inactivity and can take about a minute to restart. T
 3. Keep Neon's TLS options in the URL. The API converts a standard `postgresql://` URL and Neon's `sslmode`/`channel_binding` query into SQLAlchemy asyncpg settings automatically.
 4. Save the value only as Render's `DATABASE_URL` secret. Never add it to a local tracked file, GitHub variable, issue, or chat.
 
-### 2. Apply the Render Blueprint
+### 2. Apply the API-only Render Blueprint
 
-Open the repository's Render deploy link from the README and connect `jjannahm/aimz`. The root [`render.yaml`](render.yaml) creates both services.
+Open the repository's Render deploy link from the README and connect `jjannahm/aimz`. The root [`render.yaml`](render.yaml) creates the Python API service. Use **New → Blueprint**, not a Docker web service.
 
 Enter these API secrets when prompted:
 
@@ -31,20 +31,32 @@ Enter these API secrets when prompted:
 - `ADMIN_EMAIL`: fictional staging admin email
 - `ADMIN_PASSWORD`: unique staging-only password
 - `INITIAL_INVITE_CODE`: fictional player invitation code
-- `BACKEND_CORS_ORIGINS`: initially `[]`; replace it with the web URL in step 4
+- `BACKEND_CORS_ORIGINS`: `["https://aimz-egypt-staging.pages.dev"]`
 
 Do not configure SMTP or S3 credentials for staging.
 
-### 3. Connect the web build to the API
+### 3. Deploy the Cloudflare Pages web app
 
-After the API is healthy, copy its exact HTTPS URL. Set the web service's `EXPO_PUBLIC_API_URL` to that URL and deploy the web service.
+After the API is healthy, rebuild and deploy the web app with its exact HTTPS URL:
+
+```bash
+cd mobile
+EXPO_PUBLIC_API_URL=https://aimz-api-staging.onrender.com \
+EXPO_PUBLIC_APP_ENV=staging \
+EXPO_PUBLIC_ENABLE_MEDIA=false \
+EXPO_PUBLIC_ENABLE_PASSWORD_RESET=false \
+pnpm web:export
+pnpm web:deploy:cloudflare
+```
+
+Wrangler deploys the build to `https://aimz-egypt-staging.pages.dev/`. The files in `mobile/public/` provide SPA routing, security headers, and `noindex` protection.
 
 ### 4. Allow the exact browser origin
 
-Copy the web service's exact origin, with no path or trailing slash, and set the API service's `BACKEND_CORS_ORIGINS` to a JSON list such as:
+Use the permanent Cloudflare Pages origin, with no path or trailing slash, for the API service's `BACKEND_CORS_ORIGINS`:
 
 ```text
-["https://aimz-web-staging.onrender.com"]
+["https://aimz-egypt-staging.pages.dev"]
 ```
 
 Redeploy the API. The service normalizes trailing slashes defensively, but the exact origin is preferred.
@@ -64,7 +76,8 @@ Share credentials and invitation codes privately. Do not place them in the repos
 1. Create a branch from `main` (for example, `feature/match-filter`).
 2. Push the branch and open a pull request into `main`.
 3. Wait for the `Backend` and `Mobile` checks.
-4. Review and merge; Render redeploys after the required checks pass.
+4. Review and merge; Render redeploys the API after the required checks pass.
+5. For web changes, export and run `pnpm web:deploy:cloudflare` until Git-based Pages deployment is configured.
 
 The collaborator needs GitHub repository access and the hosted app URL, but not Render dashboard access. A free Render Hobby workspace supports one member.
 

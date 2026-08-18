@@ -1,4 +1,6 @@
 allowBuilds:
-  unrs-resolver: set this to true or false
+  esbuild: true
+  unrs-resolver: true
+  workerd: true
 minimumReleaseAgeExclude:
   - react-native-safe-area-context@5.9.1
