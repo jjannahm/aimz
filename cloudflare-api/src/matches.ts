@@ -170,6 +170,33 @@ export function registerMatchRoutes(app: App): void {
     return c.json(sorted.map(([id, row], index) => ({ rank: index+1, team: publicTeam(teamMap.get(id) ?? null), ...row, goal_difference: row.goals_for-row.goals_against })));
   });
 
+  app.get("/api/v1/stats/leaders", async (c) => {
+    const params = new URL(c.req.url).searchParams;
+    const metric = params.get("metric") === "assists" ? "assists" : "goals";
+    const ageGroup = params.get("age_group"); const season = params.get("season");
+    const limit = Math.min(Math.max(Number.parseInt(params.get("limit") ?? "20", 10) || 20, 1), 100);
+    const values: unknown[] = []; const filters: string[] = [];
+    const seasonJoin = season ? " JOIN competitions cp ON cp.id=m.competition_id" : "";
+    if (ageGroup) { filters.push("t.age_group=?"); values.push(ageGroup); }
+    if (season) { filters.push("cp.season=?"); values.push(season); }
+    const where = filters.length ? ` AND ${filters.join(" AND ")}` : "";
+    const totals = await c.env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN players p ON p.id=s.player_id JOIN teams t ON t.id=p.team_id${seasonJoin} WHERE m.status='finished'${where} GROUP BY s.player_id`).bind(...values).all<LeaderTotals>();
+    const scored = (row: LeaderTotals) => (metric === "goals" ? row.goals : row.assists);
+    const counted = totals.results.filter((row) => scored(row) > 0);
+    if (!counted.length) return c.json([]);
+    const playerIds = counted.map((row) => row.player_id);
+    const players = await c.env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")})`).bind(...playerIds).all<PlayerRow>();
+    const playerMap = new Map(players.results.map((player) => [player.id, player]));
+    const teamIds = [...new Set(players.results.map((player) => player.team_id))];
+    const teams = await c.env.DB.prepare(`SELECT * FROM teams WHERE id IN (${teamIds.map(() => "?").join(",")})`).bind(...teamIds).all<TeamRow>();
+    const teamMap = new Map(teams.results.map((team) => [team.id, team]));
+    const ranked = counted.sort((a, b) => scored(b) - scored(a)
+      || (metric === "goals" ? b.assists - a.assists : b.goals - a.goals)
+      || a.appearances - b.appearances
+      || (playerMap.get(a.player_id)?.name ?? "").localeCompare(playerMap.get(b.player_id)?.name ?? "")).slice(0, limit);
+    return c.json(ranked.map((row, index) => ({ rank: index + 1, player: publicPlayer(playerMap.get(row.player_id) ?? null), team: publicTeam(teamMap.get(playerMap.get(row.player_id)?.team_id ?? "") ?? null), goals: row.goals, assists: row.assists, appearances: row.appearances })));
+  });
+
   app.get("/api/v1/players/:id/stats", async (c) => {
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>(); if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
     const season = new URL(c.req.url).searchParams.get("season"); const values: unknown[] = [player.id]; const where = season ? " AND cp.season=?" : ""; if (season) values.push(season);
@@ -196,6 +223,8 @@ async function requirePlayerOnTeam(env: Env, playerId: string, teamId: string): 
 }
 
 function optionalNullableText(body: Record<string, unknown>, field: string, current: string | null, max: number): string | null { if (!(field in body)) return current; return stringField(body, field, { nullable: true, max }) ?? null; }
+
+interface LeaderTotals { player_id: string; goals: number; assists: number; appearances: number }
 
 interface StandingAccumulator { played:number; won:number; drawn:number; lost:number; goals_for:number; goals_against:number; points:number }
 function applyStanding(row: StandingAccumulator, scored: number, conceded: number): void { row.played += 1; row.goals_for += scored; row.goals_against += conceded; if (scored > conceded) { row.won += 1; row.points += 3; } else if (scored === conceded) { row.drawn += 1; row.points += 1; } else row.lost += 1; }
