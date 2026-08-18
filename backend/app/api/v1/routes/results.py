@@ -1,7 +1,8 @@
 from collections import defaultdict
+from typing import Literal
 
 from fastapi import APIRouter
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import CurrentUser, SessionDep
@@ -15,7 +16,14 @@ from app.db.models import (
     PlayerMatchStat,
     Team,
 )
-from app.schemas import PlayerMatchStatRead, PlayerRead, PlayerSeasonSummary, StandingRow, TeamRead
+from app.schemas import (
+    PlayerLeaderRow,
+    PlayerMatchStatRead,
+    PlayerRead,
+    PlayerSeasonSummary,
+    StandingRow,
+    TeamRead,
+)
 
 router = APIRouter()
 
@@ -117,3 +125,59 @@ async def player_stats(
         red_cards=sum(row.red_cards for row in rows),
         matches=[PlayerMatchStatRead.model_validate(row) for row in rows],
     )
+
+
+@router.get("/stats/leaders", response_model=list[PlayerLeaderRow])
+async def stat_leaders(
+    _: CurrentUser,
+    session: SessionDep,
+    metric: Literal["goals", "assists"] = "goals",
+    age_group: str | None = None,
+    season: str | None = None,
+    limit: int = 20,
+) -> list[PlayerLeaderRow]:
+    """Rank players by goals or assists across finished matches."""
+    limit = max(1, min(limit, 100))
+    query = (
+        select(
+            Player,
+            Team,
+            func.sum(PlayerMatchStat.goals).label("goals"),
+            func.sum(PlayerMatchStat.assists).label("assists"),
+            func.sum(case((PlayerMatchStat.appeared, 1), else_=0)).label("appearances"),
+        )
+        .select_from(PlayerMatchStat)
+        .join(Match, Match.id == PlayerMatchStat.match_id)
+        .join(Player, Player.id == PlayerMatchStat.player_id)
+        .join(Team, Team.id == Player.team_id)
+        .where(Match.status == MatchStatus.finished)
+        .group_by(Player.id, Team.id)
+    )
+    if age_group:
+        query = query.where(Team.age_group == age_group)
+    if season:
+        query = query.join(Competition, Competition.id == Match.competition_id).where(
+            Competition.season == season
+        )
+    scored = lambda row: row.goals if metric == "goals" else row.assists  # noqa: E731
+    rows = [row for row in (await session.execute(query)).all() if scored(row) > 0]
+    ranked = sorted(
+        rows,
+        key=lambda row: (
+            -scored(row),
+            -(row.assists if metric == "goals" else row.goals),
+            row.appearances,
+            row[0].name.lower(),
+        ),
+    )[:limit]
+    return [
+        PlayerLeaderRow(
+            rank=index,
+            player=PlayerRead.model_validate(row[0]),
+            team=TeamRead.model_validate(row[1]),
+            goals=row.goals,
+            assists=row.assists,
+            appearances=row.appearances,
+        )
+        for index, row in enumerate(ranked, start=1)
+    ]
