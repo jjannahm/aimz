@@ -1,0 +1,1 @@
+"""AIMZ Egypt API package."""

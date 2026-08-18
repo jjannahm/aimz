@@ -1,0 +1,21 @@
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+import { Screen } from '@/src/components/Screen';
+import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
+import { api, ApiError } from '@/src/lib/api';
+import { theme } from '@/src/theme';
+
+export default function StandingsScreen() {
+  const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
+  const eligible = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const competitionId = selected ?? eligible[0]?.id;
+  const table = useQuery({ queryKey: ['standings', competitionId], queryFn: () => api.standings(competitionId!), enabled: Boolean(competitionId) });
+  return <Screen eyebrow="Computed from final scores" title="Standings">
+    {eligible.length > 0 ? <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>{eligible.map((item) => <Pressable key={item.id} onPress={() => setSelected(item.id)} style={({ pressed }) => [styles.chip, item.id === competitionId && styles.chipActive, pressed && styles.pressed]}><Text style={[styles.chipText, item.id === competitionId && styles.chipTextActive]}>{item.name} · {item.season}</Text></Pressable>)}</ScrollView> : null}
+    {competitions.isLoading || table.isLoading ? <LoadingState label="Calculating table" /> : competitions.isError || table.isError ? <ErrorState message={(competitions.error as ApiError | null)?.message ?? (table.error as ApiError | null)?.message ?? 'Could not load standings.'} onRetry={() => { competitions.refetch(); table.refetch(); }} /> : !competitionId || !table.data?.length ? <EmptyState body="Finished league and tournament matches will create the table automatically." title="No standings yet" /> : <View style={styles.table}><View style={styles.header}><Text style={[styles.team, styles.headerText]}>TEAM</Text><Text style={styles.stat}>P</Text><Text style={styles.stat}>GD</Text><Text style={styles.stat}>PTS</Text></View>{table.data.map((row) => <View key={row.team.id} style={[styles.row, row.team.is_aimz && styles.aimzRow]}><Text style={styles.rank}>{row.rank}</Text><View style={styles.team}><Text numberOfLines={1} style={styles.teamName}>{row.team.name}</Text>{row.team.squad_code ? <Text style={styles.code}>{row.team.squad_code}</Text> : null}</View><Text style={styles.stat}>{row.played}</Text><Text style={styles.stat}>{row.goal_difference > 0 ? '+' : ''}{row.goal_difference}</Text><Text style={[styles.stat, styles.points]}>{row.points}</Text></View>)}</View>}
+  </Screen>;
+}
+const styles = StyleSheet.create({ chips: { gap: theme.spacing.sm }, chip: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: theme.colors.accent }, chipText: { color: theme.colors.textSecondary, fontWeight: '700' }, chipTextActive: { color: theme.colors.onAccent }, pressed: { opacity: 0.7 }, table: { borderColor: theme.colors.border, borderRadius: theme.radius.lg, borderWidth: 1, overflow: 'hidden' }, header: { backgroundColor: theme.colors.surface, flexDirection: 'row', padding: theme.spacing.md }, headerText: { color: theme.colors.textMuted, fontSize: theme.type.caption }, row: { alignItems: 'center', borderTopColor: theme.colors.border, borderTopWidth: 1, flexDirection: 'row', minHeight: 62, padding: theme.spacing.md }, aimzRow: { backgroundColor: theme.colors.highlightedSurface }, rank: { color: theme.colors.textMuted, fontVariant: ['tabular-nums'], width: 28 }, team: { flex: 1 }, teamName: { color: theme.colors.textPrimary, fontWeight: '800' }, code: { color: theme.colors.lightBlue, fontSize: theme.type.caption, marginTop: 2 }, stat: { color: theme.colors.textSecondary, fontVariant: ['tabular-nums'], textAlign: 'right', width: 42 }, points: { color: theme.colors.textPrimary, fontWeight: '900' } });
