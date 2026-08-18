@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Link } from 'expo-router';
+import { Link, Redirect } from 'expo-router';
 import { Controller, useForm } from 'react-hook-form';
 import { StyleSheet, Text, View } from 'react-native';
 import { z } from 'zod';
@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { AppButton } from '@/src/components/AppButton';
 import { AuthShell } from '@/src/components/AuthShell';
 import { FormField } from '@/src/components/FormField';
+import { appConfig } from '@/src/config';
 import { ApiError, api } from '@/src/lib/api';
 import { theme } from '@/src/theme';
 
@@ -27,6 +28,7 @@ export default function ResetPasswordScreen() {
     catch (error) { setError('root', { message: error instanceof ApiError ? error.message : 'Could not reset password.' }); }
   });
   const codeRequested = code.length > 0;
+  if (!appConfig.enablePasswordReset) return <Redirect href="/(auth)/login" />;
   return <AuthShell title="Reset password" subtitle="We will email a six-digit code if the account exists.">
     <View style={styles.form}>
       {errors.root ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{errors.root.message}</Text> : null}

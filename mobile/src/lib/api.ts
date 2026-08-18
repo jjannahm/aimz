@@ -49,6 +49,55 @@ async function parseError(response: Response): Promise<ApiError> {
 }
 
 let refreshPromise: Promise<TokenResponse> | null = null;
+let readinessPromise: Promise<void> | null = null;
+
+const delay = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+async function readinessProbe(): Promise<boolean> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6_000);
+  try {
+    const response = await fetch(`${appConfig.apiBaseUrl}/api/v1/health/ready`, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+export async function waitUntilReady(onWaiting?: () => void): Promise<void> {
+  if (!appConfig.isStaging) {
+    await request('/api/v1/health', { authenticated: false });
+    return;
+  }
+
+  if (!readinessPromise) {
+    readinessPromise = (async () => {
+      if (await readinessProbe()) return;
+      onWaiting?.();
+      const deadline = Date.now() + appConfig.wakeTimeoutMs;
+      while (Date.now() < deadline) {
+        await delay(3_000);
+        if (await readinessProbe()) return;
+      }
+      throw new ApiError(
+        'The free preview server is taking longer than expected to wake up. Wait a minute and retry.',
+        undefined,
+        'server_waking',
+      );
+    })().finally(() => {
+      readinessPromise = null;
+    });
+  } else {
+    onWaiting?.();
+  }
+
+  return readinessPromise;
+}
 
 async function refreshSession(): Promise<TokenResponse> {
   const session = sessionStore.get();
@@ -104,15 +153,28 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   } catch (error) {
     if (error instanceof ApiError) throw error;
     if (error instanceof Error && error.name === 'AbortError') {
-      throw new ApiError('The server did not respond in time.', undefined, 'timeout');
+      throw new ApiError(
+        appConfig.isStaging
+          ? 'The free preview server is still waking up. Wait a moment and try again.'
+          : 'The server did not respond in time.',
+        undefined,
+        appConfig.isStaging ? 'server_waking' : 'timeout',
+      );
     }
-    throw new ApiError('You appear to be offline. Check your connection and try again.', undefined, 'offline');
+    throw new ApiError(
+      appConfig.isStaging
+        ? 'Cannot reach the AIMZ preview server. It may be waking up; wait a moment and try again.'
+        : 'Cannot reach the AIMZ server. Check that it is running and try again.',
+      undefined,
+      'unreachable',
+    );
   } finally {
     clearTimeout(timeout);
   }
 }
 
 export const api = {
+  waitUntilReady,
   getHealth: () => request<{ status: 'ok'; service: string; version: string; environment: string }>('/api/v1/health', { authenticated: false }),
   login: (email: string, password: string) =>
     request<TokenResponse>('/api/v1/auth/login', {

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { appConfig } from '@/src/config';
 import { api } from '@/src/lib/api';
 import { theme } from '@/src/theme';
 
-type ConnectionState = 'checking' | 'connected' | 'unreachable';
+type ConnectionState = 'checking' | 'waking' | 'connected' | 'unreachable';
 
 export function ConnectionStatus() {
   const [state, setState] = useState<ConnectionState>('checking');
@@ -13,7 +13,7 @@ export function ConnectionStatus() {
   const checkConnection = useCallback(async () => {
     setState('checking');
     try {
-      await api.getHealth();
+      await api.waitUntilReady(() => setState('waking'));
       setState('connected');
     } catch {
       setState('unreachable');
@@ -26,31 +26,35 @@ export function ConnectionStatus() {
 
   const connected = state === 'connected';
   const checking = state === 'checking';
-  const label = checking ? 'Checking API' : connected ? 'API connected' : 'API unavailable';
+  const waking = state === 'waking';
+  const waiting = checking || waking;
+  const label = checking
+    ? 'Checking preview server'
+    : waking
+      ? 'Preview server is waking up'
+      : connected
+        ? 'Preview server ready'
+        : 'Preview server unavailable';
 
   return (
     <Pressable
       accessibilityHint="Checks the connection again"
       accessibilityLabel={`${label}. Server ${appConfig.apiBaseUrl}`}
       accessibilityRole="button"
-      disabled={checking}
+      disabled={waiting}
       onPress={() => void checkConnection()}
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
-      <View
-        style={[
-          styles.dot,
-          connected && styles.dotConnected,
-          state === 'unreachable' && styles.dotError,
-        ]}
-      />
+      {waiting ? <ActivityIndicator color={theme.colors.warning} size="small" /> : <View
+        style={[styles.dot, connected && styles.dotConnected, state === 'unreachable' && styles.dotError]}
+      />}
       <View style={styles.copy}>
         <Text style={styles.label}>{label}</Text>
         <Text numberOfLines={1} style={styles.detail}>
-          {checking ? 'Verifying the milestone 1 health check' : appConfig.apiBaseUrl}
+          {waking ? 'Free hosting can take up to a minute to restart.' : appConfig.apiBaseUrl}
         </Text>
       </View>
-      <Text style={styles.action}>{checking ? 'WAIT' : 'RETRY'}</Text>
+      <Text style={styles.action}>{waiting ? 'WAIT' : connected ? 'READY' : 'RETRY'}</Text>
     </Pressable>
   );
 }

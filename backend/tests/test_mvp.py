@@ -217,3 +217,23 @@ async def test_media_presign_contract(
     )
     assert response.status_code == 200
     assert response.json()["object_key"].startswith(f"teams/{team.json()['id']}/")
+
+
+@pytest.mark.asyncio
+async def test_media_presign_can_be_disabled(
+    client: AsyncClient, admin_headers: dict[str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.api.v1.routes.media.settings.media_enabled", False)
+
+    response = await client.post(
+        "/api/v1/media/uploads/presign",
+        headers=admin_headers,
+        json={
+            "entity": "team",
+            "entity_id": "00000000-0000-0000-0000-000000000000",
+            "content_type": "image/jpeg",
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "media_disabled"

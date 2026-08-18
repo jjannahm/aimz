@@ -2,6 +2,23 @@ from functools import lru_cache
 
 from pydantic import AnyHttpUrl, EmailStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+
+
+def normalize_database_url(value: str) -> str:
+    """Convert provider-style Postgres URLs into an asyncpg-compatible URL."""
+    if value.startswith("postgres://"):
+        value = value.replace("postgres://", "postgresql://", 1)
+    if value.startswith("postgresql://"):
+        value = value.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+    url = make_url(value)
+    query = dict(url.query)
+    ssl_mode = query.pop("sslmode", None)
+    query.pop("channel_binding", None)
+    if ssl_mode and ssl_mode != "disable":
+        query["ssl"] = "require"
+    return url.set(query=query).render_as_string(hide_password=False)
 
 
 class Settings(BaseSettings):
@@ -21,6 +38,9 @@ class Settings(BaseSettings):
         AnyHttpUrl("http://localhost:19006"),
     ]
     sql_echo: bool = False
+    db_pool_size: int = 3
+    db_max_overflow: int = 2
+    db_pool_timeout_seconds: int = 30
     jwt_secret: str = "replace-with-at-least-32-random-characters"
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 15
@@ -46,19 +66,21 @@ class Settings(BaseSettings):
     s3_bucket: str | None = None
     s3_presign_seconds: int = 900
     media_max_bytes: int = 5_242_880
+    media_enabled: bool = True
 
     @model_validator(mode="after")
-    def validate_production_secrets(self) -> "Settings":
-        if self.environment == "production":
+    def normalize_and_validate(self) -> "Settings":
+        self.database_url = normalize_database_url(self.database_url)
+        if self.environment in {"staging", "production"}:
             if (
                 len(self.jwt_secret) < 32
                 or self.jwt_secret == "replace-with-at-least-32-random-characters"
             ):
                 raise ValueError(
-                    "Production requires a unique JWT_SECRET of at least 32 characters."
+                    "Hosted environments require a unique JWT_SECRET of at least 32 characters."
                 )
             if self.admin_password == "change-this-admin-password":
-                raise ValueError("Production requires a unique ADMIN_PASSWORD.")
+                raise ValueError("Hosted environments require a unique ADMIN_PASSWORD.")
         return self
 
 

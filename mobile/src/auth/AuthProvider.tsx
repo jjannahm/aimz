@@ -28,9 +28,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     isReady,
     user: session?.user ?? null,
     async signIn(email, password) {
+      await api.waitUntilReady();
       await sessionStore.save(await api.login(email.trim().toLowerCase(), password));
     },
     async register(name, email, password, inviteCode) {
+      await api.waitUntilReady();
       await sessionStore.save(await api.register(name.trim(), email.trim().toLowerCase(), password, inviteCode.trim()));
     },
     async signOut() {

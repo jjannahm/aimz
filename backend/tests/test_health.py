@@ -22,3 +22,18 @@ def test_root_health_alias() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_cors_allows_local_web_app() -> None:
+    with TestClient(app) as client:
+        response = client.options(
+            "/api/v1/auth/register",
+            headers={
+                "Origin": "http://localhost:8081",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://localhost:8081"

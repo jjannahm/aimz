@@ -2,6 +2,7 @@ import type { PropsWithChildren, ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { StagingNotice } from '@/src/components/StagingNotice';
 import { theme } from '@/src/theme';
 
 type Props = PropsWithChildren<{ title: string; eyebrow?: string; action?: ReactNode; scroll?: boolean }>;
@@ -9,6 +10,7 @@ type Props = PropsWithChildren<{ title: string; eyebrow?: string; action?: React
 export function Screen({ title, eyebrow, action, scroll = true, children }: Props) {
   const content = (
     <View style={styles.content}>
+      <StagingNotice />
       <View style={styles.header}>
         <View style={styles.heading}>
           {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}

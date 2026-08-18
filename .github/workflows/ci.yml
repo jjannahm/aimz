@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - run: pip install -e '.[dev]'
+      - run: ruff check app tests migrations
+      - run: pytest
+      - name: Verify migration SQL generation
+        run: alembic upgrade head --sql > /tmp/aimz-migration.sql
+
+  mobile:
+    name: Mobile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: mobile/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Check Expo dependency compatibility
+        run: pnpm exec expo install --check
+      - name: Export staging web app
+        run: pnpm web:export
+        env:
+          EXPO_PUBLIC_API_URL: https://aimz-api-staging.example.com
+          EXPO_PUBLIC_APP_ENV: staging
+          EXPO_PUBLIC_ENABLE_MEDIA: "false"
+          EXPO_PUBLIC_ENABLE_PASSWORD_RESET: "false"

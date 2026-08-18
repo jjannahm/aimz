@@ -3,6 +3,9 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } fr
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/src/components/BrandMark';
+import { ConnectionStatus } from '@/src/components/ConnectionStatus';
+import { StagingNotice } from '@/src/components/StagingNotice';
+import { appConfig } from '@/src/config';
 import { theme } from '@/src/theme';
 
 export function AuthShell({ title, subtitle, children }: PropsWithChildren<{ title: string; subtitle: string }>) {
@@ -11,6 +14,8 @@ export function AuthShell({ title, subtitle, children }: PropsWithChildren<{ tit
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           <View style={styles.brand}><BrandMark /><Text style={styles.brandName}>AIMZ EGYPT</Text></View>
+          <StagingNotice />
+          {appConfig.isStaging ? <ConnectionStatus /> : null}
           <View style={styles.card}>
             <View style={styles.heading}><Text accessibilityRole="header" style={styles.title}>{title}</Text><Text style={styles.subtitle}>{subtitle}</Text></View>
             {children}

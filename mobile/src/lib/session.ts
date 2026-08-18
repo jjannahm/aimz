@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 import type { TokenResponse } from '@/src/types/api';
 
@@ -10,6 +11,41 @@ function emit() {
   listeners.forEach((listener) => listener(currentSession));
 }
 
+function getWebStorage(): Storage | null {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    return window.localStorage;
+  } catch {
+    return null;
+  }
+}
+
+async function readSession(): Promise<string | null> {
+  if (Platform.OS === 'web') return getWebStorage()?.getItem(sessionKey) ?? null;
+  return SecureStore.getItemAsync(sessionKey);
+}
+
+async function writeSession(value: string): Promise<void> {
+  if (Platform.OS === 'web') {
+    getWebStorage()?.setItem(sessionKey, value);
+    return;
+  }
+
+  await SecureStore.setItemAsync(sessionKey, value, {
+    keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
+  });
+}
+
+async function removeSession(): Promise<void> {
+  if (Platform.OS === 'web') {
+    getWebStorage()?.removeItem(sessionKey);
+    return;
+  }
+
+  await SecureStore.deleteItemAsync(sessionKey);
+}
+
 export const sessionStore = {
   get: () => currentSession,
   subscribe(listener: (session: TokenResponse | null) => void) {
@@ -19,21 +55,24 @@ export const sessionStore = {
     };
   },
   async restore() {
-    const raw = await SecureStore.getItemAsync(sessionKey);
-    currentSession = raw ? (JSON.parse(raw) as TokenResponse) : null;
+    try {
+      const raw = await readSession();
+      currentSession = raw ? (JSON.parse(raw) as TokenResponse) : null;
+    } catch {
+      currentSession = null;
+      await removeSession().catch(() => undefined);
+    }
     emit();
     return currentSession;
   },
   async save(session: TokenResponse) {
     currentSession = session;
-    await SecureStore.setItemAsync(sessionKey, JSON.stringify(session), {
-      keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK_THIS_DEVICE_ONLY,
-    });
+    await writeSession(JSON.stringify(session));
     emit();
   },
   async clear() {
     currentSession = null;
-    await SecureStore.deleteItemAsync(sessionKey);
+    await removeSession();
     emit();
   },
 };

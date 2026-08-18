@@ -16,6 +16,8 @@ router = APIRouter()
 async def presign_upload(
     payload: PresignRequest, _: AdminUser, session: SessionDep
 ) -> PresignResponse:
+    if not settings.media_enabled:
+        raise api_error(503, "media_disabled", "Photo uploads are disabled in this environment.")
     model = Team if payload.entity == "team" else Player
     if await session.get(model, payload.entity_id) is None:
         raise api_error(404, "entity_not_found", "Upload target not found.")

@@ -28,6 +28,8 @@ export const theme = {
     liveSurface: '#123E38',
     liveText: '#86EFAC',
     warning: palette.amber,
+    warningSurface: '#3A2A0C',
+    warningText: '#FCD34D',
     error: palette.red,
     errorSurface: '#5A1C2D',
     errorText: '#FCA5A5',

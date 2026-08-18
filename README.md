@@ -2,6 +2,14 @@
 
 An iOS-first scores and academy operations app for AIMZ Egypt's girls' football teams. Players and club members can follow matches, tables, and player performance; authenticated administrators manage the same data and score matches from the sideline.
 
+## Shared staging preview
+
+The repository includes a free Render/Neon staging setup for browser collaboration. It displays a permanent **Staging — fictional data only** marker, handles Render cold starts, and disables photo upload and password reset. Apply the Blueprint after creating the owner-controlled Neon and Render accounts:
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/jjannahm/aimz)
+
+Follow [STAGING.md](STAGING.md) for the exact secret, CORS, deployment, verification, and contributor steps. Never put real player or academy data in the public preview.
+
 ## What is included
 
 - Invite-only player registration and seeded admin accounts
@@ -24,6 +32,9 @@ The app intentionally does not include Kafka, Redis, WebSockets, push notificati
 - `mobile/src/`: typed API client, generated OpenAPI types, auth state, theme, and components
 - `mobile/TESTFLIGHT_CHECKLIST.md`: release and review handoff
 - `mobile/assets/branding/`: placeholder branding and official-asset replacement instructions
+- `render.yaml`: free Render API/static-site Blueprint
+- `.github/workflows/ci.yml`: backend and mobile deployment gates
+- `STAGING.md`: Neon, Render, CORS, and collaboration runbook
 
 ## Local setup
 
@@ -115,6 +126,8 @@ cd backend
 cd ../mobile
 pnpm typecheck
 pnpm test
+npx expo install --check
+npx expo export --platform web
 npx expo export --platform ios
 ```
 

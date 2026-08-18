@@ -11,6 +11,7 @@ __pycache__/
 backend/.venv/
 backend/.coverage
 mobile/.expo/
+mobile/expo-env.d.ts
 mobile/node_modules/
 mobile/dist/
 mobile/npm-debug.log*
