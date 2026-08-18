@@ -16,3 +16,4 @@ mobile/dist/
 mobile/npm-debug.log*
 .pnpm-store/
 artifacts/qa/
+.claude/

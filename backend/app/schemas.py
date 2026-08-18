@@ -255,6 +255,15 @@ class StandingRow(BaseModel):
     points: int
 
 
+class PlayerLeaderRow(BaseModel):
+    rank: int
+    player: PlayerRead
+    team: TeamRead
+    goals: int
+    assists: int
+    appearances: int
+
+
 class PlayerSeasonSummary(BaseModel):
     player: PlayerRead
     season: str | None
