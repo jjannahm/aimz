@@ -49,32 +49,46 @@ describe('PlayersScreen', () => {
   });
   afterEach(() => jest.clearAllMocks());
 
-  it('opens on U9 and lists only that age group', async () => {
+  it('offers exactly three top-level tabs', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
-    expect(await screen.findByText('Salma Nabil')).toBeTruthy();
+    await screen.findByRole('tab', { name: 'Teams' });
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+    expect(screen.getByRole('tab', { name: 'Top Scorers' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Top Assisters' })).toBeTruthy();
+  });
+
+  it('opens on the team list rather than any single squad', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    expect(await screen.findByLabelText('U9, 1 player')).toBeTruthy();
+    expect(screen.getByLabelText('U13, 1 player')).toBeTruthy();
+    for (const ageGroup of ['U11', 'U15', 'U18']) {
+      expect(screen.getByLabelText(`${ageGroup}, 0 players`)).toBeTruthy();
+    }
+    expect(screen.queryByText('Salma Nabil')).toBeNull();
+  });
+
+  it('drills into a team to reveal its players, then back out', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('U13, 1 player'));
+    expect(await screen.findByText('Mariam Adel')).toBeTruthy();
+    expect(screen.queryByText('Salma Nabil')).toBeNull();
+
+    fireEvent.press(screen.getByLabelText('Back to all teams'));
+    expect(await screen.findByLabelText('U9, 1 player')).toBeTruthy();
     expect(screen.queryByText('Mariam Adel')).toBeNull();
   });
 
-  it('switches age group when another squad tab is pressed', async () => {
+  it('shows an empty state for a team with no players', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
-    await screen.findByText('Salma Nabil');
-    fireEvent.press(screen.getByRole('tab', { name: 'U13' }));
-    expect(await screen.findByText('Mariam Adel')).toBeTruthy();
-    expect(screen.queryByText('Salma Nabil')).toBeNull();
+    fireEvent.press(await screen.findByLabelText('U18, 0 players'));
+    expect(await screen.findByText('No U18 players yet')).toBeTruthy();
   });
 
   it('loads the goals leaderboard from the Top Scorers tab', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
-    await screen.findByText('Salma Nabil');
+    await screen.findByLabelText('U9, 1 player');
     fireEvent.press(screen.getByRole('tab', { name: 'Top Scorers' }));
     await waitFor(() => expect(api.leaders).toHaveBeenCalledWith('goals', { limit: 25 }));
     expect(await screen.findByText('Mariam Adel')).toBeTruthy();
-  });
-
-  it('shows an empty state for an age group with no squad', async () => {
-    const screen = await render(<PlayersScreen />, { wrapper });
-    await screen.findByText('Salma Nabil');
-    fireEvent.press(screen.getByRole('tab', { name: 'U18' }));
-    expect(await screen.findByText('No U18 players yet')).toBeTruthy();
   });
 });

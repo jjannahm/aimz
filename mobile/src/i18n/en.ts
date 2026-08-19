@@ -4,6 +4,7 @@ export const copy = {
   offline: 'You appear to be offline. Check your connection and try again.',
   emptyMatches: 'No matches in this section yet.',
   emptyPlayers: 'No players match this filter yet.',
+  teams: 'Teams',
   topScorers: 'Top Scorers',
   topAssisters: 'Top Assisters',
   emptySquad: (ageGroup: string) => `Admin-added ${ageGroup} players will appear here.`,
