@@ -1,6 +1,7 @@
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 
+import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { theme } from '@/src/theme';
 
 import type { Match } from '@/src/types/api';
@@ -41,7 +42,7 @@ export function MatchCard({ match }: MatchCardProps) {
 
       <View style={styles.scoreRow}>
         <View style={styles.teamColumn}>
-          {match.home_team?.logo_url ? <Image accessibilityLabel={`${homeName} logo`} source={{ uri: match.home_team.logo_url }} style={styles.crest} /> : <View accessibilityElementsHidden style={[styles.crest, styles.homeCrest]} />}
+          <TeamAvatar logoUrl={match.home_team?.logo_url} name={homeName} size={44} tone="accent" />
           <Text style={styles.teamName}>{homeName}</Text>
         </View>
 
@@ -59,7 +60,7 @@ export function MatchCard({ match }: MatchCardProps) {
         </View>
 
         <View style={[styles.teamColumn, styles.awayTeamColumn]}>
-          {match.away_team?.logo_url ? <Image accessibilityLabel={`${awayName} logo`} source={{ uri: match.away_team.logo_url }} style={styles.crest} /> : <View accessibilityElementsHidden style={[styles.crest, styles.awayCrest]} />}
+          <TeamAvatar logoUrl={match.away_team?.logo_url} name={awayName} size={44} tone="light" />
           <Text style={[styles.teamName, styles.awayTeamName]}>{awayName}</Text>
         </View>
       </View>
@@ -128,13 +129,6 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
   },
   awayTeamColumn: { alignItems: 'flex-end' },
-  crest: {
-    borderRadius: 22,
-    height: 44,
-    width: 44,
-  },
-  homeCrest: { backgroundColor: theme.colors.accent },
-  awayCrest: { backgroundColor: theme.colors.lightBlue },
   teamName: {
     color: theme.colors.textPrimary,
     fontSize: theme.type.label,
