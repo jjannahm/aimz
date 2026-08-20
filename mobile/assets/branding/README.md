@@ -1,9 +1,9 @@
 # AIMZ branding assets
 
-`placeholder-logo.svg` is an intentionally temporary vector stand-in. Replace it with official club assets before TestFlight:
+The official AIMZ artwork is prepared for each supported surface:
 
-- `logo.png` for in-app use (transparent background preferred)
-- `icon.png` at 1024 x 1024 for the App Store icon
-- `splash.png` sized for the approved Expo splash treatment
+- `logo.png` preserves the supplied artwork for in-app use.
+- `icon.png` is the 1024×1024 native app icon.
+- `icon-192.png`, `icon-512.png`, and `favicon.png` support the website and installed web app.
 
-After adding the real files, update `app.json` with `icon` and splash references and replace `src/components/BrandMark.tsx`. Do not redraw, stretch, recolor, or crop the official mark.
+Do not redraw, recolor, or crop the official mark. `placeholder-logo.svg` remains only as historical reference and is not used by the app.

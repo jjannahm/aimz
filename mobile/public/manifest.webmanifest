@@ -1,0 +1,22 @@
+{
+  "name": "AIMZ Egypt",
+  "short_name": "AIMZ",
+  "description": "AIMZ Egypt match centre",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#09112F",
+  "theme_color": "#09112F",
+  "icons": [
+    {
+      "src": "/aimz-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/aimz-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

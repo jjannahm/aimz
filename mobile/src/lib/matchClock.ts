@@ -19,6 +19,7 @@ export type MatchClockState = {
   label: 'SCHEDULED' | 'LIVE' | 'HALFTIME' | 'EXTRA TIME' | 'FULL TIME';
   clockText: string | null;
   accessibilityLabel: string;
+  minuteLabel: string | null;
   isRunning: boolean;
   isExtraTime: boolean;
   regulationProgress: number;
@@ -51,13 +52,13 @@ export function getMatchClockState(match: ClockMatch, nowMs = Date.now()): Match
   const elapsed = runningElapsedSeconds(match, nowMs);
   const { halfSeconds, regulationSeconds, extraTimeSeconds } = clockDurations(match);
   if (match.status === 'scheduled' || phase === 'not_started') {
-    return { phase: 'not_started', label: 'SCHEDULED', clockText: null, accessibilityLabel: 'Scheduled', isRunning: false, isExtraTime: false, regulationProgress: 0, extraTimeProgress: 0 };
+    return { phase: 'not_started', label: 'SCHEDULED', clockText: null, minuteLabel: null, accessibilityLabel: 'Scheduled', isRunning: false, isExtraTime: false, regulationProgress: 0, extraTimeProgress: 0 };
   }
   if (match.status === 'finished' || phase === 'finished') {
-    return { phase: 'finished', label: 'FULL TIME', clockText: null, accessibilityLabel: 'Full time', isRunning: false, isExtraTime: false, regulationProgress: 1, extraTimeProgress: 0 };
+    return { phase: 'finished', label: 'FULL TIME', clockText: null, minuteLabel: 'FT', accessibilityLabel: 'Full time', isRunning: false, isExtraTime: false, regulationProgress: 1, extraTimeProgress: 0 };
   }
   if (phase === 'halftime') {
-    return { phase, label: 'HALFTIME', clockText: null, accessibilityLabel: 'Halftime', isRunning: false, isExtraTime: false, regulationProgress: 0.5, extraTimeProgress: 0 };
+    return { phase, label: 'HALFTIME', clockText: null, minuteLabel: 'HT', accessibilityLabel: 'Halftime', isRunning: false, isExtraTime: false, regulationProgress: 0.5, extraTimeProgress: 0 };
   }
   if (phase === 'extra_time') {
     const total = regulationSeconds + elapsed;
@@ -66,6 +67,7 @@ export function getMatchClockState(match: ClockMatch, nowMs = Date.now()): Match
       phase,
       label: 'EXTRA TIME',
       clockText,
+      minuteLabel: `${Math.floor(total / 60)}'`,
       accessibilityLabel: `Extra time, ${clockText}`,
       isRunning: true,
       isExtraTime: true,
@@ -84,6 +86,7 @@ export function getMatchClockState(match: ClockMatch, nowMs = Date.now()): Match
     phase,
     label: 'LIVE',
     clockText,
+    minuteLabel: `${Math.floor(total / 60)}'`,
     accessibilityLabel: `Live, ${clockText}`,
     isRunning: true,
     isExtraTime: false,

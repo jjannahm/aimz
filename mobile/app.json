@@ -6,6 +6,7 @@
     "orientation": "default",
     "scheme": "aimz",
     "userInterfaceStyle": "dark",
+    "icon": "./assets/branding/icon.png",
     "newArchEnabled": true,
     "plugins": [
       "expo-router",
@@ -22,7 +23,13 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "single"
+      "output": "single",
+      "favicon": "./assets/branding/favicon.png",
+      "name": "AIMZ Egypt",
+      "shortName": "AIMZ",
+      "themeColor": "#09112F",
+      "backgroundColor": "#09112F",
+      "display": "standalone"
     },
     "ios": {
       "supportsTablet": true,
