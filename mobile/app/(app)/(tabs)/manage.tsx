@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, router } from 'expo-router';
 import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
 import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { z } from 'zod';
 
 import { useAuth } from '@/src/auth/AuthProvider';
@@ -18,6 +18,7 @@ import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { appConfig } from '@/src/config';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
+import { confirmAction, showMessage } from '@/src/lib/platformAlert';
 import { theme } from '@/src/theme';
 import { EXTRA_TIME_PERIODS, totalMatchMinutes } from '@/src/types/api';
 import type { Competition, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
@@ -69,6 +70,7 @@ export default function ManageScreen() {
   const [resource, setResource] = React.useState<Resource>('teams');
   const [editing, setEditing] = React.useState<Entity | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
+  const pageRef = React.useRef<ScrollView | null>(null);
   const teams = useQuery({ queryKey: ['teams', 'admin'], queryFn: () => api.teams('?limit=100') });
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
   const players = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
@@ -117,17 +119,40 @@ export default function ManageScreen() {
 
   const beginEdit = (item: Entity) => {
     setEditing(item); setFormError(null);
+    pageRef.current?.scrollTo({ y: 0, animated: true });
     if (resource === 'teams' && 'is_aimz' in item) form.reset({ ...defaults, name: item.name, code: item.squad_code ?? '', ageGroup: item.age_group ?? '', season: item.season ?? '', isAimz: String(item.is_aimz), coach: item.coach ?? '', assistantCoach: item.assistant_coach ?? '' });
     if (resource === 'competitions' && 'type' in item && !('status' in item)) form.reset({ ...defaults, name: item.name, season: item.season, type: item.type });
     if (resource === 'players' && 'position' in item) form.reset({ ...defaults, name: item.name, teamId: item.team_id, position: item.position, jersey: item.jersey_number?.toString() ?? '' });
     if (resource === 'matches' && 'status' in item) form.reset({ ...defaults, competitionId: item.competition_id, homeTeamId: item.home_team_id, awayTeamId: item.away_team_id, kickoff: item.kickoff_datetime, venue: item.venue, status: item.status, halfLength: String(item.half_length_minutes ?? 45), numHalves: String(item.num_halves ?? 2), halfTimeBreak: String(item.half_time_break_minutes ?? 15), hasExtraTime: item.has_extra_time ? 'true' : 'false', extraTimeLength: String(item.extra_time_half_length_minutes ?? 15) });
   };
 
-  const remove = (item: Entity) => Alert.alert('Delete this item?', 'This cannot be undone. Referenced squads, players, or competitions must be archived instead.', [{ text: 'Cancel', style: 'cancel' }, { text: resource === 'invites' ? 'Revoke' : 'Delete', style: 'destructive', onPress: async () => { try { if (resource === 'teams') await api.deleteTeam(item.id); if (resource === 'competitions') await api.deleteCompetition(item.id); if (resource === 'players') await api.deletePlayer(item.id); if (resource === 'matches') await api.deleteMatch(item.id); if (resource === 'invites') await api.revokeInvite(item.id); await invalidate(); } catch (error) { Alert.alert('Could not delete', (error as ApiError).message); } } }]);
+  const remove = (item: Entity) => {
+    const label = entityTitle(item);
+    const noun = resource === 'invites' ? 'Revoke' : 'Delete';
+    confirmAction(`${noun} ${label}?`, 'This cannot be undone.', noun, async () => {
+      try {
+        if (resource === 'teams') await api.deleteTeam(item.id);
+        if (resource === 'competitions') await api.deleteCompetition(item.id);
+        if (resource === 'players') await api.deletePlayer(item.id);
+        if (resource === 'matches') await api.deleteMatch(item.id);
+        if (resource === 'invites') await api.revokeInvite(item.id);
+        await invalidate();
+      } catch (error) {
+        const problem = error as ApiError;
+        // The API refuses to delete anything still referenced, so say what to do.
+        showMessage(
+          problem.status === 409 ? `${label} is still in use` : `Could not delete ${label}`,
+          problem.status === 409
+            ? 'Players, matches or results still reference it. Remove or reassign those first.'
+            : problem.message,
+        );
+      }
+    });
+  };
 
   const uploadPhoto = async (item: Team | Player, entity: 'team' | 'player') => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { Alert.alert('Photo access needed', 'Allow photo access to upload a roster image.'); return; }
+    if (!permission.granted) { showMessage('Photo access needed', 'Allow photo access to upload a roster image.'); return; }
     const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
     if (picked.canceled) return;
     try {
@@ -140,13 +165,13 @@ export default function ManageScreen() {
       if (!uploaded.ok) throw new Error('The storage service rejected the upload.');
       if (entity === 'team') await api.updateTeam(item.id, { ...(item as Team), logo_key: presign.object_key }); else await api.updatePlayer(item.id, { ...(item as Player), photo_key: presign.object_key });
       await invalidate();
-    } catch (error) { Alert.alert('Upload failed', (error as Error).message); }
+    } catch (error) { showMessage('Upload failed', (error as Error).message); }
   };
 
-  return <Screen eyebrow="Administrator tools" title="Manage academy">
+  return <Screen eyebrow="Administrator tools" scrollRef={pageRef} title="Manage academy">
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>{resources.map((item) => <Pressable key={item.value} onPress={() => switchResource(item.value)} style={({ pressed }) => [styles.chip, resource === item.value && styles.chipActive, pressed && styles.pressed]}><Text style={[styles.chipText, resource === item.value && styles.chipTextActive]}>{item.label}</Text></Pressable>)}</ScrollView>
     {!appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}
-    <View style={styles.formCard}><Text style={styles.heading}>{editing ? 'Edit' : 'Add'} {resources.find((item) => item.value === resource)?.label.toLowerCase()}</Text>{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields control={form.control} errors={form.formState.errors} resource={resource} teams={teams.data?.items ?? []} competitions={competitions.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></View>
+    <View style={styles.formCard}><Text style={styles.heading}>{editing ? 'Edit' : 'Add'} {resources.find((item) => item.value === resource)?.label.toLowerCase()}</Text>{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields control={form.control} errors={form.formState.errors} resource={resource} teams={teams.data?.items ?? []} competitions={competitions.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></View>
     <View style={styles.listHeader}><Text style={styles.heading}>Current {resources.find((item) => item.value === resource)?.label.toLowerCase()}</Text><Text style={styles.count}>{items.length}</Text></View>
     {query.isLoading ? <LoadingState /> : query.isError ? <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text></View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact label="Edit" onPress={() => beginEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'status' in item ? <AppButton compact label={item.status === 'scheduled' ? 'Start' : 'Score'} onPress={() => router.push(`/live/${item.id}`)} variant="secondary" /> : null}{appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <AppButton compact label="Photo" onPress={() => uploadPhoto(item as Team | Player, resource === 'teams' ? 'team' : 'player')} variant="secondary" /> : null}<AppButton compact label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => remove(item)} variant="danger" /></View></View>)}</View>}
   </Screen>;
@@ -163,4 +188,4 @@ function ResourceFields({ control, errors, resource, teams, competitions }: { co
 function entityTitle(item: Entity) { if ('home_team_id' in item) return `${item.home_team?.name ?? 'Home'} vs ${item.away_team?.name ?? 'Away'}`; if ('position' in item) return item.name; if ('use_count' in item) return item.label; return item.name; }
 function entityMeta(item: Entity) { if ('home_team_id' in item) return `${item.status.toUpperCase()} · ${new Date(item.kickoff_datetime).toLocaleString('en-EG')}`; if ('position' in item) return `${item.position} · #${item.jersey_number ?? '–'}`; if ('use_count' in item) return `${item.is_active ? 'Active' : 'Revoked'} · ${item.use_count} uses`; if ('is_aimz' in item) return item.squad_code ?? (item.is_aimz ? 'AIMZ squad' : 'Opponent'); return `${item.type} · ${item.season}`; }
 
-const styles = StyleSheet.create({ summary: { color: theme.colors.lightBlue, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: theme.colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, chips: { gap: theme.spacing.sm }, chip: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: theme.colors.accent }, chipText: { color: theme.colors.textSecondary, fontWeight: '800' }, chipTextActive: { color: theme.colors.onAccent }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: theme.colors.warningSurface, borderColor: theme.colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: theme.colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: theme.colors.textPrimary, lineHeight: 22 }, formCard: { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.lg }, heading: { color: theme.colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, error: { color: theme.colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm }, flexButton: { flex: 1 }, listHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, count: { color: theme.colors.lightBlue, fontWeight: '900' }, empty: { color: theme.colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: theme.colors.textPrimary, fontWeight: '900' }, itemMeta: { color: theme.colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs } });
+const styles = StyleSheet.create({ editingBanner: { alignItems: 'center', backgroundColor: theme.colors.highlightedSurface, borderColor: theme.colors.accent, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs }, editingText: { color: theme.colors.textPrimary, flex: 1, fontWeight: '800' }, summary: { color: theme.colors.lightBlue, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: theme.colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, chips: { gap: theme.spacing.sm }, chip: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: theme.colors.accent }, chipText: { color: theme.colors.textSecondary, fontWeight: '800' }, chipTextActive: { color: theme.colors.onAccent }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: theme.colors.warningSurface, borderColor: theme.colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: theme.colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: theme.colors.textPrimary, lineHeight: 22 }, formCard: { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.lg }, heading: { color: theme.colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, error: { color: theme.colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm }, flexButton: { flex: 1 }, listHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, count: { color: theme.colors.lightBlue, fontWeight: '900' }, empty: { color: theme.colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: theme.colors.textPrimary, fontWeight: '900' }, itemMeta: { color: theme.colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs } });

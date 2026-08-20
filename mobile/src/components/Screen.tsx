@@ -1,13 +1,13 @@
-import type { PropsWithChildren, ReactNode } from 'react';
+import type { PropsWithChildren, ReactNode, RefObject } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { StagingNotice } from '@/src/components/StagingNotice';
 import { theme } from '@/src/theme';
 
-type Props = PropsWithChildren<{ title: string; eyebrow?: string; action?: ReactNode; scroll?: boolean }>;
+type Props = PropsWithChildren<{ title: string; eyebrow?: string; action?: ReactNode; scroll?: boolean; scrollRef?: RefObject<ScrollView | null> }>;
 
-export function Screen({ title, eyebrow, action, scroll = true, children }: Props) {
+export function Screen({ title, eyebrow, action, scroll = true, scrollRef, children }: Props) {
   const content = (
     <View style={styles.content}>
       <StagingNotice />
@@ -23,7 +23,7 @@ export function Screen({ title, eyebrow, action, scroll = true, children }: Prop
   );
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      {scroll ? <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content}</ScrollView> : content}
+      {scroll ? <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">{content}</ScrollView> : content}
     </SafeAreaView>
   );
 }
