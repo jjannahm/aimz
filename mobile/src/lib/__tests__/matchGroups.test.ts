@@ -6,6 +6,7 @@ function match(id: string, kickoff: string, competitionId: string, competitionNa
     id, competition_id: competitionId, home_team_id: `${id}-home`, away_team_id: `${id}-away`,
     kickoff_datetime: kickoff, venue: 'AIMZ Arena', status, phase: status === 'finished' ? 'finished' : status === 'live' ? 'first_half' : 'not_started',
     phase_started_at: status === 'live' ? kickoff : null, home_score: 0, away_score: 0, revision: 0,
+    lineup_format: null,
     half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15, has_extra_time: false,
     extra_time_half_length_minutes: 15, created_at: kickoff, updated_at: kickoff,
     home_team: null, away_team: null,

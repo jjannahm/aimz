@@ -238,7 +238,7 @@ export function registerDomainRoutes(app: App): void {
         ? { status: "finished" as const, phase: "finished" as const, phase_started_at: null }
         : { status: "scheduled" as const, phase: "not_started" as const, phase_started_at: null };
     const row: MatchRow = { id: crypto.randomUUID(), ...match, ...clock, home_score: 0, away_score: 0, revision: 0, created_at: now, updated_at: now };
-    await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, phase, phase_started_at, home_score, away_score, revision, half_length_minutes, num_halves, half_time_break_minutes, has_extra_time, extra_time_half_length_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, row.phase, row.phase_started_at, row.half_length_minutes, row.num_halves, row.half_time_break_minutes, row.has_extra_time, row.extra_time_half_length_minutes, now, now).run();
+    await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, phase, phase_started_at, home_score, away_score, revision, half_length_minutes, num_halves, half_time_break_minutes, has_extra_time, extra_time_half_length_minutes, lineup_format, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, row.phase, row.phase_started_at, row.half_length_minutes, row.num_halves, row.half_time_break_minutes, row.has_extra_time, row.extra_time_half_length_minutes, row.lineup_format, now, now).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, row.id)), 201);
   });
   app.patch("/api/v1/matches/:id", async (c) => {
@@ -250,7 +250,7 @@ export function registerDomainRoutes(app: App): void {
       if (error instanceof MatchPhaseTransitionError) throw new ApiProblem(409, error.code, error.message);
       throw error;
     }
-    await c.env.DB.prepare("UPDATE matches SET competition_id=?, home_team_id=?, away_team_id=?, kickoff_datetime=?, venue=?, status=?, phase=?, phase_started_at=?, half_length_minutes=?, num_halves=?, half_time_break_minutes=?, has_extra_time=?, extra_time_half_length_minutes=?, revision=revision+1, updated_at=? WHERE id=?").bind(input.competition_id, input.home_team_id, input.away_team_id, input.kickoff_datetime, input.venue, clock.status, clock.phase, clock.phase_started_at, input.half_length_minutes, input.num_halves, input.half_time_break_minutes, input.has_extra_time, input.extra_time_half_length_minutes, updated, current.id).run();
+    await c.env.DB.prepare("UPDATE matches SET competition_id=?, home_team_id=?, away_team_id=?, kickoff_datetime=?, venue=?, status=?, phase=?, phase_started_at=?, half_length_minutes=?, num_halves=?, half_time_break_minutes=?, has_extra_time=?, extra_time_half_length_minutes=?, lineup_format=?, revision=revision+1, updated_at=? WHERE id=?").bind(input.competition_id, input.home_team_id, input.away_team_id, input.kickoff_datetime, input.venue, clock.status, clock.phase, clock.phase_started_at, input.half_length_minutes, input.num_halves, input.half_time_break_minutes, input.has_extra_time, input.extra_time_half_length_minutes, input.lineup_format, updated, current.id).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, current.id)));
   });
   app.delete("/api/v1/matches/:id", async (c) => {
@@ -258,7 +258,16 @@ export function registerDomainRoutes(app: App): void {
   });
 }
 
-async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick<MatchRow, "competition_id" | "home_team_id" | "away_team_id" | "kickoff_datetime" | "venue" | "status" | "half_length_minutes" | "num_halves" | "half_time_break_minutes" | "has_extra_time" | "extra_time_half_length_minutes">> {
+const LINEUP_FORMATS = new Set([5, 6, 7, 9, 11]);
+
+function lineupFormat(body: Record<string, unknown>): number | null {
+  const value = numberField(body, "lineup_format", { optional: true, nullable: true });
+  if (value === undefined || value === null) return null;
+  if (!LINEUP_FORMATS.has(value)) throw new ApiProblem(422, "validation_error", "Format must be one of 5, 6, 7, 9, 11.");
+  return value;
+}
+
+async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick<MatchRow, "competition_id" | "home_team_id" | "away_team_id" | "kickoff_datetime" | "venue" | "status" | "half_length_minutes" | "num_halves" | "half_time_break_minutes" | "has_extra_time" | "extra_time_half_length_minutes" | "lineup_format">> {
   const competitionId = stringField(body, "competition_id", { min: 1, max: 36 })!;
   const homeTeamId = stringField(body, "home_team_id", { min: 1, max: 36 })!;
   const awayTeamId = stringField(body, "away_team_id", { min: 1, max: 36 })!;
@@ -281,6 +290,7 @@ async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick
     half_time_break_minutes: numberField(body, "half_time_break_minutes", { optional: true, min: 0, max: 30 }) ?? 15,
     has_extra_time: booleanField(body, "has_extra_time", false) ? 1 : 0,
     extra_time_half_length_minutes: numberField(body, "extra_time_half_length_minutes", { optional: true, min: 1, max: 30 }) ?? 15,
+    lineup_format: lineupFormat(body),
   };
 }
 

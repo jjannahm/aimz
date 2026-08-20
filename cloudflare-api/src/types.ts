@@ -71,6 +71,8 @@ export interface MatchRow {
   // Knockout ties can run two further periods; length is per period.
   has_extra_time: number;
   extra_time_half_length_minutes: number;
+  /** How many players start for AIMZ. Null until a lineup is entered. */
+  lineup_format: number | null;
   created_at: string;
   updated_at: string;
 }

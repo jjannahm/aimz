@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.db.models import CompetitionType, EventType, MatchPhase, MatchStatus, UserRole
 from app.services.storage import create_signed_read_url
@@ -154,6 +154,7 @@ class PlayerRead(PlayerInput, ORMModel):
 
 
 EXTRA_TIME_PERIODS = 2
+LINEUP_FORMATS = frozenset({5, 6, 7, 9, 11})
 
 
 class MatchInput(BaseModel):
@@ -168,6 +169,14 @@ class MatchInput(BaseModel):
     half_time_break_minutes: int = Field(default=15, ge=0, le=30)
     has_extra_time: bool = False
     extra_time_half_length_minutes: int = Field(default=15, ge=1, le=30)
+    lineup_format: int | None = Field(default=None)
+
+    @field_validator("lineup_format")
+    @classmethod
+    def known_format(cls, value: int | None) -> int | None:
+        if value is not None and value not in LINEUP_FORMATS:
+            raise ValueError(f"Format must be one of {sorted(LINEUP_FORMATS)}.")
+        return value
 
     @property
     def total_length_minutes(self) -> int:

@@ -605,3 +605,83 @@ async def test_goal_can_be_flagged_as_a_penalty(
     assert live.json()["match"]["home_score"] == 2
     flags = {event["minute"]: event["is_penalty"] for event in live.json()["events"]}
     assert flags == {12: True, 30: False}
+
+
+@pytest.mark.asyncio
+async def test_lineup_format_and_locking(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    squad = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Sevens", "is_aimz": True}
+    )
+    away = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "Delta Girls"})
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Sevens League", "season": "2026/27", "type": "league"},
+    )
+    roster = []
+    for index in range(3):
+        created = await client.post(
+            "/api/v1/players",
+            headers=admin_headers,
+            json={
+                "name": f"Player {index}",
+                "team_id": squad.json()["id"],
+                "position": "Midfielder",
+            },
+        )
+        roster.append(created.json()["id"])
+
+    base = {
+        "competition_id": competition.json()["id"],
+        "home_team_id": squad.json()["id"],
+        "away_team_id": away.json()["id"],
+        "kickoff_datetime": (datetime.now(UTC) + timedelta(days=7)).isoformat(),
+        "venue": "AIMZ Training Ground",
+        "status": "scheduled",
+    }
+    match = await client.post("/api/v1/matches", headers=admin_headers, json=base)
+    match_id = match.json()["id"]
+    assert match.json()["lineup_format"] is None
+
+    # Only the five recognised formats are accepted.
+    rejected = await client.patch(
+        f"/api/v1/matches/{match_id}", headers=admin_headers, json={**base, "lineup_format": 8}
+    )
+    assert rejected.status_code == 422
+
+    accepted = await client.patch(
+        f"/api/v1/matches/{match_id}", headers=admin_headers, json={**base, "lineup_format": 7}
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["lineup_format"] == 7
+
+    # A lineup can be set well before kickoff, and edited afterwards.
+    entries = [
+        {"player_id": roster[0], "team_id": squad.json()["id"], "is_starter": True},
+        {"player_id": roster[1], "team_id": squad.json()["id"], "is_starter": False},
+    ]
+    saved = await client.put(
+        f"/api/v1/matches/{match_id}/lineup", headers=admin_headers, json=entries
+    )
+    assert saved.status_code == 200, saved.text
+    assert sum(row["is_starter"] for row in saved.json()) == 1
+
+    edited = await client.put(
+        f"/api/v1/matches/{match_id}/lineup",
+        headers=admin_headers,
+        json=[{"player_id": roster[2], "team_id": squad.json()["id"], "is_starter": True}],
+    )
+    assert edited.status_code == 200, edited.text
+
+    # Once the match starts the starting lineup is frozen.
+    started = await client.patch(
+        f"/api/v1/matches/{match_id}", headers=admin_headers, json={**base, "status": "live"}
+    )
+    assert started.status_code == 200, started.text
+    locked = await client.put(
+        f"/api/v1/matches/{match_id}/lineup", headers=admin_headers, json=entries
+    )
+    assert locked.status_code == 409
+    assert locked.json()["detail"]["code"] == "lineup_locked"

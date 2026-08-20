@@ -146,7 +146,9 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.put("/api/v1/matches/:id/lineup", async (c) => {
-    await adminUser(c); const match = await getJoinedMatch(c.env, c.req.param("id")); const body = await jsonArray(c); const statements = [c.env.DB.prepare("DELETE FROM match_lineup_entries WHERE match_id = ?").bind(match.id)]; const output: LineupRow[] = [];
+    await adminUser(c); const match = await getJoinedMatch(c.env, c.req.param("id"));
+    // Once under way, who is on the pitch changes through substitutions.
+    if (match.status !== "scheduled") throw new ApiProblem(409, "lineup_locked", "The lineup is locked once the match starts. Log a substitution instead."); const body = await jsonArray(c); const statements = [c.env.DB.prepare("DELETE FROM match_lineup_entries WHERE match_id = ?").bind(match.id)]; const output: LineupRow[] = [];
     for (const item of body) {
       const playerId = stringField(item, "player_id", { min: 1, max: 36 })!; const teamId = stringField(item, "team_id", { min: 1, max: 36 })!;
       if (teamId !== match.home_team_id && teamId !== match.away_team_id) throw new ApiProblem(422, "invalid_team", "Every lineup team must be part of this match.");

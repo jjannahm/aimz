@@ -9,6 +9,7 @@ const match: Match = {
   kickoff_datetime: '2026-09-10T18:30:00+03:00', venue: 'AIMZ Training Ground', status: 'live',
   phase: 'first_half', phase_started_at: '2026-09-10T18:30:00+03:00',
   home_score: 2, away_score: 1, revision: 3,
+  lineup_format: null,
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-10T00:00:00Z',
   home_team: { id: 'home', name: 'AIMZ Navy', squad_code: 'RTS S14', age_group: 'U14', season: '2026/27', is_aimz: true, is_active: true, logo_key: null, created_at: '', updated_at: '' },

@@ -52,6 +52,10 @@ export type MatchTimeStructure = Pick<
   | 'extra_time_half_length_minutes'
 >;
 
+/** Squads play different formats by age group and competition. */
+export const LINEUP_FORMATS = [5, 6, 7, 9, 11] as const;
+export type LineupFormat = (typeof LINEUP_FORMATS)[number];
+
 /** Extra time is always two periods, per football convention. */
 export const EXTRA_TIME_PERIODS = 2;
 
@@ -59,6 +63,8 @@ export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'compe
   home_team: Team | null;
   away_team: Team | null;
   competition: Competition | null;
+  // Not in the generated schema yet; catches up on the next `npm run api:types`.
+  lineup_format: LineupFormat | null;
 };
 
 /** (half × halves) + (break × (halves − 1)), plus two extra-time periods when enabled. */
