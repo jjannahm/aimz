@@ -65,6 +65,9 @@ export interface MatchRow {
   half_length_minutes: number;
   num_halves: number;
   half_time_break_minutes: number;
+  // Knockout ties can run two further periods; length is per period.
+  has_extra_time: number;
+  extra_time_half_length_minutes: number;
   created_at: string;
   updated_at: string;
 }
@@ -79,6 +82,8 @@ export interface EventRow {
   secondary_player_id: string | null;
   related_event_id: string | null;
   notes: string | null;
+  /** Goals only: whether the goal came from a penalty kick. */
+  is_penalty: number;
   client_operation_id: string;
   created_at: string;
   updated_at: string;

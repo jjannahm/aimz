@@ -418,3 +418,78 @@ async def test_match_stores_period_structure(
         "/api/v1/matches", headers=admin_headers, json={**base, "num_halves": 0}
     )
     assert rejected.status_code == 422
+
+    # Extra time is opt-in and adds two further periods.
+    assert default.json()["has_extra_time"] is False
+    knockout = await client.post(
+        "/api/v1/matches",
+        headers=admin_headers,
+        json={**base, "has_extra_time": True, "extra_time_half_length_minutes": 15},
+    )
+    assert knockout.status_code == 201, knockout.text
+    assert knockout.json()["has_extra_time"] is True
+    assert knockout.json()["extra_time_half_length_minutes"] == 15
+
+
+@pytest.mark.asyncio
+async def test_goal_can_be_flagged_as_a_penalty(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    home = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Spot Kicks"}
+    )
+    away = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "Luxor United"})
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Penalty Cup", "season": "2026/27", "type": "league"},
+    )
+    striker = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Farida Sami", "team_id": home.json()["id"], "position": "Forward"},
+    )
+    payload = {
+        "competition_id": competition.json()["id"],
+        "home_team_id": home.json()["id"],
+        "away_team_id": away.json()["id"],
+        "kickoff_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+        "venue": "AIMZ Training Ground",
+        "status": "live",
+    }
+    match = await client.post("/api/v1/matches", headers=admin_headers, json=payload)
+    match_id = match.json()["id"]
+
+    spot_kick = await client.post(
+        f"/api/v1/matches/{match_id}/events",
+        headers=admin_headers,
+        json={
+            "type": "goal",
+            "minute": 12,
+            "team_id": home.json()["id"],
+            "player_id": striker.json()["id"],
+            "is_penalty": True,
+            "client_operation_id": "penalty-op-1",
+        },
+    )
+    assert spot_kick.status_code == 201, spot_kick.text
+    assert spot_kick.json()["is_penalty"] is True
+
+    open_play = await client.post(
+        f"/api/v1/matches/{match_id}/events",
+        headers=admin_headers,
+        json={
+            "type": "goal",
+            "minute": 30,
+            "team_id": home.json()["id"],
+            "player_id": striker.json()["id"],
+            "client_operation_id": "open-play-op-1",
+        },
+    )
+    assert open_play.json()["is_penalty"] is False
+
+    # A penalty still counts as a goal on the scoreline.
+    live = await client.get(f"/api/v1/matches/{match_id}/live", headers=admin_headers)
+    assert live.json()["match"]["home_score"] == 2
+    flags = {event["minute"]: event["is_penalty"] for event in live.json()["events"]}
+    assert flags == {12: True, 30: False}

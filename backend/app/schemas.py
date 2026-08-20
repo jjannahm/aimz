@@ -153,6 +153,9 @@ class PlayerRead(PlayerInput, ORMModel):
         return self
 
 
+EXTRA_TIME_PERIODS = 2
+
+
 class MatchInput(BaseModel):
     competition_id: str
     home_team_id: str
@@ -163,11 +166,16 @@ class MatchInput(BaseModel):
     half_length_minutes: int = Field(default=45, ge=1, le=90)
     num_halves: int = Field(default=2, ge=1, le=4)
     half_time_break_minutes: int = Field(default=15, ge=0, le=30)
+    has_extra_time: bool = False
+    extra_time_half_length_minutes: int = Field(default=15, ge=1, le=30)
 
     @property
     def total_length_minutes(self) -> int:
-        return (self.half_length_minutes * self.num_halves) + (
+        regulation = (self.half_length_minutes * self.num_halves) + (
             self.half_time_break_minutes * (self.num_halves - 1)
+        )
+        return regulation + (
+            EXTRA_TIME_PERIODS * self.extra_time_half_length_minutes if self.has_extra_time else 0
         )
 
     @model_validator(mode="after")
@@ -197,6 +205,7 @@ class MatchEventInput(BaseModel):
     secondary_player_id: str | None = None
     related_event_id: str | None = None
     notes: str | None = Field(default=None, max_length=1000)
+    is_penalty: bool = False
     client_operation_id: str = Field(min_length=8, max_length=64)
 
 
@@ -207,6 +216,7 @@ class MatchEventUpdate(BaseModel):
     player_id: str | None = None
     secondary_player_id: str | None = None
     notes: str | None = Field(default=None, max_length=1000)
+    is_penalty: bool | None = None
 
 
 class MatchEventRead(MatchEventInput, ORMModel):
