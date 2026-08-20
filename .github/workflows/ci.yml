@@ -96,6 +96,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: cloudflare-api
+          wranglerVersion: "4.124.0"
           preCommands: wrangler d1 migrations apply aimz-staging-db --remote
           command: deploy --minify
       - name: Verify match phase endpoint
