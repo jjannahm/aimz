@@ -10,6 +10,7 @@ import { ChoiceField } from '@/src/components/ChoiceField';
 import { Screen } from '@/src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
+import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
 import { theme } from '@/src/theme';
 import { LINEUP_FORMATS, type LineupFormat, type Player } from '@/src/types/api';
@@ -57,7 +58,7 @@ export default function LineupScreen() {
           venue: match.venue, status: match.status, lineup_format: format,
         });
       }
-      await client.invalidateQueries({ queryKey: ['live-match', id] });
+      await invalidateAfterWrite(client, 'lineup', 'match');
       router.back();
     },
     onError: (error) => showMessage('Lineup not saved', (error as ApiError).message),

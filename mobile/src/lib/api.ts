@@ -176,6 +176,39 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   }
 }
 
+
+const PAGE_SIZE = 100;
+
+/**
+ * Walk every page of a list endpoint.
+ *
+ * The API caps `limit` at 100, so a single request silently truncates once a
+ * collection outgrows one page — squad counts drop players and pickers stop
+ * offering them. Callers that need the whole set use this instead.
+ */
+async function allPages<T>(path: string, query = ''): Promise<Page<T>> {
+  // Callers pass their own filters and often a limit; paging is decided here,
+  // so any incoming limit/offset is dropped rather than duplicated.
+  const params = new URLSearchParams(query.replace(/^\?/u, ''));
+  params.delete('limit');
+  params.delete('offset');
+  params.set('limit', String(PAGE_SIZE));
+
+  const pageAt = (offset: number) => {
+    params.set('offset', String(offset));
+    return request<Page<T>>(`${path}?${params.toString()}`);
+  };
+
+  const first = await pageAt(0);
+  const items = [...first.items];
+  while (items.length < first.total) {
+    const next = await pageAt(items.length);
+    if (!next.items.length) break; // Defensive: never spin if the server disagrees.
+    items.push(...next.items);
+  }
+  return { ...first, items, limit: items.length, offset: 0 };
+}
+
 export const api = {
   waitUntilReady,
   getHealth: () => request<{ status: 'ok'; service: string; version: string; environment: string }>('/api/v1/health', { authenticated: false }),
@@ -204,7 +237,7 @@ export const api = {
       method: 'POST', body: { current_password, new_password },
     }),
   deleteMe: () => request<void>('/api/v1/users/me', { method: 'DELETE' }),
-  teams: (query = '') => request<Page<Team>>(`/api/v1/teams${query}`),
+  teams: (query = '') => allPages<Team>('/api/v1/teams', query),
   createTeam: (payload: Partial<Team>) => request<Team>('/api/v1/teams', { method: 'POST', body: payload }),
   updateTeam: (id: string, payload: Partial<Team>) => request<Team>(`/api/v1/teams/${id}`, { method: 'PATCH', body: payload }),
   deleteTeam: (id: string) => request<void>(`/api/v1/teams/${id}`, { method: 'DELETE' }),
@@ -212,7 +245,7 @@ export const api = {
   createCompetition: (payload: Partial<Competition>) => request<Competition>('/api/v1/competitions', { method: 'POST', body: payload }),
   updateCompetition: (id: string, payload: Partial<Competition>) => request<Competition>(`/api/v1/competitions/${id}`, { method: 'PATCH', body: payload }),
   deleteCompetition: (id: string) => request<void>(`/api/v1/competitions/${id}`, { method: 'DELETE' }),
-  players: (query = '') => request<Page<Player>>(`/api/v1/players${query}`),
+  players: (query = '') => allPages<Player>('/api/v1/players', query),
   createPlayer: (payload: Partial<Player>) => request<Player>('/api/v1/players', { method: 'POST', body: payload }),
   updatePlayer: (id: string, payload: Partial<Player>) => request<Player>(`/api/v1/players/${id}`, { method: 'PATCH', body: payload }),
   deletePlayer: (id: string) => request<void>(`/api/v1/players/${id}`, { method: 'DELETE' }),

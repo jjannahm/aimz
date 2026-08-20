@@ -9,6 +9,7 @@ import { MatchProgressRail, MatchStatusIndicator } from '@/src/components/MatchS
 import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
+import { invalidateAfterWrite } from '@/src/lib/cache';
 import { confirmAction, showMessage } from '@/src/lib/platformAlert';
 import { useMatchClock } from '@/src/lib/matchClock';
 import { theme } from '@/src/theme';
@@ -24,7 +25,7 @@ export default function MatchDetailScreen() {
   // Finishing by hand always wins over the time-based phase calculation.
   const endMatch = useMutation({
     mutationFn: () => api.setMatchPhase(id, 'finish_match'),
-    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['live-match', id] }); await client.invalidateQueries({ queryKey: ['matches'] }); },
+    onSuccess: async () => { await invalidateAfterWrite(client, 'match'); },
     onError: (error) => showMessage('Match not ended', (error as ApiError).message),
   });
   const playerNames = new Map(players.data?.items.map((player) => [player.id, player.name]));
