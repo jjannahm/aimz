@@ -71,6 +71,8 @@ export default function LineupScreen() {
   const bench = roster.filter((player) => !starters.has(player.id));
   const selected = starters.size;
   const complete = format !== null && selected === format;
+  // The formation is what draws the pitch, so a lineup is not finished without it.
+  const ready = complete && formation !== null;
   const locked = Boolean(match && match.status !== 'scheduled');
 
   const toggle = (playerId: string) => setStarters((current) => {
@@ -108,8 +110,8 @@ export default function LineupScreen() {
           <Text style={styles.groupTitle}>Substitutes ({bench.length})</Text>
           <Text style={styles.hint}>{bench.length ? bench.map((player) => player.name).join(', ') : 'Everyone is starting.'}</Text>
           {complete ? <ChoiceField label="Formation" onChange={setFormation} options={FORMATIONS[format].map((shape) => ({ label: shape, value: shape }))} placeholder={`Shapes for ${format - 1} outfield players`} value={formation ?? undefined} /> : null}
-          <AppButton disabled={!complete || save.isPending} label={save.isPending ? 'Saving…' : 'Save lineup'} onPress={() => save.mutate()} />
-          {!complete ? <Text style={styles.hint}>Select exactly {format} starters to save.</Text> : null}
+          <AppButton disabled={!ready || save.isPending} label={save.isPending ? 'Saving…' : 'Save lineup'} onPress={() => save.mutate()} />
+          {!complete ? <Text style={styles.hint}>Select exactly {format} starters to save.</Text> : !formation ? <Text style={styles.hint}>Choose a formation to save.</Text> : null}
         </>}
       </>}
   </Screen>;
