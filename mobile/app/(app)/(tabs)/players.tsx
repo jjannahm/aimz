@@ -5,6 +5,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/src/components/Screen';
+import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { copy } from '@/src/i18n/en';
@@ -26,7 +27,7 @@ function Chevron() {
 
 function PlayerRow({ player, subtitle, trailing }: { player: Player; subtitle: string; trailing?: ReactNode }) {
   return <Pressable accessibilityLabel={`${player.name}, ${subtitle}`} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: player.photo_url }} style={styles.photo} /> : <View accessibilityElementsHidden style={styles.number}><Text style={styles.numberText}>{player.jersey_number ?? '–'}</Text></View>}
+    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: player.photo_url }} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={48} />}
     <View style={styles.copy}><Text style={styles.name}>{player.name}</Text><Text style={styles.position}>{subtitle}</Text></View>
     {trailing}
     <Chevron />
