@@ -41,11 +41,24 @@ export type Player = Omit<Schema['PlayerRead'], 'jersey_number' | 'photo_key'> &
   photo_key: string | null;
 };
 
-export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'competition'> & {
+// The period structure is stored per match; the generated schema catches up on
+// the next `npm run api:types`.
+export type MatchTimeStructure = {
+  half_length_minutes: number;
+  num_halves: number;
+  half_time_break_minutes: number;
+};
+
+export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'competition'> & MatchTimeStructure & {
   home_team: Team | null;
   away_team: Team | null;
   competition: Competition | null;
 };
+
+/** (half × halves) + (break × (halves − 1)). */
+export function totalMatchMinutes({ half_length_minutes, num_halves, half_time_break_minutes }: MatchTimeStructure): number {
+  return half_length_minutes * num_halves + half_time_break_minutes * Math.max(0, num_halves - 1);
+}
 
 export type MatchEvent = Omit<
   Schema['MatchEventRead'],
