@@ -135,6 +135,9 @@ export function publicMatch(
 ): Record<string, unknown> {
   return {
     ...match,
+    // D1 stores flags as integers; clients expect the boolean the FastAPI
+    // reference returns.
+    has_extra_time: Boolean(match.has_extra_time),
     home_team: publicTeam(homeTeam),
     away_team: publicTeam(awayTeam),
     competition: publicCompetition(competition),
