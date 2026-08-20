@@ -78,9 +78,41 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  worker:
+    name: Deploy Worker
+    needs: backend
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: staging
+      url: https://aimz-api-staging.shared-links.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply D1 migrations and deploy staging API
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare-api
+          preCommands: wrangler d1 migrations apply aimz-staging-db --remote
+          command: deploy --minify
+      - name: Verify match phase endpoint
+        run: |
+          status="$(curl --silent --show-error --output /tmp/phase-probe.json --write-out '%{http_code}' \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"action":"start_match"}' \
+            https://aimz-api-staging.shared-links.workers.dev/api/v1/matches/deployment-probe/phase)"
+          if [ "$status" != "401" ]; then
+            cat /tmp/phase-probe.json
+            exit 1
+          fi
+
   pages:
     name: Deploy Pages
-    needs: [backend, mobile]
+    needs: [mobile, worker]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:

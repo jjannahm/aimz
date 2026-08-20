@@ -74,7 +74,7 @@ Share credentials and invitation codes privately. Do not place them in the repos
 2. Push the branch and open a pull request into `main`.
 3. Wait for the required `Backend` and `Mobile` checks. The Backend check also typechecks and bundles the Worker.
 4. Review and merge.
-5. Apply any new D1 migrations before deploying the Worker, then rebuild and deploy Pages if its API URL or code changed.
+5. The `main` workflow applies pending D1 migrations, deploys and probes the Worker, then deploys Pages. Do not publish the web app against an older API manually.
 
 ## Retiring Render and Neon
 
