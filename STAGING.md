@@ -16,6 +16,23 @@ The Worker does not sleep after inactivity, so the preview no longer has Render 
 
 The `cloudflare-api/` package preserves the mobile app's `/api/v1` contract for authentication, teams, competitions, players, matches, live scoring, lineups, statistics, standings, and invitation management. The existing FastAPI backend remains the local and future production-oriented reference implementation.
 
+### Required GitHub Actions secrets
+
+`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` drive both deploy jobs. The
+token must carry **all** of these permissions, or the deploy fails:
+
+| Permission | Needed for |
+| --- | --- |
+| Account · D1 · Edit | `wrangler d1 migrations apply --remote` |
+| Account · Workers Scripts · Edit | `wrangler deploy` |
+| Account · Cloudflare Pages · Edit | `wrangler pages deploy` |
+
+A token missing D1 · Edit fails the `Deploy Worker` job with `The given account
+is not valid or is not authorized to access this service [code: 7403]`. Because
+`Deploy Pages` needs `Deploy Worker`, that single missing permission silently
+stops every web deployment while `main` keeps merging green pull requests. If
+web fixes stop reaching the preview, check this first.
+
 ### Required encrypted secrets
 
 Set these with `wrangler secret put` or `wrangler secret bulk`; never place their values in source, GitHub, logs, or the web bundle:
@@ -47,13 +64,22 @@ Build the Expo web app against the Worker and deploy the static export:
 
 ```bash
 cd mobile
-EXPO_PUBLIC_API_URL=https://aimz-api-staging.shared-links.workers.dev \
-EXPO_PUBLIC_APP_ENV=staging \
-EXPO_PUBLIC_ENABLE_MEDIA=false \
-EXPO_PUBLIC_ENABLE_PASSWORD_RESET=false \
-pnpm web:export
+pnpm web:export:staging
 pnpm web:deploy:cloudflare
 ```
+
+`web:export:staging` sets every required `EXPO_PUBLIC_*` value, so a hand-typed
+variable can never be missed. Always use it instead of running `pnpm web:export`
+with your own environment; `mobile/.env` points at localhost for device
+development and silently produces an unusable preview if it wins.
+
+`EXPO_PUBLIC_*` values are inlined into the bundle when Metro transforms it, so a
+warm cache can emit a bundle that still targets `http://127.0.0.1:8000`. That
+shipped once and left the preview showing "Cannot reach the AIMZ server" for
+every viewer. `web:export` therefore always exports with `--clear` and then runs
+`scripts/verify-web-export.mjs`, which fails the build when the bundle does not
+contain the API URL and app environment it was built for. CI re-checks the same
+invariant against the live site after deploying.
 
 The files in `mobile/public/` provide SPA routing, security headers, and `noindex` protection. The Worker permits the exact permanent Pages origin and local browser development origins.
 

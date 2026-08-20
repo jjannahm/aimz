@@ -63,12 +63,7 @@ jobs:
       - name: Check Expo dependency compatibility
         run: pnpm exec expo install --check
       - name: Export staging web app
-        run: pnpm web:export
-        env:
-          EXPO_PUBLIC_API_URL: https://aimz-api-staging.shared-links.workers.dev
-          EXPO_PUBLIC_APP_ENV: staging
-          EXPO_PUBLIC_ENABLE_MEDIA: "false"
-          EXPO_PUBLIC_ENABLE_PASSWORD_RESET: "false"
+        run: pnpm web:export:staging
       - name: Upload staging web artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
@@ -135,3 +130,19 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy mobile/dist --project-name=aimz-egypt-staging --branch=main --commit-hash=${{ github.sha }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify the live site targets the staging API
+        run: |
+          set -euo pipefail
+          api="https://aimz-api-staging.shared-links.workers.dev"
+          for attempt in 1 2 3 4 5; do
+            bundle="$(curl --silent --show-error --fail https://aimz-egypt-staging.pages.dev/ \
+              | grep -o '/_expo/static/js/web/entry-[a-f0-9]*\.js' | head -n 1)"
+            if [ -n "$bundle" ] && curl --silent --show-error --fail "https://aimz-egypt-staging.pages.dev${bundle}" | grep -q "$api"; then
+              echo "Live bundle ${bundle} targets ${api}."
+              exit 0
+            fi
+            echo "Attempt ${attempt}: live bundle not serving ${api} yet; retrying." >&2
+            sleep 10
+          done
+          echo "The deployed site is not targeting ${api}. It may have been built with a stale cache." >&2
+          exit 1
