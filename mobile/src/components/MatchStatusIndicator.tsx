@@ -9,7 +9,7 @@ type StatusProps = {
   muted?: boolean;
 };
 
-export function MatchStatusIndicator({ clock, muted = false }: StatusProps) {
+export function LiveDot({ running = true, testID = 'live-dot' }: { running?: boolean; testID?: string }) {
   const opacity = useRef(new Animated.Value(1)).current;
   const [reduceMotion, setReduceMotion] = useState(true);
 
@@ -28,7 +28,7 @@ export function MatchStatusIndicator({ clock, muted = false }: StatusProps) {
   useEffect(() => {
     opacity.stopAnimation();
     opacity.setValue(1);
-    if (!clock.isRunning || reduceMotion) return undefined;
+    if (!running || reduceMotion) return undefined;
     const animation = Animated.loop(
       Animated.sequence([
         Animated.timing(opacity, { duration: 500, easing: Easing.inOut(Easing.ease), toValue: 0.3, useNativeDriver: true }),
@@ -37,12 +37,16 @@ export function MatchStatusIndicator({ clock, muted = false }: StatusProps) {
     );
     animation.start();
     return () => animation.stop();
-  }, [clock.isRunning, opacity, reduceMotion]);
+  }, [opacity, reduceMotion, running]);
 
+  return <Animated.View accessible={false} style={[styles.dot, { opacity }]} testID={testID} />;
+}
+
+export function MatchStatusIndicator({ clock, muted = false }: StatusProps) {
   return (
     <View accessible accessibilityLabel={clock.accessibilityLabel} accessibilityRole="text" style={styles.row}>
       <Text style={[styles.label, muted && styles.muted]}>{clock.label}</Text>
-      {clock.isRunning ? <Animated.View style={[styles.dot, { opacity }]} testID="live-dot" /> : null}
+      {clock.isRunning ? <LiveDot /> : null}
       {clock.clockText ? <Text style={[styles.clock, muted && styles.muted]}>{clock.clockText}</Text> : null}
     </View>
   );

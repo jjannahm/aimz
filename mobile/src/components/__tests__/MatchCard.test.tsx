@@ -22,6 +22,6 @@ describe('MatchCard', () => {
     const card = screen.getByRole('button', { name: /AIMZ Navy 2, Cairo Stars 1. LIVE/i });
     fireEvent.press(card);
     expect(router.push).toHaveBeenCalledWith('/match/match-1');
-    expect(screen.getByText('2–1')).toBeTruthy();
+    expect(screen.getByText('2 - 1')).toBeTruthy();
   });
 });
