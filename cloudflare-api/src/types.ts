@@ -1,6 +1,7 @@
 export type UserRole = "player" | "admin";
 export type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
+export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";
 export type EventType = "goal" | "assist" | "yellow_card" | "red_card" | "substitution";
 
 export interface UserRow {
@@ -57,6 +58,8 @@ export interface MatchRow {
   kickoff_datetime: string;
   venue: string;
   status: MatchStatus;
+  phase: MatchPhase;
+  phase_started_at: string | null;
   home_score: number;
   away_score: number;
   revision: number;

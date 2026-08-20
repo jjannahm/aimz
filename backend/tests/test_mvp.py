@@ -136,9 +136,12 @@ async def test_full_match_scoring_standings_and_stats(
     match_id = match.json()["id"]
 
     match_payload["status"] = "live"
-    assert (
-        await client.patch(f"/api/v1/matches/{match_id}", headers=admin_headers, json=match_payload)
-    ).status_code == 200
+    started_match = await client.patch(
+        f"/api/v1/matches/{match_id}", headers=admin_headers, json=match_payload
+    )
+    assert started_match.status_code == 200
+    assert started_match.json()["phase"] == "first_half"
+    assert started_match.json()["phase_started_at"] is not None
     event_payload = {
         "type": "goal",
         "minute": 23,
@@ -194,6 +197,115 @@ async def test_full_match_scoring_standings_and_stats(
     assert deleted.status_code == 204
     corrected = await client.get(f"/api/v1/matches/{match_id}/live", headers=admin_headers)
     assert corrected.json()["match"]["home_score"] == 0
+
+
+@pytest.mark.asyncio
+async def test_operator_controlled_match_clock_phases(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    home = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Clock Test"}
+    )
+    away = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "Clock Opponent"}
+    )
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Clock Cup", "season": "2026/27", "type": "tournament"},
+    )
+    payload = {
+        "competition_id": competition.json()["id"],
+        "home_team_id": home.json()["id"],
+        "away_team_id": away.json()["id"],
+        "kickoff_datetime": datetime.now(UTC).isoformat(),
+        "venue": "AIMZ Arena",
+        "status": "scheduled",
+        "has_extra_time": True,
+    }
+    created = await client.post("/api/v1/matches", headers=admin_headers, json=payload)
+    assert created.status_code == 201
+    assert created.json()["phase"] == "not_started"
+    assert created.json()["phase_started_at"] is None
+    match_id = created.json()["id"]
+
+    unauthorized = await client.post(
+        f"/api/v1/matches/{match_id}/phase", json={"action": "start_match"}
+    )
+    assert unauthorized.status_code == 401
+
+    revision = 0
+    for action, expected_phase, running in [
+        ("start_match", "first_half", True),
+        ("halftime", "halftime", False),
+        ("start_second_half", "second_half", True),
+        ("start_extra_time", "extra_time", True),
+        ("finish_match", "finished", False),
+    ]:
+        response = await client.post(
+            f"/api/v1/matches/{match_id}/phase",
+            headers=admin_headers,
+            json={"action": action},
+        )
+        assert response.status_code == 200, response.text
+        revision += 1
+        assert response.json()["phase"] == expected_phase
+        assert response.json()["revision"] == revision
+        assert (response.json()["phase_started_at"] is not None) is running
+
+    snapshot = await client.get(f"/api/v1/matches/{match_id}/live", headers=admin_headers)
+    assert snapshot.json()["match"]["phase"] == "finished"
+
+
+@pytest.mark.asyncio
+async def test_match_clock_rejects_skipped_phases(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    home = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Phase Test"}
+    )
+    away = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "Phase Opponent"}
+    )
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Phase Cup", "season": "2026/27", "type": "tournament"},
+    )
+    created = await client.post(
+        "/api/v1/matches",
+        headers=admin_headers,
+        json={
+            "competition_id": competition.json()["id"],
+            "home_team_id": home.json()["id"],
+            "away_team_id": away.json()["id"],
+            "kickoff_datetime": datetime.now(UTC).isoformat(),
+            "venue": "AIMZ Arena",
+            "status": "scheduled",
+        },
+    )
+    response = await client.post(
+        f"/api/v1/matches/{created.json()['id']}/phase",
+        headers=admin_headers,
+        json={"action": "start_second_half"},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "invalid_match_phase"
+
+    for action in ("start_match", "halftime", "start_second_half"):
+        response = await client.post(
+            f"/api/v1/matches/{created.json()['id']}/phase",
+            headers=admin_headers,
+            json={"action": action},
+        )
+        assert response.status_code == 200
+    response = await client.post(
+        f"/api/v1/matches/{created.json()['id']}/phase",
+        headers=admin_headers,
+        json={"action": "start_extra_time"},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "invalid_match_phase"
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,15 @@ class MatchStatus(StrEnum):
     finished = "finished"
 
 
+class MatchPhase(StrEnum):
+    not_started = "not_started"
+    first_half = "first_half"
+    halftime = "halftime"
+    second_half = "second_half"
+    extra_time = "extra_time"
+    finished = "finished"
+
+
 class EventType(StrEnum):
     goal = "goal"
     assist = "assist"
@@ -197,6 +206,13 @@ class Match(TimestampMixin, Base):
     status: Mapped[MatchStatus] = mapped_column(
         Enum(MatchStatus, native_enum=False), default=MatchStatus.scheduled, index=True
     )
+    phase: Mapped[MatchPhase] = mapped_column(
+        Enum(MatchPhase, native_enum=False),
+        default=MatchPhase.not_started,
+        server_default=MatchPhase.not_started.value,
+        index=True,
+    )
+    phase_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     home_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     away_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

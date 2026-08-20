@@ -4,6 +4,8 @@ type Schema = components['schemas'];
 
 export type UserRole = Schema['UserRole'];
 export type MatchStatus = Schema['MatchStatus'];
+export type MatchPhase = Schema['MatchPhase'];
+export type MatchPhaseAction = Schema['MatchPhaseUpdate']['action'];
 export type CompetitionType = Schema['CompetitionType'];
 export type EventType = Schema['EventType'];
 export type User = Schema['UserRead'];
@@ -41,20 +43,19 @@ export type Player = Omit<Schema['PlayerRead'], 'jersey_number' | 'photo_key'> &
   photo_key: string | null;
 };
 
-// The period structure is stored per match; the generated schema catches up on
-// the next `npm run api:types`.
-export type MatchTimeStructure = {
-  half_length_minutes: number;
-  num_halves: number;
-  half_time_break_minutes: number;
-  has_extra_time: boolean;
-  extra_time_half_length_minutes: number;
-};
+export type MatchTimeStructure = Pick<
+  Schema['MatchRead'],
+  | 'half_length_minutes'
+  | 'num_halves'
+  | 'half_time_break_minutes'
+  | 'has_extra_time'
+  | 'extra_time_half_length_minutes'
+>;
 
 /** Extra time is always two periods, per football convention. */
 export const EXTRA_TIME_PERIODS = 2;
 
-export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'competition'> & MatchTimeStructure & {
+export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'competition'> & {
   home_team: Team | null;
   away_team: Team | null;
   competition: Competition | null;

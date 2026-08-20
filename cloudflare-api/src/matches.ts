@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
 import { ApiProblem, adminUser, booleanField, enumField, jsonArray, jsonObject, nowIso, numberField, publicPlayer, publicTeam, stringField } from "./helpers";
 import { getJoinedMatch, joinedMatch } from "./domain";
+import { MatchPhaseTransitionError, transitionMatchPhase } from "./match-clock";
 import type { CompetitionRow, EventRow, LineupRow, MatchRow, PlayerRow, StatRow, TeamRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -18,6 +19,22 @@ function publicStat(stat: StatRow): Record<string, unknown> {
 }
 
 export function registerMatchRoutes(app: App): void {
+  app.post("/api/v1/matches/:id/phase", async (c) => {
+    await adminUser(c);
+    const match = await getJoinedMatch(c.env, c.req.param("id"));
+    const body = await jsonObject(c);
+    const action = enumField(body, "action", ["start_match", "halftime", "start_second_half", "start_extra_time", "finish_match"] as const);
+    const updated = nowIso();
+    let clock;
+    try { clock = transitionMatchPhase(match, action, updated); }
+    catch (error) {
+      if (error instanceof MatchPhaseTransitionError) throw new ApiProblem(409, error.code, error.message);
+      throw error;
+    }
+    await c.env.DB.prepare("UPDATE matches SET status=?, phase=?, phase_started_at=?, revision=revision+1, updated_at=? WHERE id=?").bind(clock.status, clock.phase, clock.phase_started_at, updated, match.id).run();
+    return c.json(joinedMatch(await getJoinedMatch(c.env, match.id)));
+  });
+
   app.get("/api/v1/matches/:id/live", async (c) => {
     const match = await getJoinedMatch(c.env, c.req.param("id"));
     const etag = `W/\"${match.id}-${match.revision}\"`;
