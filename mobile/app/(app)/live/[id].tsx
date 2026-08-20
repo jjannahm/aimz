@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AppButton } from '@/src/components/AppButton';
@@ -13,6 +13,7 @@ import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { formatMatchClock, useMatchClock } from '@/src/lib/matchClock';
+import { confirmAction, showMessage } from '@/src/lib/platformAlert';
 import { theme } from '@/src/theme';
 import type { EventType, LiveMatchSnapshot, MatchEvent, MatchPhaseAction } from '@/src/types/api';
 
@@ -35,7 +36,7 @@ export default function LiveScoringScreen() {
   useEffect(() => { if (teamId && eligiblePlayers.every((player) => player.id !== playerId || player.team_id !== teamId)) setPlayerId(''); }, [teamId, eligiblePlayers, playerId]);
   const phaseMutation = useMutation({
     mutationFn: (action: MatchPhaseAction) => api.setMatchPhase(id, action),
-    onError: (error) => Alert.alert('Match clock not updated', (error as ApiError).message),
+    onError: (error) => showMessage('Match clock not updated', (error as ApiError).message),
     onSuccess: async (updated) => {
       client.setQueryData<LiveMatchSnapshot>(['live-match', id], (current) => current ? { ...current, match: updated, revision: updated.revision } : current);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -45,13 +46,13 @@ export default function LiveScoringScreen() {
   const addEventMutation = useMutation({
     mutationFn: () => api.createEvent(id, { type: eventType, minute: minute ? Number(minute) : null, team_id: teamId, player_id: playerId || null, client_operation_id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }),
     onMutate: async () => { await client.cancelQueries({ queryKey: ['live-match', id] }); const previous = client.getQueryData<LiveMatchSnapshot>(['live-match', id]); if (previous) { const optimistic: MatchEvent = { id: `pending-${Date.now()}`, match_id: id, is_penalty: false, type: eventType, minute: minute ? Number(minute) : null, team_id: teamId, player_id: playerId || null, secondary_player_id: null, related_event_id: null, notes: null, client_operation_id: 'pending', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }; client.setQueryData<LiveMatchSnapshot>(['live-match', id], { ...previous, events: [...previous.events, optimistic], match: { ...previous.match, home_score: previous.match.home_score + (eventType === 'goal' && teamId === previous.match.home_team_id ? 1 : 0), away_score: previous.match.away_score + (eventType === 'goal' && teamId === previous.match.away_team_id ? 1 : 0) } }); } return { previous }; },
-    onError: (error, _variables, context) => { if (context?.previous) client.setQueryData(['live-match', id], context.previous); Alert.alert('Event not saved', (error as ApiError).message); },
+    onError: (error, _variables, context) => { if (context?.previous) client.setQueryData(['live-match', id], context.previous); showMessage('Event not saved', (error as ApiError).message); },
     onSuccess: async () => { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); setMinute(''); await client.invalidateQueries({ queryKey: ['live-match', id] }); },
   });
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
-  const saveRoster = async () => { if (!match) return; try { await api.lineup(id, eligiblePlayers.filter((player) => starters.has(player.id)).map((player) => ({ player_id: player.id, team_id: player.team_id, is_starter: true, position: player.position, jersey_number: player.jersey_number }))); await api.stats(id, eligiblePlayers.filter((player) => Number(minutes[player.id] ?? 0) > 0).map((player) => ({ player_id: player.id, appeared: true, minutes_played: Number(minutes[player.id]) }))); await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); Alert.alert('Roster saved', 'Lineup and minutes are now part of this match.'); await matchQuery.refetch(); } catch (error) { Alert.alert('Could not save roster', (error as ApiError).message); } };
-  const deleteEvent = (event: MatchEvent) => Alert.alert('Remove event?', 'The score and player totals will be recalculated.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { try { await api.deleteEvent(id, event.id); await matchQuery.refetch(); } catch (error) { Alert.alert('Could not remove event', (error as ApiError).message); } } }]);
-  const confirmPhase = (title: string, message: string, action: MatchPhaseAction, actionLabel: string) => Alert.alert(title, message, [{ text: 'Cancel', style: 'cancel' }, { text: actionLabel, onPress: () => phaseMutation.mutate(action) }]);
+  const saveRoster = async () => { if (!match) return; try { await api.lineup(id, eligiblePlayers.filter((player) => starters.has(player.id)).map((player) => ({ player_id: player.id, team_id: player.team_id, is_starter: true, position: player.position, jersey_number: player.jersey_number }))); await api.stats(id, eligiblePlayers.filter((player) => Number(minutes[player.id] ?? 0) > 0).map((player) => ({ player_id: player.id, appeared: true, minutes_played: Number(minutes[player.id]) }))); await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); showMessage('Roster saved', 'Lineup and minutes are now part of this match.'); await matchQuery.refetch(); } catch (error) { showMessage('Could not save roster', (error as ApiError).message); } };
+  const deleteEvent = (event: MatchEvent) => confirmAction('Remove event?', 'The score and player totals will be recalculated.', 'Remove', async () => { try { await api.deleteEvent(id, event.id); await matchQuery.refetch(); } catch (error) { showMessage('Could not remove event', (error as ApiError).message); } });
+  const confirmPhase = (title: string, message: string, action: MatchPhaseAction, actionLabel: string) => confirmAction(title, message, actionLabel, () => phaseMutation.mutate(action));
   const regulationSeconds = (match?.half_length_minutes ?? 45) * (match?.num_halves ?? 2) * 60;
   const secondHalfStart = formatMatchClock(regulationSeconds / 2);
   const extraTimeStart = formatMatchClock(regulationSeconds);
