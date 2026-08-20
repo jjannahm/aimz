@@ -24,12 +24,12 @@ const eventOptions: { label: string; value: EventType; icon: keyof typeof Ionico
 ];
 
 export default function LiveScoringScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, event } = useLocalSearchParams<{ id: string; event?: string }>();
   const { user } = useAuth();
   const client = useQueryClient();
   const matchQuery = useQuery({ queryKey: ['live-match', id], queryFn: () => api.live(id), enabled: Boolean(id), refetchInterval: 12_000 });
   const playersQuery = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
-  const [teamId, setTeamId] = useState(''); const [playerId, setPlayerId] = useState(''); const [minute, setMinute] = useState(''); const [eventType, setEventType] = useState<EventType>('goal'); const [isPenalty, setIsPenalty] = useState(false); const [offPlayerId, setOffPlayerId] = useState('');
+  const [teamId, setTeamId] = useState(''); const [playerId, setPlayerId] = useState(''); const [minute, setMinute] = useState(''); const [eventType, setEventType] = useState<EventType>(event === 'substitution' ? 'substitution' : 'goal'); const [isPenalty, setIsPenalty] = useState(false); const [offPlayerId, setOffPlayerId] = useState('');
   const match = matchQuery.data?.match;
   const clock = useMatchClock(match);
   const eligiblePlayers = useMemo(() => playersQuery.data?.items.filter((player) => player.team_id === match?.home_team_id || player.team_id === match?.away_team_id) ?? [], [playersQuery.data, match]);
