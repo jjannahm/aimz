@@ -68,9 +68,9 @@ export default function ManageScreen() {
   const [resource, setResource] = React.useState<Resource>('teams');
   const [editing, setEditing] = React.useState<Entity | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
-  const teams = useQuery({ queryKey: ['teams', 'admin'], queryFn: () => api.teams('?active=&limit=100') });
+  const teams = useQuery({ queryKey: ['teams', 'admin'], queryFn: () => api.teams('?limit=100') });
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
-  const players = useQuery({ queryKey: ['players'], queryFn: () => api.players('?active=&limit=100') });
+  const players = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
   const matches = useQuery({ queryKey: ['matches', 'admin'], queryFn: () => api.matches('?limit=100') });
   const invites = useQuery({ queryKey: ['invites'], queryFn: api.invites, enabled: user?.role === 'admin' });
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: defaults });
