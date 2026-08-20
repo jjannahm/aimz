@@ -228,6 +228,9 @@ class Match(TimestampMixin, Base):
     extra_time_half_length_minutes: Mapped[int] = mapped_column(
         Integer, default=15, server_default="15"
     )
+    # How many players start for AIMZ: squads play 5-, 6-, 7-, 9- and 11-a-side.
+    # Null until a lineup is entered.
+    lineup_format: Mapped[int | None] = mapped_column(Integer)
 
     competition: Mapped[Competition] = relationship()
     home_team: Mapped[Team] = relationship(foreign_keys=[home_team_id])

@@ -123,6 +123,14 @@ async def replace_lineup(
     session: SessionDep,
 ) -> list[MatchLineupEntry]:
     match = await require_match(session, match_id)
+    # Once the match is under way, who is on the pitch changes through
+    # substitutions rather than by rewriting who started.
+    if match.status != MatchStatus.scheduled:
+        raise api_error(
+            409,
+            "lineup_locked",
+            "The lineup is locked once the match starts. Log a substitution instead.",
+        )
     seen: set[str] = set()
     rows: list[MatchLineupEntry] = []
     for item in payload:
