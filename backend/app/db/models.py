@@ -148,6 +148,9 @@ class Team(TimestampMixin, Base):
         Boolean, default=True, server_default="true", index=True
     )
     logo_key: Mapped[str | None] = mapped_column(String(512))
+    # Set once per squad rather than per match; coaches rarely change week to week.
+    coach: Mapped[str | None] = mapped_column(String(160))
+    assistant_coach: Mapped[str | None] = mapped_column(String(160))
 
     players: Mapped[list[Player]] = relationship(back_populates="team")
 
@@ -231,6 +234,8 @@ class Match(TimestampMixin, Base):
     # How many players start for AIMZ: squads play 5-, 6-, 7-, 9- and 11-a-side.
     # Null until a lineup is entered.
     lineup_format: Mapped[int | None] = mapped_column(Integer)
+    # Outfield shape, e.g. "4-4-2"; the digits sum to lineup_format - 1.
+    formation: Mapped[str | None] = mapped_column(String(20))
 
     competition: Mapped[Competition] = relationship()
     home_team: Mapped[Team] = relationship(foreign_keys=[home_team_id])

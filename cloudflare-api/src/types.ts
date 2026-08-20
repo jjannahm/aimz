@@ -25,6 +25,8 @@ export interface TeamRow {
   is_aimz: number;
   is_active: number;
   logo_key: string | null;
+  coach: string | null;
+  assistant_coach: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -73,6 +75,8 @@ export interface MatchRow {
   extra_time_half_length_minutes: number;
   /** How many players start for AIMZ. Null until a lineup is entered. */
   lineup_format: number | null;
+  /** Outfield shape, e.g. "4-4-2"; digits sum to lineup_format - 1. */
+  formation: string | null;
   created_at: string;
   updated_at: string;
 }

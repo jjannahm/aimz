@@ -5,6 +5,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '@/src/components/Screen';
+import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { copy } from '@/src/i18n/en';
@@ -24,9 +25,9 @@ function Chevron() {
   return <Ionicons accessibilityElementsHidden color={theme.colors.textMuted} name="chevron-forward" size={20} />;
 }
 
-function PlayerRow({ player, subtitle, trailing }: { player: Player; subtitle: string; trailing?: ReactNode }) {
-  return <Pressable accessibilityLabel={`${player.name}, ${subtitle}`} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: player.photo_url }} style={styles.photo} /> : <View accessibilityElementsHidden style={styles.number}><Text style={styles.numberText}>{player.jersey_number ?? '–'}</Text></View>}
+function PlayerRow({ player, subtitle, spoken, trailing }: { player: Player; subtitle: string; spoken?: string; trailing?: ReactNode }) {
+  return <Pressable accessibilityLabel={`${player.name}, ${spoken ?? subtitle}`} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: player.photo_url }} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={48} />}
     <View style={styles.copy}><Text style={styles.name}>{player.name}</Text><Text style={styles.position}>{subtitle}</Text></View>
     {trailing}
     <Chevron />
@@ -78,7 +79,7 @@ function TeamsSection() {
       <Text style={styles.backText}>All teams</Text>
     </Pressable>
     <Text accessibilityRole="header" style={styles.squadTitle}>{open.team.name}</Text>
-    {open.players.length ? <FlatList contentContainerStyle={styles.listContent} data={open.players} keyExtractor={(player) => player.id} renderItem={({ item }) => <PlayerRow player={item} subtitle={`${item.position}, number ${item.jersey_number ?? 'not assigned'}`} />} showsVerticalScrollIndicator={false} style={styles.list} /> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
+    {open.players.length ? <FlatList contentContainerStyle={styles.listContent} data={open.players} keyExtractor={(player) => player.id} renderItem={({ item }) => <PlayerRow player={item} spoken={`${item.position}, number ${item.jersey_number ?? 'not assigned'}`} subtitle={item.position} />} showsVerticalScrollIndicator={false} style={styles.list} /> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
   </View>;
 }
 

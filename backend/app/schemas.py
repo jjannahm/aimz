@@ -106,6 +106,8 @@ class TeamInput(BaseModel):
     is_aimz: bool = False
     is_active: bool = True
     logo_key: str | None = Field(default=None, max_length=512)
+    coach: str | None = Field(default=None, max_length=160)
+    assistant_coach: str | None = Field(default=None, max_length=160)
 
 
 class TeamRead(TeamInput, ORMModel):
@@ -170,6 +172,17 @@ class MatchInput(BaseModel):
     has_extra_time: bool = False
     extra_time_half_length_minutes: int = Field(default=15, ge=1, le=30)
     lineup_format: int | None = Field(default=None)
+    formation: str | None = Field(default=None, max_length=20)
+
+    @field_validator("formation")
+    @classmethod
+    def shaped_like_a_formation(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = value.split("-")
+        if len(parts) < 2 or not all(part.isdigit() and int(part) > 0 for part in parts):
+            raise ValueError("Formation must be digits separated by dashes, e.g. 4-4-2.")
+        return value
 
     @field_validator("lineup_format")
     @classmethod
@@ -191,6 +204,20 @@ class MatchInput(BaseModel):
     def distinct_teams(self) -> MatchInput:
         if self.home_team_id == self.away_team_id:
             raise ValueError("Home and away teams must be different.")
+        return self
+
+    @model_validator(mode="after")
+    def formation_fits_the_format(self) -> MatchInput:
+        # A 7-a-side formation cannot be played by an 11-a-side lineup: the
+        # outfield count is the format minus the keeper.
+        if self.formation is None or self.lineup_format is None:
+            return self
+        outfield = sum(int(part) for part in self.formation.split("-"))
+        if outfield != self.lineup_format - 1:
+            raise ValueError(
+                f"Formation {self.formation} covers {outfield} outfield players, "
+                f"but {self.lineup_format}-a-side needs {self.lineup_format - 1}."
+            )
         return self
 
 

@@ -27,6 +27,8 @@ interface JoinedMatchRow extends MatchRow {
   home_is_aimz: number;
   home_is_active: number;
   home_logo_key: string | null;
+  home_coach: string | null;
+  home_assistant_coach: string | null;
   home_created_at: string;
   home_updated_at: string;
   away_name: string;
@@ -36,6 +38,8 @@ interface JoinedMatchRow extends MatchRow {
   away_is_aimz: number;
   away_is_active: number;
   away_logo_key: string | null;
+  away_coach: string | null;
+  away_assistant_coach: string | null;
   away_created_at: string;
   away_updated_at: string;
   competition_name: string;
@@ -49,10 +53,12 @@ const matchSelect = `
   SELECT m.*,
     h.name home_name, h.squad_code home_squad_code, h.age_group home_age_group,
     h.season home_season, h.is_aimz home_is_aimz, h.is_active home_is_active,
-    h.logo_key home_logo_key, h.created_at home_created_at, h.updated_at home_updated_at,
+    h.logo_key home_logo_key, h.coach home_coach, h.assistant_coach home_assistant_coach,
+    h.created_at home_created_at, h.updated_at home_updated_at,
     a.name away_name, a.squad_code away_squad_code, a.age_group away_age_group,
     a.season away_season, a.is_aimz away_is_aimz, a.is_active away_is_active,
-    a.logo_key away_logo_key, a.created_at away_created_at, a.updated_at away_updated_at,
+    a.logo_key away_logo_key, a.coach away_coach, a.assistant_coach away_assistant_coach,
+    a.created_at away_created_at, a.updated_at away_updated_at,
     c.name competition_name, c.season competition_season, c.type competition_type,
     c.created_at competition_created_at, c.updated_at competition_updated_at
   FROM matches m
@@ -65,12 +71,14 @@ export function joinedMatch(row: JoinedMatchRow): Record<string, unknown> {
     id: row.home_team_id, name: row.home_name, squad_code: row.home_squad_code,
     age_group: row.home_age_group, season: row.home_season, is_aimz: row.home_is_aimz,
     is_active: row.home_is_active, logo_key: row.home_logo_key,
+    coach: row.home_coach, assistant_coach: row.home_assistant_coach,
     created_at: row.home_created_at, updated_at: row.home_updated_at,
   };
   const away: TeamRow = {
     id: row.away_team_id, name: row.away_name, squad_code: row.away_squad_code,
     age_group: row.away_age_group, season: row.away_season, is_aimz: row.away_is_aimz,
     is_active: row.away_is_active, logo_key: row.away_logo_key,
+    coach: row.away_coach, assistant_coach: row.away_assistant_coach,
     created_at: row.away_created_at, updated_at: row.away_updated_at,
   };
   const competition: CompetitionRow = {
@@ -125,9 +133,11 @@ export function registerDomainRoutes(app: App): void {
       is_aimz: booleanField(body, "is_aimz", false) ? 1 : 0,
       is_active: booleanField(body, "is_active", true) ? 1 : 0,
       logo_key: stringField(body, "logo_key", { optional: true, nullable: true, max: 512 }) ?? null,
+      coach: stringField(body, "coach", { optional: true, nullable: true, max: 160 }) ?? null,
+      assistant_coach: stringField(body, "assistant_coach", { optional: true, nullable: true, max: 160 }) ?? null,
       created_at: now, updated_at: now,
     };
-    await c.env.DB.prepare("INSERT INTO teams (id, name, squad_code, age_group, season, is_aimz, is_active, logo_key, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(team.id, team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, now, now).run();
+    await c.env.DB.prepare("INSERT INTO teams (id, name, squad_code, age_group, season, is_aimz, is_active, logo_key, coach, assistant_coach, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(team.id, team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, now, now).run();
     return c.json(publicTeam(team), 201);
   });
 
@@ -143,11 +153,13 @@ export function registerDomainRoutes(app: App): void {
       age_group: optionalNullableText(body, "age_group", current.age_group, 40),
       season: optionalNullableText(body, "season", current.season, 40),
       logo_key: optionalNullableText(body, "logo_key", current.logo_key, 512),
+      coach: optionalNullableText(body, "coach", current.coach, 160),
+      assistant_coach: optionalNullableText(body, "assistant_coach", current.assistant_coach, 160),
       is_aimz: typeof body.is_aimz === "boolean" ? (body.is_aimz ? 1 : 0) : current.is_aimz,
       is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active,
       updated_at: nowIso(),
     };
-    await c.env.DB.prepare("UPDATE teams SET name=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, updated_at=? WHERE id=?").bind(team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.updated_at, team.id).run();
+    await c.env.DB.prepare("UPDATE teams SET name=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, coach=?, assistant_coach=?, updated_at=? WHERE id=?").bind(team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, team.updated_at, team.id).run();
     return c.json(publicTeam(team));
   });
   app.delete("/api/v1/teams/:id", async (c) => deleteRestricted(c, "teams", "team", c.req.param("id")));
@@ -238,7 +250,7 @@ export function registerDomainRoutes(app: App): void {
         ? { status: "finished" as const, phase: "finished" as const, phase_started_at: null }
         : { status: "scheduled" as const, phase: "not_started" as const, phase_started_at: null };
     const row: MatchRow = { id: crypto.randomUUID(), ...match, ...clock, home_score: 0, away_score: 0, revision: 0, created_at: now, updated_at: now };
-    await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, phase, phase_started_at, home_score, away_score, revision, half_length_minutes, num_halves, half_time_break_minutes, has_extra_time, extra_time_half_length_minutes, lineup_format, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, row.phase, row.phase_started_at, row.half_length_minutes, row.num_halves, row.half_time_break_minutes, row.has_extra_time, row.extra_time_half_length_minutes, row.lineup_format, now, now).run();
+    await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, phase, phase_started_at, home_score, away_score, revision, half_length_minutes, num_halves, half_time_break_minutes, has_extra_time, extra_time_half_length_minutes, lineup_format, formation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, row.phase, row.phase_started_at, row.half_length_minutes, row.num_halves, row.half_time_break_minutes, row.has_extra_time, row.extra_time_half_length_minutes, row.lineup_format, row.formation, now, now).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, row.id)), 201);
   });
   app.patch("/api/v1/matches/:id", async (c) => {
@@ -250,7 +262,7 @@ export function registerDomainRoutes(app: App): void {
       if (error instanceof MatchPhaseTransitionError) throw new ApiProblem(409, error.code, error.message);
       throw error;
     }
-    await c.env.DB.prepare("UPDATE matches SET competition_id=?, home_team_id=?, away_team_id=?, kickoff_datetime=?, venue=?, status=?, phase=?, phase_started_at=?, half_length_minutes=?, num_halves=?, half_time_break_minutes=?, has_extra_time=?, extra_time_half_length_minutes=?, lineup_format=?, revision=revision+1, updated_at=? WHERE id=?").bind(input.competition_id, input.home_team_id, input.away_team_id, input.kickoff_datetime, input.venue, clock.status, clock.phase, clock.phase_started_at, input.half_length_minutes, input.num_halves, input.half_time_break_minutes, input.has_extra_time, input.extra_time_half_length_minutes, input.lineup_format, updated, current.id).run();
+    await c.env.DB.prepare("UPDATE matches SET competition_id=?, home_team_id=?, away_team_id=?, kickoff_datetime=?, venue=?, status=?, phase=?, phase_started_at=?, half_length_minutes=?, num_halves=?, half_time_break_minutes=?, has_extra_time=?, extra_time_half_length_minutes=?, lineup_format=?, formation=?, revision=revision+1, updated_at=? WHERE id=?").bind(input.competition_id, input.home_team_id, input.away_team_id, input.kickoff_datetime, input.venue, clock.status, clock.phase, clock.phase_started_at, input.half_length_minutes, input.num_halves, input.half_time_break_minutes, input.has_extra_time, input.extra_time_half_length_minutes, input.lineup_format, input.formation, updated, current.id).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, current.id)));
   });
   app.delete("/api/v1/matches/:id", async (c) => {
@@ -267,7 +279,22 @@ function lineupFormat(body: Record<string, unknown>): number | null {
   return value;
 }
 
-async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick<MatchRow, "competition_id" | "home_team_id" | "away_team_id" | "kickoff_datetime" | "venue" | "status" | "half_length_minutes" | "num_halves" | "half_time_break_minutes" | "has_extra_time" | "extra_time_half_length_minutes" | "lineup_format">> {
+function formationFor(body: Record<string, unknown>, format: number | null): string | null {
+  const value = stringField(body, "formation", { optional: true, nullable: true, max: 20 }) ?? null;
+  if (value === null) return null;
+  const parts = value.split("-");
+  if (parts.length < 2 || !parts.every((part) => /^\d+$/u.test(part) && Number(part) > 0)) {
+    throw new ApiProblem(422, "validation_error", "Formation must be digits separated by dashes, e.g. 4-4-2.");
+  }
+  // A 7-a-side shape cannot be played by an 11-a-side lineup.
+  const outfield = parts.reduce((sum, part) => sum + Number(part), 0);
+  if (format !== null && outfield !== format - 1) {
+    throw new ApiProblem(422, "validation_error", `Formation ${value} covers ${outfield} outfield players, but ${format}-a-side needs ${format - 1}.`);
+  }
+  return value;
+}
+
+async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick<MatchRow, "competition_id" | "home_team_id" | "away_team_id" | "kickoff_datetime" | "venue" | "status" | "half_length_minutes" | "num_halves" | "half_time_break_minutes" | "has_extra_time" | "extra_time_half_length_minutes" | "lineup_format" | "formation">> {
   const competitionId = stringField(body, "competition_id", { min: 1, max: 36 })!;
   const homeTeamId = stringField(body, "home_team_id", { min: 1, max: 36 })!;
   const awayTeamId = stringField(body, "away_team_id", { min: 1, max: 36 })!;
@@ -275,6 +302,7 @@ async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick
   const kickoff = stringField(body, "kickoff_datetime", { min: 10, max: 64 })!;
   if (Number.isNaN(Date.parse(kickoff))) throw new ApiProblem(422, "validation_error", "Kickoff must be a valid date and time.");
   const status = enumField(body, "status", ["scheduled", "live", "finished"] as const, "scheduled") as MatchStatus;
+  const format = lineupFormat(body);
   const [competition, home, away] = await env.DB.batch([
     env.DB.prepare("SELECT id FROM competitions WHERE id = ?").bind(competitionId),
     env.DB.prepare("SELECT id FROM teams WHERE id = ?").bind(homeTeamId),
@@ -290,7 +318,8 @@ async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick
     half_time_break_minutes: numberField(body, "half_time_break_minutes", { optional: true, min: 0, max: 30 }) ?? 15,
     has_extra_time: booleanField(body, "has_extra_time", false) ? 1 : 0,
     extra_time_half_length_minutes: numberField(body, "extra_time_half_length_minutes", { optional: true, min: 1, max: 30 }) ?? 15,
-    lineup_format: lineupFormat(body),
+    lineup_format: format,
+    formation: formationFor(body, format),
   };
 }
 
