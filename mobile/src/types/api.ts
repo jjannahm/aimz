@@ -47,7 +47,12 @@ export type MatchTimeStructure = {
   half_length_minutes: number;
   num_halves: number;
   half_time_break_minutes: number;
+  has_extra_time: boolean;
+  extra_time_half_length_minutes: number;
 };
+
+/** Extra time is always two periods, per football convention. */
+export const EXTRA_TIME_PERIODS = 2;
 
 export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'competition'> & MatchTimeStructure & {
   home_team: Team | null;
@@ -55,12 +60,16 @@ export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'compe
   competition: Competition | null;
 };
 
-/** (half × halves) + (break × (halves − 1)). */
-export function totalMatchMinutes({ half_length_minutes, num_halves, half_time_break_minutes }: MatchTimeStructure): number {
-  return half_length_minutes * num_halves + half_time_break_minutes * Math.max(0, num_halves - 1);
+/** (half × halves) + (break × (halves − 1)), plus two extra-time periods when enabled. */
+export function totalMatchMinutes(structure: MatchTimeStructure): number {
+  const { half_length_minutes, num_halves, half_time_break_minutes } = structure;
+  const regulation = half_length_minutes * num_halves + half_time_break_minutes * Math.max(0, num_halves - 1);
+  return regulation + (structure.has_extra_time ? EXTRA_TIME_PERIODS * structure.extra_time_half_length_minutes : 0);
 }
 
-export type MatchEvent = Omit<
+export type MatchEventExtras = { is_penalty: boolean };
+
+export type MatchEvent = MatchEventExtras & Omit<
   Schema['MatchEventRead'],
   'minute' | 'player_id' | 'secondary_player_id' | 'related_event_id' | 'notes'
 > & {

@@ -205,6 +205,13 @@ class Match(TimestampMixin, Base):
     half_length_minutes: Mapped[int] = mapped_column(Integer, default=45, server_default="45")
     num_halves: Mapped[int] = mapped_column(Integer, default=2, server_default="2")
     half_time_break_minutes: Mapped[int] = mapped_column(Integer, default=15, server_default="15")
+    # Knockout ties can run two further periods; length is per period.
+    has_extra_time: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    extra_time_half_length_minutes: Mapped[int] = mapped_column(
+        Integer, default=15, server_default="15"
+    )
 
     competition: Mapped[Competition] = relationship()
     home_team: Mapped[Team] = relationship(foreign_keys=[home_team_id])
@@ -244,6 +251,8 @@ class MatchEvent(TimestampMixin, Base):
         ForeignKey("match_events.id", ondelete="CASCADE")
     )
     notes: Mapped[str | None] = mapped_column(Text)
+    # Goals only: whether the goal came from a penalty kick.
+    is_penalty: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     client_operation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
 
     match: Mapped[Match] = relationship(back_populates="events")

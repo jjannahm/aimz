@@ -5,8 +5,8 @@ import type { CompetitionRow, EventRow, LineupRow, MatchRow, PlayerRow, StatRow,
 
 type App = Hono<{ Bindings: Env }>;
 
-function publicEvent(event: EventRow): EventRow {
-  return event;
+function publicEvent(event: EventRow): Record<string, unknown> {
+  return { ...event, is_penalty: Boolean(event.is_penalty) };
 }
 
 function publicLineup(entry: LineupRow): Record<string, unknown> {
@@ -64,11 +64,12 @@ export function registerMatchRoutes(app: App): void {
       player_id: playerId, secondary_player_id: secondaryPlayerId,
       related_event_id: stringField(body, "related_event_id", { optional: true, nullable: true, max: 36 }) ?? null,
       notes: stringField(body, "notes", { optional: true, nullable: true, max: 1000 }) ?? null,
+      is_penalty: booleanField(body, "is_penalty", false) ? 1 : 0,
       client_operation_id: operationId, created_at: now, updated_at: now,
     };
 
     const statements = [
-      c.env.DB.prepare("INSERT INTO match_events (id, match_id, type, minute, team_id, player_id, secondary_player_id, related_event_id, notes, client_operation_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(event.id, event.match_id, event.type, event.minute, event.team_id, event.player_id, event.secondary_player_id, event.related_event_id, event.notes, event.client_operation_id, now, now),
+      c.env.DB.prepare("INSERT INTO match_events (id, match_id, type, minute, team_id, player_id, secondary_player_id, related_event_id, notes, is_penalty, client_operation_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(event.id, event.match_id, event.type, event.minute, event.team_id, event.player_id, event.secondary_player_id, event.related_event_id, event.notes, event.is_penalty, event.client_operation_id, now, now),
     ];
     const counter = eventCounter(type);
     if (playerId && counter) {
