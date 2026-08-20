@@ -134,15 +134,23 @@ jobs:
         run: |
           set -euo pipefail
           api="https://aimz-api-staging.shared-links.workers.dev"
+          site="https://aimz-egypt-staging.pages.dev"
+          index="$(mktemp)"
+          bundle_file="$(mktemp)"
+          # Download before matching. Piping curl into grep -q closes the pipe on
+          # the first match, which fails curl with exit 23 under pipefail.
           for attempt in 1 2 3 4 5; do
-            bundle="$(curl --silent --show-error --fail https://aimz-egypt-staging.pages.dev/ \
-              | grep -o '/_expo/static/js/web/entry-[a-f0-9]*\.js' | head -n 1)"
-            if [ -n "$bundle" ] && curl --silent --show-error --fail "https://aimz-egypt-staging.pages.dev${bundle}" | grep -q "$api"; then
-              echo "Live bundle ${bundle} targets ${api}."
-              exit 0
+            if curl --silent --show-error --fail "$site/" --output "$index"; then
+              bundle="$(grep -o '/_expo/static/js/web/entry-[a-f0-9]*\.js' "$index" | head -n 1 || true)"
+              if [ -n "$bundle" ] && curl --silent --show-error --fail "$site$bundle" --output "$bundle_file"; then
+                if grep -q "$api" "$bundle_file"; then
+                  echo "Live bundle $bundle targets $api."
+                  exit 0
+                fi
+              fi
             fi
-            echo "Attempt ${attempt}: live bundle not serving ${api} yet; retrying." >&2
+            echo "Attempt $attempt: live site is not serving $api yet; retrying." >&2
             sleep 10
           done
-          echo "The deployed site is not targeting ${api}. It may have been built with a stale cache." >&2
+          echo "The deployed site is not targeting $api. It may have been built with a stale cache." >&2
           exit 1
