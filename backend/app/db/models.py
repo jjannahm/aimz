@@ -200,6 +200,11 @@ class Match(TimestampMixin, Base):
     home_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     away_score: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Kept as structure rather than one total so the live clock can tell which
+    # period is running and pause the count during the break.
+    half_length_minutes: Mapped[int] = mapped_column(Integer, default=45, server_default="45")
+    num_halves: Mapped[int] = mapped_column(Integer, default=2, server_default="2")
+    half_time_break_minutes: Mapped[int] = mapped_column(Integer, default=15, server_default="15")
 
     competition: Mapped[Competition] = relationship()
     home_team: Mapped[Team] = relationship(foreign_keys=[home_team_id])

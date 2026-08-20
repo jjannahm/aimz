@@ -364,3 +364,57 @@ async def test_stat_leaders_rank_by_metric_and_age_group(
         "/api/v1/stats/leaders?metric=goals&season=2030%2F31", headers=admin_headers
     )
     assert season_scoped.json() == []
+
+
+@pytest.mark.asyncio
+async def test_match_stores_period_structure(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    home = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Timing"})
+    away = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "Nile Rovers"})
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Timing Cup", "season": "2026/27", "type": "league"},
+    )
+    base = {
+        "competition_id": competition.json()["id"],
+        "home_team_id": home.json()["id"],
+        "away_team_id": away.json()["id"],
+        "kickoff_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+        "venue": "AIMZ Training Ground",
+        "status": "scheduled",
+    }
+
+    # Standard football is the default when the client says nothing.
+    default = await client.post("/api/v1/matches", headers=admin_headers, json=base)
+    assert default.status_code == 201, default.text
+    assert default.json()["half_length_minutes"] == 45
+    assert default.json()["num_halves"] == 2
+    assert default.json()["half_time_break_minutes"] == 15
+
+    quarters = await client.post(
+        "/api/v1/matches",
+        headers=admin_headers,
+        json={**base, "half_length_minutes": 20, "num_halves": 4, "half_time_break_minutes": 5},
+    )
+    assert quarters.status_code == 201, quarters.text
+    assert quarters.json()["num_halves"] == 4
+
+    # The structure survives a round trip and can be edited afterwards.
+    fetched = await client.get(
+        f"/api/v1/matches/{quarters.json()['id']}/live", headers=admin_headers
+    )
+    assert fetched.json()["match"]["half_length_minutes"] == 20
+    edited = await client.patch(
+        f"/api/v1/matches/{quarters.json()['id']}",
+        headers=admin_headers,
+        json={**base, "half_length_minutes": 30, "num_halves": 2, "half_time_break_minutes": 10},
+    )
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["half_length_minutes"] == 30
+
+    rejected = await client.post(
+        "/api/v1/matches", headers=admin_headers, json={**base, "num_halves": 0}
+    )
+    assert rejected.status_code == 422

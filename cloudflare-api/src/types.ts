@@ -60,6 +60,11 @@ export interface MatchRow {
   home_score: number;
   away_score: number;
   revision: number;
+  // Structure, not a single total: the live clock needs to know which period is
+  // running so it can pause during the break.
+  half_length_minutes: number;
+  num_halves: number;
+  half_time_break_minutes: number;
   created_at: string;
   updated_at: string;
 }

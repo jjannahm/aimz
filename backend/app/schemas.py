@@ -160,6 +160,15 @@ class MatchInput(BaseModel):
     kickoff_datetime: datetime
     venue: str = Field(min_length=2, max_length=200)
     status: MatchStatus = MatchStatus.scheduled
+    half_length_minutes: int = Field(default=45, ge=1, le=90)
+    num_halves: int = Field(default=2, ge=1, le=4)
+    half_time_break_minutes: int = Field(default=15, ge=0, le=30)
+
+    @property
+    def total_length_minutes(self) -> int:
+        return (self.half_length_minutes * self.num_halves) + (
+            self.half_time_break_minutes * (self.num_halves - 1)
+        )
 
     @model_validator(mode="after")
     def distinct_teams(self) -> MatchInput:

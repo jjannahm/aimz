@@ -231,13 +231,13 @@ export function registerDomainRoutes(app: App): void {
   app.post("/api/v1/matches", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const match = await matchInput(c.env, body);
     const now = nowIso(); const row: MatchRow = { id: crypto.randomUUID(), ...match, home_score: 0, away_score: 0, revision: 0, created_at: now, updated_at: now };
-    await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, home_score, away_score, revision, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, now, now).run();
+    await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, home_score, away_score, revision, half_length_minutes, num_halves, half_time_break_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, row.half_length_minutes, row.num_halves, row.half_time_break_minutes, now, now).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, row.id)), 201);
   });
   app.patch("/api/v1/matches/:id", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const current = await getJoinedMatch(c.env, c.req.param("id"));
     const merged = { ...current, ...body }; const input = await matchInput(c.env, merged); const updated = nowIso();
-    await c.env.DB.prepare("UPDATE matches SET competition_id=?, home_team_id=?, away_team_id=?, kickoff_datetime=?, venue=?, status=?, revision=revision+1, updated_at=? WHERE id=?").bind(input.competition_id, input.home_team_id, input.away_team_id, input.kickoff_datetime, input.venue, input.status, updated, current.id).run();
+    await c.env.DB.prepare("UPDATE matches SET competition_id=?, home_team_id=?, away_team_id=?, kickoff_datetime=?, venue=?, status=?, half_length_minutes=?, num_halves=?, half_time_break_minutes=?, revision=revision+1, updated_at=? WHERE id=?").bind(input.competition_id, input.home_team_id, input.away_team_id, input.kickoff_datetime, input.venue, input.status, input.half_length_minutes, input.num_halves, input.half_time_break_minutes, updated, current.id).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, current.id)));
   });
   app.delete("/api/v1/matches/:id", async (c) => {
@@ -245,7 +245,7 @@ export function registerDomainRoutes(app: App): void {
   });
 }
 
-async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick<MatchRow, "competition_id" | "home_team_id" | "away_team_id" | "kickoff_datetime" | "venue" | "status">> {
+async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick<MatchRow, "competition_id" | "home_team_id" | "away_team_id" | "kickoff_datetime" | "venue" | "status" | "half_length_minutes" | "num_halves" | "half_time_break_minutes">> {
   const competitionId = stringField(body, "competition_id", { min: 1, max: 36 })!;
   const homeTeamId = stringField(body, "home_team_id", { min: 1, max: 36 })!;
   const awayTeamId = stringField(body, "away_team_id", { min: 1, max: 36 })!;
@@ -259,7 +259,14 @@ async function matchInput(env: Env, body: Record<string, unknown>): Promise<Pick
     env.DB.prepare("SELECT id FROM teams WHERE id = ?").bind(awayTeamId),
   ]);
   if (!competition.results.length || !home.results.length || !away.results.length) throw new ApiProblem(422, "invalid_reference", "Choose valid teams and a competition.");
-  return { competition_id: competitionId, home_team_id: homeTeamId, away_team_id: awayTeamId, kickoff_datetime: new Date(kickoff).toISOString(), venue: stringField(body, "venue", { min: 2, max: 200 })!, status };
+  return {
+    competition_id: competitionId, home_team_id: homeTeamId, away_team_id: awayTeamId,
+    kickoff_datetime: new Date(kickoff).toISOString(),
+    venue: stringField(body, "venue", { min: 2, max: 200 })!, status,
+    half_length_minutes: numberField(body, "half_length_minutes", { optional: true, min: 1, max: 90 }) ?? 45,
+    num_halves: numberField(body, "num_halves", { optional: true, min: 1, max: 4 }) ?? 2,
+    half_time_break_minutes: numberField(body, "half_time_break_minutes", { optional: true, min: 0, max: 30 }) ?? 15,
+  };
 }
 
 async function requireTeam(env: Env, id: string): Promise<void> {
