@@ -13,7 +13,7 @@ import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
 import { theme } from '@/src/theme';
-import { LINEUP_FORMATS, type LineupFormat, type Player } from '@/src/types/api';
+import { FORMATIONS, LINEUP_FORMATS, type LineupFormat, type Player } from '@/src/types/api';
 
 export default function LineupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -23,6 +23,7 @@ export default function LineupScreen() {
   const playersQuery = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
   const [format, setFormat] = useState<LineupFormat | null>(null);
   const [starters, setStarters] = useState<Set<string>>(new Set());
+  const [formation, setFormation] = useState<string | null>(null);
   const match = matchQuery.data?.match;
 
   // Only AIMZ's own squad is managed here; the opponent is just a name.
@@ -40,6 +41,7 @@ export default function LineupScreen() {
   useEffect(() => {
     if (!matchQuery.data || format !== null) return;
     setFormat((match?.lineup_format as LineupFormat | null) ?? null);
+    setFormation(match?.formation ?? null);
     const saved = matchQuery.data.lineup.filter((entry) => entry.is_starter).map((entry) => entry.player_id);
     if (saved.length) setStarters(new Set(saved));
   }, [matchQuery.data, match, format]);
@@ -55,7 +57,7 @@ export default function LineupScreen() {
         await api.updateMatch(id, {
           competition_id: match.competition_id, home_team_id: match.home_team_id,
           away_team_id: match.away_team_id, kickoff_datetime: match.kickoff_datetime,
-          venue: match.venue, status: match.status, lineup_format: format,
+          venue: match.venue, status: match.status, lineup_format: format, formation,
         });
       }
       await invalidateAfterWrite(client, 'lineup', 'match');
@@ -85,7 +87,7 @@ export default function LineupScreen() {
       : locked ? <EmptyState body="The starting lineup is locked once the match begins. Log a substitution from live scoring instead." title="Match already started" />
       : !roster.length ? <EmptyState body="Add players to this squad before setting a lineup." title="No squad players yet" />
       : <>
-        <ChoiceField label="Format" onChange={(value) => { const next = Number(value) as LineupFormat; setFormat(next); setStarters((current) => new Set([...current].slice(0, next))); }} options={LINEUP_FORMATS.map((size) => ({ label: `${size}-a-side`, value: String(size) }))} placeholder="Choose a format" value={format === null ? undefined : String(format)} />
+        <ChoiceField label="Format" onChange={(value) => { const next = Number(value) as LineupFormat; setFormat(next); setFormation(null); setStarters((current) => new Set([...current].slice(0, next))); }} options={LINEUP_FORMATS.map((size) => ({ label: `${size}-a-side`, value: String(size) }))} placeholder="Choose a format" value={format === null ? undefined : String(format)} />
         {format === null ? <Text style={styles.hint}>Choose a format to pick the starting players.</Text> : <>
           <View style={styles.counterRow}>
             <Text accessibilityLiveRegion="polite" style={[styles.counter, complete && styles.counterDone]}>{selected} of {format} selected</Text>
@@ -105,7 +107,8 @@ export default function LineupScreen() {
           })}
           <Text style={styles.groupTitle}>Substitutes ({bench.length})</Text>
           <Text style={styles.hint}>{bench.length ? bench.map((player) => player.name).join(', ') : 'Everyone is starting.'}</Text>
-          <AppButton disabled={!complete || save.isPending} label={save.isPending ? 'Saving…' : `Save lineup`} onPress={() => save.mutate()} />
+          {complete ? <ChoiceField label="Formation" onChange={setFormation} options={FORMATIONS[format].map((shape) => ({ label: shape, value: shape }))} placeholder={`Shapes for ${format - 1} outfield players`} value={formation ?? undefined} /> : null}
+          <AppButton disabled={!complete || save.isPending} label={save.isPending ? 'Saving…' : 'Save lineup'} onPress={() => save.mutate()} />
           {!complete ? <Text style={styles.hint}>Select exactly {format} starters to save.</Text> : null}
         </>}
       </>}

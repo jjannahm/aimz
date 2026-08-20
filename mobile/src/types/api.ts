@@ -31,7 +31,9 @@ export type PlayerLeaderRow = {
 
 export type LeaderMetric = 'goals' | 'assists';
 
-export type Team = Omit<Schema['TeamRead'], 'squad_code' | 'age_group' | 'season' | 'logo_key'> & {
+export type TeamStaff = { coach: string | null; assistant_coach: string | null };
+
+export type Team = TeamStaff & Omit<Schema['TeamRead'], 'squad_code' | 'age_group' | 'season' | 'logo_key'> & {
   squad_code: string | null;
   age_group: string | null;
   season: string | null;
@@ -56,6 +58,27 @@ export type MatchTimeStructure = Pick<
 export const LINEUP_FORMATS = [5, 6, 7, 9, 11] as const;
 export type LineupFormat = (typeof LINEUP_FORMATS)[number];
 
+/**
+ * Outfield shapes per format. Every entry sums to the format minus the keeper,
+ * so a 7-a-side match is never offered an 11-a-side shape.
+ */
+export const FORMATIONS: Record<LineupFormat, string[]> = {
+  5: ['2-2', '1-3', '3-1', '1-2-1'],
+  6: ['2-3', '3-2', '2-1-2', '1-3-1'],
+  7: ['3-2-1', '2-3-1', '3-1-2', '2-1-3', '1-3-2'],
+  9: ['3-3-2', '3-2-3', '4-3-1', '2-4-2', '3-4-1'],
+  11: ['4-4-2', '4-3-3', '3-4-3', '4-2-3-1', '3-5-2', '5-3-2'],
+};
+
+/** Digits of a formation, e.g. "4-4-2" -> [4, 4, 2]. */
+export function formationRows(formation: string): number[] {
+  return formation.split('-').map(Number).filter((value) => Number.isFinite(value) && value > 0);
+}
+
+export function outfieldCount(format: LineupFormat): number {
+  return format - 1;
+}
+
 /** Extra time is always two periods, per football convention. */
 export const EXTRA_TIME_PERIODS = 2;
 
@@ -65,6 +88,7 @@ export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'compe
   competition: Competition | null;
   // Not in the generated schema yet; catches up on the next `npm run api:types`.
   lineup_format: LineupFormat | null;
+  formation: string | null;
 };
 
 /** (half × halves) + (break × (halves − 1)), plus two extra-time periods when enabled. */

@@ -685,3 +685,70 @@ async def test_lineup_format_and_locking(
     )
     assert locked.status_code == 409
     assert locked.json()["detail"]["code"] == "lineup_locked"
+
+
+@pytest.mark.asyncio
+async def test_formation_must_fit_the_format_and_coaches_live_on_the_team(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    squad = await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={
+            "name": "AIMZ Shapes",
+            "is_aimz": True,
+            "coach": "Mona Farouk",
+            "assistant_coach": "Dalia Nasr",
+        },
+    )
+    assert squad.status_code == 201, squad.text
+    assert squad.json()["coach"] == "Mona Farouk"
+    assert squad.json()["assistant_coach"] == "Dalia Nasr"
+
+    away = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "Suez Swifts"})
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Shape League", "season": "2026/27", "type": "league"},
+    )
+    base = {
+        "competition_id": competition.json()["id"],
+        "home_team_id": squad.json()["id"],
+        "away_team_id": away.json()["id"],
+        "kickoff_datetime": (datetime.now(UTC) + timedelta(days=3)).isoformat(),
+        "venue": "AIMZ Training Ground",
+        "status": "scheduled",
+    }
+
+    # 3-2-1 covers six outfield players, which is exactly 7-a-side.
+    seven = await client.post(
+        "/api/v1/matches",
+        headers=admin_headers,
+        json={**base, "lineup_format": 7, "formation": "3-2-1"},
+    )
+    assert seven.status_code == 201, seven.text
+    assert seven.json()["formation"] == "3-2-1"
+
+    # The same shape cannot fill an 11-a-side pitch.
+    mismatch = await client.post(
+        "/api/v1/matches",
+        headers=admin_headers,
+        json={**base, "lineup_format": 11, "formation": "3-2-1"},
+    )
+    assert mismatch.status_code == 422
+
+    nonsense = await client.post(
+        "/api/v1/matches",
+        headers=admin_headers,
+        json={**base, "lineup_format": 7, "formation": "not-a-shape"},
+    )
+    assert nonsense.status_code == 422
+
+    # A coach can be cleared without disturbing the rest of the squad.
+    cleared = await client.patch(
+        f"/api/v1/teams/{squad.json()['id']}",
+        headers=admin_headers,
+        json={"name": "AIMZ Shapes", "is_aimz": True, "coach": None},
+    )
+    assert cleared.status_code == 200, cleared.text
+    assert cleared.json()["coach"] is None
