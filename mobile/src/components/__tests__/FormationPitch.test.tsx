@@ -1,6 +1,6 @@
 import { render } from '@testing-library/react-native';
 
-import { arrangeByFormation, bucketFor, FormationPitch } from '@/src/components/FormationPitch';
+import { arrangeByFormation, bucketFor, FormationPitch, inferFormation } from '@/src/components/FormationPitch';
 import { FORMATIONS, LINEUP_FORMATS, formationRows, outfieldCount, type Player } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
@@ -85,5 +85,40 @@ describe('FormationPitch', () => {
     // Surnames keep the pitch readable at small sizes.
     expect(screen.getByText('Hassan')).toBeTruthy();
     expect(screen.getByText('Nabil')).toBeTruthy();
+  });
+});
+
+describe('inferFormation', () => {
+  const squad = [
+    player('gk', 'Keeper', 'Goalkeeper', 1),
+    ...Array.from({ length: 3 }, (_, i) => player(`d${i}`, `Def ${i}`, 'Defender', 2 + i)),
+    ...Array.from({ length: 2 }, (_, i) => player(`m${i}`, `Mid ${i}`, 'Midfielder', 5 + i)),
+    player('f0', 'Fwd', 'Forward', 7),
+  ];
+
+  it('reads the shape the squad is already playing', () => {
+    expect(inferFormation(squad)).toBe('3-2-1');
+  });
+
+  it('skips empty rows rather than emitting a zero', () => {
+    const noMids = squad.filter((p) => !p.id.startsWith('m'));
+    expect(inferFormation(noMids)).toBe('3-1');
+  });
+
+  it('returns null when there is nobody outfield', () => {
+    expect(inferFormation([player('gk', 'Keeper', 'Goalkeeper', 1)])).toBeNull();
+  });
+});
+
+describe('FormationPitch without a stored formation', () => {
+  it('still draws, marking the shape as inferred', async () => {
+    const squad = [
+      player('gk', 'Nour Hassan', 'Goalkeeper', 1),
+      player('d0', 'Salma Nabil', 'Defender', 2),
+      player('f0', 'Mariam Adel', 'Forward', 9),
+    ];
+    const screen = await render(<FormationPitch formation={null} starters={squad} />);
+    expect(screen.getByText(/1-1/u)).toBeTruthy();
+    expect(screen.getByText(/from positions/u)).toBeTruthy();
   });
 });

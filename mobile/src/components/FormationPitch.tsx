@@ -46,19 +46,36 @@ export function arrangeByFormation(starters: Player[], formation: string): { kee
   return { keeper: keeper.slice(0, 1), rows };
 }
 
-export function FormationPitch({ starters, formation }: { starters: Player[]; formation: string }) {
-  const { keeper, rows } = arrangeByFormation(starters, formation);
+/**
+ * Work out a shape from the players themselves.
+ *
+ * Lineups saved before formations existed, and any saved during a live match
+ * that can no longer be edited, still deserve a pitch. Counting the outfield
+ * positions gives the shape they were already playing.
+ */
+export function inferFormation(starters: Player[]): string | null {
+  const outfield = starters.filter((player) => bucketFor(player.position) !== 'GK');
+  if (!outfield.length) return null;
+  const rows = (['DEF', 'MID', 'FWD'] as const)
+    .map((bucket) => outfield.filter((player) => bucketFor(player.position) === bucket).length)
+    .filter((count) => count > 0);
+  return rows.length >= 2 ? rows.join('-') : String(outfield.length);
+}
+
+export function FormationPitch({ starters, formation }: { starters: Player[]; formation?: string | null }) {
+  const shape = formation ?? inferFormation(starters);
+  const { keeper, rows } = arrangeByFormation(starters, shape ?? String(Math.max(0, starters.length - 1)));
   // Forwards belong at the top of the pitch, the keeper at the bottom.
   const stacked = [...rows].reverse();
 
-  return <View accessibilityLabel={`Formation ${formation}`} style={styles.pitch}>
+  return <View accessibilityLabel={`Formation ${shape ?? 'not set'}`} style={styles.pitch}>
     <View accessibilityElementsHidden style={styles.halfway} />
     <View accessibilityElementsHidden style={styles.circle} />
     {stacked.map((row, rowIndex) => <View key={`row-${rowIndex}`} style={styles.row}>
       {row.map((player) => <PitchPlayer key={player.id} player={player} />)}
     </View>)}
     {keeper.length ? <View style={styles.row}>{keeper.map((player) => <PitchPlayer key={player.id} player={player} />)}</View> : null}
-    <Text style={styles.badge}>{formation}</Text>
+    <Text style={styles.badge}>{shape ?? '—'}{formation ? '' : ' · from positions'}</Text>
   </View>;
 }
 
