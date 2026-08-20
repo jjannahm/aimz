@@ -7,6 +7,7 @@ import type { Match } from '@/src/types/api';
 const match: Match = {
   id: 'match-1', competition_id: 'competition-1', home_team_id: 'home', away_team_id: 'away',
   kickoff_datetime: '2026-09-10T18:30:00+03:00', venue: 'AIMZ Training Ground', status: 'live',
+  phase: 'first_half', phase_started_at: '2026-09-10T18:30:00+03:00',
   home_score: 2, away_score: 1, revision: 3,
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-10T00:00:00Z',

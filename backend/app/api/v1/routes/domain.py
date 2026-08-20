@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminUser, CurrentUser, SessionDep
 from app.core.errors import api_error
-from app.db.models import Competition, Match, MatchStatus, Player, Team
+from app.db.models import Competition, Match, MatchPhase, MatchStatus, Player, Team
 from app.schemas import (
     CompetitionInput,
     CompetitionRead,
@@ -20,6 +20,7 @@ from app.schemas import (
     TeamInput,
     TeamRead,
 )
+from app.services.match_clock import apply_legacy_status_change, apply_phase_action
 
 router = APIRouter()
 ModelT = TypeVar("ModelT")
@@ -293,7 +294,17 @@ async def validate_match_refs(session: SessionDep, payload: MatchInput) -> None:
 @router.post("/matches", response_model=MatchRead, status_code=201)
 async def create_match(payload: MatchInput, _: AdminUser, session: SessionDep) -> Match:
     await validate_match_refs(session, payload)
-    row = Match(**payload.model_dump())
+    requested_status = payload.status
+    row = Match(
+        **payload.model_dump(exclude={"status"}),
+        status=MatchStatus.scheduled,
+        phase=MatchPhase.not_started,
+    )
+    if requested_status == MatchStatus.live:
+        apply_phase_action(row, "start_match")
+    elif requested_status == MatchStatus.finished:
+        row.status = MatchStatus.finished
+        row.phase = MatchPhase.finished
     session.add(row)
     await session.commit()
     return await get_match(row.id, _, session)
@@ -307,8 +318,10 @@ async def update_match(
     if not row:
         raise api_error(404, "match_not_found", "Match not found.")
     await validate_match_refs(session, payload)
-    for field, value in payload.model_dump().items():
+    next_status = payload.status
+    for field, value in payload.model_dump(exclude={"status"}).items():
         setattr(row, field, value)
+    apply_legacy_status_change(row, next_status)
     row.revision += 1
     await session.commit()
     return await get_match(row.id, _, session)

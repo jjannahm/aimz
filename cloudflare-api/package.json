@@ -7,6 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy --minify",
     "deploy:dry-run": "wrangler deploy --dry-run --minify",
+    "test": "node --experimental-strip-types --test src/match-clock.test.ts",
     "db:migrate:local": "wrangler d1 migrations apply aimz-staging-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply aimz-staging-db --remote",
     "typecheck": "tsc --noEmit",

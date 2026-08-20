@@ -18,10 +18,12 @@ from app.schemas import (
     MatchEventInput,
     MatchEventRead,
     MatchEventUpdate,
+    MatchPhaseUpdate,
     MatchRead,
     PlayerMatchStatRead,
     PlayerStatInput,
 )
+from app.services.match_clock import apply_phase_action
 from app.services.scoring import add_event, load_match_detail, remove_event, update_event
 
 router = APIRouter()
@@ -32,6 +34,23 @@ async def require_match(session: SessionDep, match_id: str) -> Match:
     if match is None:
         raise api_error(404, "match_not_found", "Match not found.")
     return match
+
+
+@router.post("/{match_id}/phase", response_model=MatchRead)
+async def update_match_phase(
+    match_id: str,
+    payload: MatchPhaseUpdate,
+    _: AdminUser,
+    session: SessionDep,
+) -> Match:
+    match = await require_match(session, match_id)
+    apply_phase_action(match, payload.action)
+    match.revision += 1
+    await session.commit()
+    refreshed = await load_match_detail(session, match_id)
+    if refreshed is None:
+        raise api_error(404, "match_not_found", "Match not found.")
+    return refreshed
 
 
 @router.get("/{match_id}/events", response_model=list[MatchEventRead])

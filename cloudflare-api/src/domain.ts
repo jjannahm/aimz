@@ -15,6 +15,7 @@ import {
   stringField,
 } from "./helpers";
 import type { CompetitionRow, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
+import { MatchPhaseTransitionError, transitionLegacyStatus } from "./match-clock";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -230,14 +231,26 @@ export function registerDomainRoutes(app: App): void {
   });
   app.post("/api/v1/matches", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const match = await matchInput(c.env, body);
-    const now = nowIso(); const row: MatchRow = { id: crypto.randomUUID(), ...match, home_score: 0, away_score: 0, revision: 0, created_at: now, updated_at: now };
-    await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, home_score, away_score, revision, half_length_minutes, num_halves, half_time_break_minutes, has_extra_time, extra_time_half_length_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, row.half_length_minutes, row.num_halves, row.half_time_break_minutes, row.has_extra_time, row.extra_time_half_length_minutes, now, now).run();
+    const now = nowIso();
+    const clock = match.status === "live"
+      ? { status: "live" as const, phase: "first_half" as const, phase_started_at: now }
+      : match.status === "finished"
+        ? { status: "finished" as const, phase: "finished" as const, phase_started_at: null }
+        : { status: "scheduled" as const, phase: "not_started" as const, phase_started_at: null };
+    const row: MatchRow = { id: crypto.randomUUID(), ...match, ...clock, home_score: 0, away_score: 0, revision: 0, created_at: now, updated_at: now };
+    await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, phase, phase_started_at, home_score, away_score, revision, half_length_minutes, num_halves, half_time_break_minutes, has_extra_time, extra_time_half_length_minutes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, row.phase, row.phase_started_at, row.half_length_minutes, row.num_halves, row.half_time_break_minutes, row.has_extra_time, row.extra_time_half_length_minutes, now, now).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, row.id)), 201);
   });
   app.patch("/api/v1/matches/:id", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const current = await getJoinedMatch(c.env, c.req.param("id"));
     const merged = { ...current, ...body }; const input = await matchInput(c.env, merged); const updated = nowIso();
-    await c.env.DB.prepare("UPDATE matches SET competition_id=?, home_team_id=?, away_team_id=?, kickoff_datetime=?, venue=?, status=?, half_length_minutes=?, num_halves=?, half_time_break_minutes=?, has_extra_time=?, extra_time_half_length_minutes=?, revision=revision+1, updated_at=? WHERE id=?").bind(input.competition_id, input.home_team_id, input.away_team_id, input.kickoff_datetime, input.venue, input.status, input.half_length_minutes, input.num_halves, input.half_time_break_minutes, input.has_extra_time, input.extra_time_half_length_minutes, updated, current.id).run();
+    let clock;
+    try { clock = transitionLegacyStatus(current, input.status, updated); }
+    catch (error) {
+      if (error instanceof MatchPhaseTransitionError) throw new ApiProblem(409, error.code, error.message);
+      throw error;
+    }
+    await c.env.DB.prepare("UPDATE matches SET competition_id=?, home_team_id=?, away_team_id=?, kickoff_datetime=?, venue=?, status=?, phase=?, phase_started_at=?, half_length_minutes=?, num_halves=?, half_time_break_minutes=?, has_extra_time=?, extra_time_half_length_minutes=?, revision=revision+1, updated_at=? WHERE id=?").bind(input.competition_id, input.home_team_id, input.away_team_id, input.kickoff_datetime, input.venue, clock.status, clock.phase, clock.phase_started_at, input.half_length_minutes, input.num_halves, input.half_time_break_minutes, input.has_extra_time, input.extra_time_half_length_minutes, updated, current.id).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, current.id)));
   });
   app.delete("/api/v1/matches/:id", async (c) => {

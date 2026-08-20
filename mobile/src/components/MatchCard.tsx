@@ -3,6 +3,8 @@ import { router } from 'expo-router';
 
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { theme } from '@/src/theme';
+import { MatchProgressRail, MatchStatusIndicator } from '@/src/components/MatchStatusIndicator';
+import { useMatchClock } from '@/src/lib/matchClock';
 
 import type { Match } from '@/src/types/api';
 
@@ -15,11 +17,10 @@ type MatchCardProps = {
 export function MatchCard({ match }: MatchCardProps) {
   const isLive = match.status === 'live';
   const hasScore = match.status !== 'scheduled';
-  const statusLabel = isLive
-    ? 'LIVE'
-    : match.status === 'finished'
-      ? 'FULL TIME'
-      : new Intl.DateTimeFormat('en-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(match.kickoff_datetime));
+  const clock = useMatchClock(match);
+  const statusLabel = match.status === 'scheduled'
+    ? new Intl.DateTimeFormat('en-EG', { weekday: 'short', hour: 'numeric', minute: '2-digit' }).format(new Date(match.kickoff_datetime))
+    : clock.accessibilityLabel;
   const homeName = match.home_team?.name ?? 'Home';
   const awayName = match.away_team?.name ?? 'Away';
 
@@ -36,7 +37,7 @@ export function MatchCard({ match }: MatchCardProps) {
           {match.competition?.name ?? 'AIMZ match'}
         </Text>
         <View style={[styles.statusPill, isLive && styles.livePill]}>
-          <Text style={[styles.statusText, isLive && styles.liveText]}>{statusLabel}</Text>
+          {match.status === 'scheduled' ? <Text style={styles.statusText}>{statusLabel}</Text> : <MatchStatusIndicator clock={clock} muted={!isLive} />}
         </View>
       </View>
 
@@ -67,7 +68,7 @@ export function MatchCard({ match }: MatchCardProps) {
 
       {isLive ? (
         <View style={styles.liveRail}>
-          <View style={styles.liveProgress} />
+          <MatchProgressRail clock={clock} />
         </View>
       ) : null}
     </Pressable>
@@ -160,14 +161,8 @@ const styles = StyleSheet.create({
     maxWidth: 130,
   },
   liveRail: {
-    backgroundColor: theme.colors.progressTrack,
     height: 3,
     marginHorizontal: -theme.spacing.md,
     marginBottom: -theme.spacing.md,
-  },
-  liveProgress: {
-    backgroundColor: theme.colors.live,
-    height: 3,
-    width: '72%',
   },
 });

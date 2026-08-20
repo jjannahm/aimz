@@ -34,7 +34,7 @@ const scorers: PlayerLeaderRow[] = [
 ];
 
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 

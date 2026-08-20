@@ -374,6 +374,23 @@ export interface paths {
         patch: operations["update_match_api_v1_matches__match_id__patch"];
         trace?: never;
     };
+    "/api/v1/matches/{match_id}/phase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Update Match Phase */
+        post: operations["update_match_phase_api_v1_matches__match_id__phase_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/matches/{match_id}/events": {
         parameters: {
             query?: never;
@@ -489,6 +506,26 @@ export interface paths {
         };
         /** Player Stats */
         get: operations["player_stats_api_v1_players__player_id__stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/stats/leaders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stat Leaders
+         * @description Rank players by goals or assists across finished matches.
+         */
+        get: operations["stat_leaders_api_v1_stats_leaders_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -703,6 +740,11 @@ export interface components {
             related_event_id?: string | null;
             /** Notes */
             notes?: string | null;
+            /**
+             * Is Penalty
+             * @default false
+             */
+            is_penalty: boolean;
             /** Client Operation Id */
             client_operation_id: string;
         };
@@ -721,6 +763,11 @@ export interface components {
             related_event_id?: string | null;
             /** Notes */
             notes?: string | null;
+            /**
+             * Is Penalty
+             * @default false
+             */
+            is_penalty: boolean;
             /** Client Operation Id */
             client_operation_id: string;
             /** Id */
@@ -751,6 +798,8 @@ export interface components {
             secondary_player_id?: string | null;
             /** Notes */
             notes?: string | null;
+            /** Is Penalty */
+            is_penalty?: boolean | null;
         };
         /** MatchInput */
         MatchInput: {
@@ -769,6 +818,44 @@ export interface components {
             venue: string;
             /** @default scheduled */
             status: components["schemas"]["MatchStatus"];
+            /**
+             * Half Length Minutes
+             * @default 45
+             */
+            half_length_minutes: number;
+            /**
+             * Num Halves
+             * @default 2
+             */
+            num_halves: number;
+            /**
+             * Half Time Break Minutes
+             * @default 15
+             */
+            half_time_break_minutes: number;
+            /**
+             * Has Extra Time
+             * @default false
+             */
+            has_extra_time: boolean;
+            /**
+             * Extra Time Half Length Minutes
+             * @default 15
+             */
+            extra_time_half_length_minutes: number;
+        };
+        /**
+         * MatchPhase
+         * @enum {string}
+         */
+        MatchPhase: "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";
+        /** MatchPhaseUpdate */
+        MatchPhaseUpdate: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "start_match" | "halftime" | "start_second_half" | "start_extra_time" | "finish_match";
         };
         /** MatchRead */
         MatchRead: {
@@ -787,8 +874,36 @@ export interface components {
             venue: string;
             /** @default scheduled */
             status: components["schemas"]["MatchStatus"];
+            /**
+             * Half Length Minutes
+             * @default 45
+             */
+            half_length_minutes: number;
+            /**
+             * Num Halves
+             * @default 2
+             */
+            num_halves: number;
+            /**
+             * Half Time Break Minutes
+             * @default 15
+             */
+            half_time_break_minutes: number;
+            /**
+             * Has Extra Time
+             * @default false
+             */
+            has_extra_time: boolean;
+            /**
+             * Extra Time Half Length Minutes
+             * @default 15
+             */
+            extra_time_half_length_minutes: number;
             /** Id */
             id: string;
+            phase: components["schemas"]["MatchPhase"];
+            /** Phase Started At */
+            phase_started_at: string | null;
             /** Home Score */
             home_score: number;
             /** Away Score */
@@ -918,6 +1033,19 @@ export interface components {
              * @default true
              */
             is_active: boolean;
+        };
+        /** PlayerLeaderRow */
+        PlayerLeaderRow: {
+            /** Rank */
+            rank: number;
+            player: components["schemas"]["PlayerRead"];
+            team: components["schemas"]["TeamRead"];
+            /** Goals */
+            goals: number;
+            /** Assists */
+            assists: number;
+            /** Appearances */
+            appearances: number;
         };
         /** PlayerMatchStatRead */
         PlayerMatchStatRead: {
@@ -2259,6 +2387,41 @@ export interface operations {
             };
         };
     };
+    update_match_phase_api_v1_matches__match_id__phase_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchPhaseUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_events_api_v1_matches__match_id__events_get: {
         parameters: {
             query?: never;
@@ -2607,6 +2770,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlayerSeasonSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stat_leaders_api_v1_stats_leaders_get: {
+        parameters: {
+            query?: {
+                metric?: "goals" | "assists";
+                age_group?: string | null;
+                season?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayerLeaderRow"][];
                 };
             };
             /** @description Validation Error */

@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
-from app.db.models import CompetitionType, EventType, MatchStatus, UserRole
+from app.db.models import CompetitionType, EventType, MatchPhase, MatchStatus, UserRole
 from app.services.storage import create_signed_read_url
 
 
@@ -187,6 +187,8 @@ class MatchInput(BaseModel):
 
 class MatchRead(MatchInput, ORMModel):
     id: str
+    phase: MatchPhase
+    phase_started_at: datetime | None
     home_score: int
     away_score: int
     revision: int
@@ -195,6 +197,16 @@ class MatchRead(MatchInput, ORMModel):
     home_team: TeamRead | None = None
     away_team: TeamRead | None = None
     competition: CompetitionRead | None = None
+
+
+class MatchPhaseUpdate(BaseModel):
+    action: Literal[
+        "start_match",
+        "halftime",
+        "start_second_half",
+        "start_extra_time",
+        "finish_match",
+    ]
 
 
 class MatchEventInput(BaseModel):
