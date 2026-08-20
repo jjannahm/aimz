@@ -57,36 +57,44 @@ describe('PlayersScreen', () => {
     expect(screen.getByRole('tab', { name: 'Top Assisters' })).toBeTruthy();
   });
 
-  it('opens on the team list rather than any single squad', async () => {
+  it('lists the squads that exist, not a fixed set of age groups', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
-    expect(await screen.findByLabelText('U9, 1 player')).toBeTruthy();
-    expect(screen.getByLabelText('U13, 1 player')).toBeTruthy();
-    for (const ageGroup of ['U11', 'U15', 'U18']) {
-      expect(screen.getByLabelText(`${ageGroup}, 0 players`)).toBeTruthy();
-    }
+    expect(await screen.findByLabelText('AIMZ U9, 1 player')).toBeTruthy();
+    expect(screen.getByLabelText('AIMZ U13, 1 player')).toBeTruthy();
+    // The old screen hardcoded U9/U11/U13/U15/U18 regardless of the data.
+    expect(screen.queryByLabelText(/^U11/)).toBeNull();
     expect(screen.queryByText('Salma Nabil')).toBeNull();
   });
 
-  it('drills into a team to reveal its players, then back out', async () => {
+  it('shows a squad added later without any code change', async () => {
+    const added = [...teams, team('t-u15', 'AIMZ U15', 'U15')];
+    jest.mocked(api.teams).mockResolvedValue({ items: added, total: added.length, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
-    fireEvent.press(await screen.findByLabelText('U13, 1 player'));
+    expect(await screen.findByLabelText('AIMZ U15, 0 players')).toBeTruthy();
+  });
+
+  it('leaves out squads that are not AIMZ', async () => {
+    const withOpponent = [...teams, { ...team('t-opp', 'Giza Lions', 'U13'), is_aimz: false }];
+    jest.mocked(api.teams).mockResolvedValue({ items: withOpponent, total: withOpponent.length, limit: 100, offset: 0 });
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await screen.findByLabelText('AIMZ U9, 1 player');
+    expect(screen.queryByLabelText(/Giza Lions/)).toBeNull();
+  });
+
+  it('drills into a squad to reveal its players, then back out', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('AIMZ U13, 1 player'));
     expect(await screen.findByText('Mariam Adel')).toBeTruthy();
     expect(screen.queryByText('Salma Nabil')).toBeNull();
 
     fireEvent.press(screen.getByLabelText('Back to all teams'));
-    expect(await screen.findByLabelText('U9, 1 player')).toBeTruthy();
+    expect(await screen.findByLabelText('AIMZ U9, 1 player')).toBeTruthy();
     expect(screen.queryByText('Mariam Adel')).toBeNull();
-  });
-
-  it('shows an empty state for a team with no players', async () => {
-    const screen = await render(<PlayersScreen />, { wrapper });
-    fireEvent.press(await screen.findByLabelText('U18, 0 players'));
-    expect(await screen.findByText('No U18 players yet')).toBeTruthy();
   });
 
   it('loads the goals leaderboard from the Top Scorers tab', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
-    await screen.findByLabelText('U9, 1 player');
+    await screen.findByLabelText('AIMZ U9, 1 player');
     fireEvent.press(screen.getByRole('tab', { name: 'Top Scorers' }));
     await waitFor(() => expect(api.leaders).toHaveBeenCalledWith('goals', { limit: 25 }));
     expect(await screen.findByText('Mariam Adel')).toBeTruthy();

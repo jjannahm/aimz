@@ -6,12 +6,11 @@ import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, View } from '
 
 import { Screen } from '@/src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
+import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
 import { theme } from '@/src/theme';
 import type { LeaderMetric, Player, PlayerLeaderRow } from '@/src/types/api';
-
-const AGE_GROUPS = ['U9', 'U11', 'U13', 'U15', 'U18'] as const;
 
 type Section = { key: string; label: string; metric?: LeaderMetric };
 
@@ -37,15 +36,20 @@ function PlayerRow({ player, subtitle, trailing }: { player: Player; subtitle: s
 function useRoster() {
   const teams = useQuery({ queryKey: ['teams', 'roster'], queryFn: () => api.teams('?limit=100') });
   const players = useQuery({ queryKey: ['players', 'roster'], queryFn: () => api.players('?limit=100') });
-  const byAgeGroup = useMemo(() => {
-    const teamAgeGroups = new Map((teams.data?.items ?? []).map((team) => [team.id, team.age_group]));
-    const grouped = new Map<string, Player[]>(AGE_GROUPS.map((ageGroup) => [ageGroup, []]));
+  // Squads are whatever the admin has created, so a new one shows up here
+  // without a code change or a restart.
+  const squads = useMemo(() => {
+    const counts = new Map<string, Player[]>();
     for (const player of players.data?.items ?? []) {
-      grouped.get(teamAgeGroups.get(player.team_id) ?? '')?.push(player);
+      const bucket = counts.get(player.team_id);
+      if (bucket) bucket.push(player); else counts.set(player.team_id, [player]);
     }
-    return grouped;
+    return (teams.data?.items ?? [])
+      .filter((team) => team.is_aimz)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((team) => ({ team, players: counts.get(team.id) ?? [] }));
   }, [players.data, teams.data]);
-  return { byAgeGroup, isLoading: teams.isLoading || players.isLoading, isError: teams.isError || players.isError, error: (teams.error ?? players.error) as ApiError | null, refetch: () => { teams.refetch(); players.refetch(); } };
+  return { squads, isLoading: teams.isLoading || players.isLoading, isError: teams.isError || players.isError, error: (teams.error ?? players.error) as ApiError | null, refetch: () => { teams.refetch(); players.refetch(); } };
 }
 
 function TeamsSection() {
@@ -54,26 +58,27 @@ function TeamsSection() {
 
   if (roster.isLoading) return <LoadingState label="Loading squads" />;
   if (roster.isError) return <ErrorState message={roster.error?.message ?? 'Could not load squads.'} onRetry={roster.refetch} />;
+  if (!roster.squads.length) return <EmptyState body="Squads added in Manage appear here automatically." title="No squads yet" />;
 
-  if (openTeam === null) {
-    return <FlatList contentContainerStyle={styles.listContent} data={AGE_GROUPS} keyExtractor={(ageGroup) => ageGroup} renderItem={({ item: ageGroup }) => {
-      const count = roster.byAgeGroup.get(ageGroup)?.length ?? 0;
-      return <Pressable accessibilityLabel={`${ageGroup}, ${count} ${count === 1 ? 'player' : 'players'}`} accessibilityRole="button" onPress={() => setOpenTeam(ageGroup)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
-        <View accessibilityElementsHidden style={styles.badge}><Text style={styles.badgeText}>{ageGroup}</Text></View>
-        <View style={styles.copy}><Text style={styles.name}>{ageGroup}</Text><Text style={styles.position}>{count} {count === 1 ? 'player' : 'players'}</Text></View>
+  const open = roster.squads.find((squad) => squad.team.id === openTeam);
+  if (!open) {
+    return <FlatList contentContainerStyle={styles.listContent} data={roster.squads} keyExtractor={(squad) => squad.team.id} renderItem={({ item }) => {
+      const count = item.players.length;
+      return <Pressable accessibilityLabel={`${item.team.name}, ${count} ${count === 1 ? 'player' : 'players'}`} accessibilityRole="button" onPress={() => setOpenTeam(item.team.id)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+        <TeamAvatar logoUrl={item.team.logo_url} name={item.team.age_group ?? item.team.name} size={48} />
+        <View style={styles.copy}><Text style={styles.name}>{item.team.name}</Text><Text style={styles.position}>{item.team.age_group ? `${item.team.age_group} · ` : ''}{count} {count === 1 ? 'player' : 'players'}</Text></View>
         <Chevron />
       </Pressable>;
     }} showsVerticalScrollIndicator={false} style={styles.list} />;
   }
 
-  const squad = roster.byAgeGroup.get(openTeam) ?? [];
   return <View style={styles.stack}>
     <Pressable accessibilityLabel="Back to all teams" accessibilityRole="button" onPress={() => setOpenTeam(null)} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
       <Ionicons accessibilityElementsHidden color={theme.colors.lightBlue} name="chevron-back" size={20} />
       <Text style={styles.backText}>All teams</Text>
     </Pressable>
-    <Text accessibilityRole="header" style={styles.squadTitle}>{openTeam}</Text>
-    {squad.length ? <FlatList contentContainerStyle={styles.listContent} data={squad} keyExtractor={(player) => player.id} renderItem={({ item }) => <PlayerRow player={item} subtitle={`${item.position}, number ${item.jersey_number ?? 'not assigned'}`} />} showsVerticalScrollIndicator={false} style={styles.list} /> : <EmptyState body={copy.emptySquad(openTeam)} title={`No ${openTeam} players yet`} />}
+    <Text accessibilityRole="header" style={styles.squadTitle}>{open.team.name}</Text>
+    {open.players.length ? <FlatList contentContainerStyle={styles.listContent} data={open.players} keyExtractor={(player) => player.id} renderItem={({ item }) => <PlayerRow player={item} subtitle={`${item.position}, number ${item.jersey_number ?? 'not assigned'}`} />} showsVerticalScrollIndicator={false} style={styles.list} /> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
   </View>;
 }
 

@@ -17,6 +17,7 @@ import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { appConfig } from '@/src/config';
 import { api, ApiError } from '@/src/lib/api';
+import { invalidateAfterWrite } from '@/src/lib/cache';
 import { theme } from '@/src/theme';
 import { EXTRA_TIME_PERIODS, totalMatchMinutes } from '@/src/types/api';
 import type { Competition, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
@@ -79,7 +80,10 @@ export default function ManageScreen() {
   const switchResource = (next: Resource) => { setResource(next); setEditing(null); form.reset(defaults); setFormError(null); };
   const query = resource === 'teams' ? teams : resource === 'competitions' ? competitions : resource === 'players' ? players : resource === 'matches' ? matches : invites;
   const items: Entity[] = resource === 'teams' ? teams.data?.items ?? [] : resource === 'competitions' ? competitions.data?.items ?? [] : resource === 'players' ? players.data?.items ?? [] : resource === 'matches' ? matches.data?.items ?? [] : invites.data ?? [];
-  const invalidate = async () => { await Promise.all([client.invalidateQueries({ queryKey: [resource] }), client.invalidateQueries({ queryKey: ['matches'] }), client.invalidateQueries({ queryKey: ['teams'] }), client.invalidateQueries({ queryKey: ['players'] }), client.invalidateQueries({ queryKey: ['competitions'] })]); };
+  // Every admin write clears the views built on it, including derived ones
+  // like standings, leaderboards and squad counts.
+  const entityFor: Record<Resource, Parameters<typeof invalidateAfterWrite>[1]> = { teams: 'team', players: 'player', competitions: 'competition', matches: 'match', invites: 'invite' };
+  const invalidate = async () => { await invalidateAfterWrite(client, entityFor[resource]); };
 
   const save = form.handleSubmit(async (values) => {
     setFormError(null);
