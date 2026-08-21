@@ -64,7 +64,9 @@ export default function LineupScreen() {
         });
       }
       await invalidateAfterWrite(client, 'lineup', 'match');
-      router.back();
+      // Land on the match, where the lineup and pitch are, rather than wherever
+      // the admin happened to come from.
+      router.replace(`/match/${id}`);
     },
     onError: (error) => showMessage('Lineup not saved', (error as ApiError).message),
   });
