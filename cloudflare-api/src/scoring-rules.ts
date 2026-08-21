@@ -1,4 +1,4 @@
-import type { EventRow, StandingAccumulator } from "./types";
+import type { AwardTotals, EventRow, StandingAccumulator } from "./types";
 
 // Kept free of runtime imports so it can be unit tested the way match-clock is:
 // Node's type stripping cannot resolve extensionless relative imports, and
@@ -48,3 +48,41 @@ export function applyStanding(row: StandingAccumulator, scored: number, conceded
     row.points += 1;
   } else row.lost += 1;
 }
+
+export type AwardMetric = "motm" | "goals" | "assists" | "appearances" | "minutes" | "discipline";
+
+/** One definition per award, feeding both its headline winner and its ranking. */
+export interface AwardDefinition {
+  metric: AwardMetric;
+  label: string;
+  unit: string;
+  value: (row: AwardTotals) => number;
+  /** Who is in the running at all. */
+  eligible: (row: AwardTotals) => boolean;
+  /** Best first. */
+  compare: (a: AwardTotals, b: AwardTotals) => number;
+}
+
+// Most of anything: it takes one to count, and the fewer matches it took the
+// better, so a player who did it in half a season outranks an ever-present.
+function most(metric: AwardMetric, label: string, unit: string, value: (row: AwardTotals) => number): AwardDefinition {
+  return { metric, label, unit, value, eligible: (row) => value(row) >= 1, compare: (a, b) => value(b) - value(a) || a.appearances - b.appearances };
+}
+
+export const AWARDS: AwardDefinition[] = [
+  most("motm", "Most man of the match", "awards", (row) => row.motm),
+  most("goals", "Top scorer", "goals", (row) => row.goals),
+  most("assists", "Most assists", "assists", (row) => row.assists),
+  most("appearances", "Most appearances", "appearances", (row) => row.appearances),
+  most("minutes", "Most minutes", "minutes", (row) => row.minutes),
+  // Fewest cards, not most, and only among regulars: an untested nil from a
+  // player who barely featured is not a clean record.
+  {
+    metric: "discipline",
+    label: "Best discipline",
+    unit: "cards",
+    value: (row) => row.cards,
+    eligible: (row) => row.appearances >= MIN_AWARD_APPEARANCES,
+    compare: (a, b) => a.cards - b.cards || b.appearances - a.appearances,
+  },
+];

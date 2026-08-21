@@ -2,6 +2,8 @@ import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
 import type {
   AuditEntry,
+  AwardMetric,
+  AwardRank,
   Competition,
   LeaderMetric,
   LineupEntry,
@@ -282,6 +284,8 @@ export const api = {
   },
   headToHead: (teamId: string, opponentId: string) => request<HeadToHead>(`/api/v1/teams/${teamId}/head-to-head/${opponentId}`),
   awards: (competitionId: string) => request<SeasonAwards>(`/api/v1/competitions/${competitionId}/awards`),
+  awardRanking: (competitionId: string, metric: AwardMetric, limit = 25) =>
+    request<AwardRank[]>(`/api/v1/competitions/${competitionId}/awards/${metric}?limit=${limit}`),
   auditLog: (matchId?: string) => request<Page<AuditEntry>>(`/api/v1/admin/audit-log${matchId ? `?match_id=${encodeURIComponent(matchId)}` : ''}`),
   playerStats: (playerId: string, season?: string) => request<PlayerSeasonSummary>(`/api/v1/players/${playerId}/stats${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   invites: () => request<RegistrationInvite[]>('/api/v1/admin/registration-invites'),

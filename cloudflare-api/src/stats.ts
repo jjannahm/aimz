@@ -1,8 +1,8 @@
 import { groupStandings } from "./knockout";
 import type { Hono } from "hono";
 import { ApiProblem, publicCompetition, publicPlayer, publicStat, publicTeam } from "./helpers";
-import { applyStanding, FORM_LENGTH, MIN_AWARD_APPEARANCES, outcome } from "./scoring-rules";
-import type { CompetitionGroupRow, CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
+import { applyStanding, AWARDS, FORM_LENGTH, outcome, type AwardDefinition } from "./scoring-rules";
+import type { AwardTotals, CompetitionGroupRow, CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -156,50 +156,65 @@ export function registerStatsRoutes(app: App): void {
   app.get("/api/v1/competitions/:id/awards", async (c) => {
     const competition = await c.env.DB.prepare("SELECT * FROM competitions WHERE id=?").bind(c.req.param("id")).first<CompetitionRow>();
     if (!competition) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
-    const totals = await c.env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.minutes_played) AS minutes, SUM(s.yellow_cards + s.red_cards) AS cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances, (SELECT COUNT(*) FROM matches mm WHERE mm.competition_id=m.competition_id AND mm.status='finished' AND mm.man_of_the_match_player_id=s.player_id) AS motm FROM player_match_stats s JOIN matches m ON m.id=s.match_id WHERE m.status='finished' AND m.competition_id=? GROUP BY s.player_id`).bind(competition.id).all<AwardTotals>();
-    const playerIds = totals.results.map((row) => row.player_id);
-    const players = playerIds.length
-      ? await c.env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")})`).bind(...playerIds).all<PlayerRow>()
-      : { results: [] as PlayerRow[] };
-    const playerMap = new Map(players.results.map((player) => [player.id, player]));
-    const awardTeams = await teamsByIds(c.env, [...new Set(players.results.map((player) => player.team_id))]);
-
-    const shape = (row: AwardTotals, label: string, value: number, unit: string) => {
-      const player = playerMap.get(row.player_id) ?? null;
-      return { label, player: publicPlayer(player), team: publicTeam(awardTeams.get(player?.team_id ?? "") ?? null), value, unit };
-    };
-    const best = (label: string, key: "motm" | "goals" | "assists" | "minutes" | "appearances", unit: string) => {
-      const candidates = totals.results.filter((row) => row[key] >= 1);
-      if (!candidates.length) return null;
-      const winner = candidates.reduce((top, row) => row[key] > top[key] || (row[key] === top[key] && row.appearances < top.appearances) ? row : top);
-      return shape(winner, label, winner[key], unit);
-    };
-    const playerAwards = [
-      best("Most man of the match", "motm", "awards"),
-      best("Top scorer", "goals", "goals"),
-      best("Most assists", "assists", "assists"),
-      best("Most appearances", "appearances", "appearances"),
-      best("Most minutes", "minutes", "minutes"),
-    ].filter((award) => award !== null);
-    // Fewest cards, not most: the cleanest record among regulars.
-    const regulars = totals.results.filter((row) => row.appearances >= MIN_AWARD_APPEARANCES);
-    if (regulars.length) {
-      const cleanest = regulars.reduce((top, row) => row.cards < top.cards || (row.cards === top.cards && row.appearances > top.appearances) ? row : top);
-      playerAwards.push(shape(cleanest, "Best discipline", cleanest.cards, "cards"));
-    }
-
+    const rank = await awardRankings(c.env, competition.id);
+    // An award only exists if somebody won it, so an empty ranking drops out.
+    const playerAwards = AWARDS.flatMap((definition) => {
+      const [winner] = rank(definition);
+      return winner ? [{ metric: definition.metric, label: definition.label, player: winner.player, team: winner.team, value: winner.value, unit: winner.unit }] : [];
+    });
     // Every award is now a player award; team_awards stays on the response, and
     // empty, so the shape does not change for older clients.
     return c.json({ competition: publicCompetition(competition), player_awards: playerAwards, team_awards: [] });
   });
+
+  /** The full ranking behind one award, fetched only once a client opens it. */
+  app.get("/api/v1/competitions/:id/awards/:metric", async (c) => {
+    const definition = AWARDS.find((award) => award.metric === c.req.param("metric"));
+    if (!definition) throw new ApiProblem(404, "award_not_found", "Unknown award.");
+    const competition = await c.env.DB.prepare("SELECT * FROM competitions WHERE id=?").bind(c.req.param("id")).first<CompetitionRow>();
+    if (!competition) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
+    const limit = Math.min(Math.max(Number.parseInt(new URL(c.req.url).searchParams.get("limit") ?? "25", 10) || 25, 1), 100);
+    const rank = await awardRankings(c.env, competition.id);
+    return c.json(rank(definition).slice(0, limit));
+  });
 }
 
-interface AwardTotals {
-  player_id: string;
-  motm: number;
-  goals: number;
-  assists: number;
-  minutes: number;
-  cards: number;
+/**
+ * Ranks every award off one set of totals, so an award's headline winner is
+ * always rank 1 of the ranking a client opens behind it.
+ */
+async function awardRankings(env: Env, competitionId: string): Promise<(definition: AwardDefinition) => AwardRank[]> {
+  const totals = await env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.minutes_played) AS minutes, SUM(s.yellow_cards + s.red_cards) AS cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances, (SELECT COUNT(*) FROM matches mm WHERE mm.competition_id=m.competition_id AND mm.status='finished' AND mm.man_of_the_match_player_id=s.player_id) AS motm FROM player_match_stats s JOIN matches m ON m.id=s.match_id WHERE m.status='finished' AND m.competition_id=? GROUP BY s.player_id`).bind(competitionId).all<AwardTotals>();
+  const playerIds = totals.results.map((row) => row.player_id);
+  const players = playerIds.length
+    ? await env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")})`).bind(...playerIds).all<PlayerRow>()
+    : { results: [] as PlayerRow[] };
+  const playerMap = new Map(players.results.map((player) => [player.id, player]));
+  const awardTeams = await teamsByIds(env, [...new Set(players.results.map((player) => player.team_id))]);
+  const nameOf = (row: AwardTotals) => playerMap.get(row.player_id)?.name ?? "";
+  return (definition) => totals.results
+    .filter(definition.eligible)
+    // Name breaks the last tie, so two identical records still rank in a fixed
+    // order rather than however the database happened to return them.
+    .sort((a, b) => definition.compare(a, b) || nameOf(a).localeCompare(nameOf(b)))
+    .map((row, index) => {
+      const player = playerMap.get(row.player_id) ?? null;
+      return {
+        rank: index + 1,
+        player: publicPlayer(player),
+        team: publicTeam(awardTeams.get(player?.team_id ?? "") ?? null),
+        value: definition.value(row),
+        unit: definition.unit,
+        appearances: row.appearances,
+      };
+    });
+}
+
+interface AwardRank {
+  rank: number;
+  player: Record<string, unknown> | null;
+  team: Record<string, unknown> | null;
+  value: number;
+  unit: string;
   appearances: number;
 }
