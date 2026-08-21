@@ -177,29 +177,33 @@ describe('LiveScoringScreen — own goals and missed penalties', () => {
   });
   afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks(); });
 
-  it('offers own goal and pen miss alongside the existing buttons', async () => {
+  // Both are things that happen to a goal attempt, so they are logged from the
+  // Goal tab rather than from tabs of their own.
+  it('keeps own goal and a missed penalty inside the goal form', async () => {
     const screen = await render(<LiveScoringScreen />, { wrapper });
-    expect(await screen.findByText('Own goal')).toBeTruthy();
-    expect(screen.getByText('Pen miss')).toBeTruthy();
+    expect(await screen.findByLabelText('Own goal')).toBeTruthy();
+    expect(screen.getByLabelText('Penalty missed')).toBeTruthy();
+    expect(screen.queryByText('Pen miss')).toBeNull();
   });
 
-  it('logs an own goal in one step, with no assist to credit', async () => {
+  it('logs an own goal against the side that put it in, with no assist to credit', async () => {
     const screen = await render(<LiveScoringScreen />, { wrapper });
-    fireEvent.press(await screen.findByText('Own goal'));
+    fireEvent.press(await screen.findByLabelText('Own goal'));
 
-    expect(await screen.findByText('Add Own goal')).toBeTruthy();
-    expect(screen.getByText('Put through their own net')).toBeTruthy();
-    // An own goal has no assist, so that field stays away.
+    expect(await screen.findByText('Add own goal')).toBeTruthy();
+    // The admin picks who it counts for; the scorer comes from the other side.
+    expect(screen.getByText('Counts for')).toBeTruthy();
+    expect(screen.getByText(/Put through their own net/u)).toBeTruthy();
     expect(screen.queryByText('Assisted by (optional)')).toBeNull();
 
-    fireEvent.press(screen.getByText('Add Own goal'));
+    fireEvent.press(screen.getByText('Add own goal'));
     await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
-    expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'own_goal', team_id: 'home' });
+    expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'own_goal', team_id: 'away' });
   });
 
   it('asks how a penalty was missed before it shows the form', async () => {
     const screen = await render(<LiveScoringScreen />, { wrapper });
-    fireEvent.press(await screen.findByText('Pen miss'));
+    fireEvent.press(await screen.findByLabelText('Penalty missed'));
 
     expect(await screen.findByText('Saved')).toBeTruthy();
     expect(screen.getByText('Off target')).toBeTruthy();
@@ -208,9 +212,17 @@ describe('LiveScoringScreen — own goals and missed penalties', () => {
 
     fireEvent.press(screen.getByText('Saved'));
     expect(await screen.findByText('Team')).toBeTruthy();
-    fireEvent.press(screen.getByText('Add Pen miss'));
+    fireEvent.press(screen.getByText('Add missed penalty'));
     await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
     expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'penalty_missed', penalty_outcome: 'saved' });
+  });
+
+  it('leaves the scored-from-a-penalty box to a goal that went in', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    expect(await screen.findByLabelText('Scored from a penalty')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Penalty missed'));
+    fireEvent.press(await screen.findByText('Saved'));
+    expect(screen.queryByLabelText('Scored from a penalty')).toBeNull();
   });
 
   it('sends a substitution reason only when one is chosen', async () => {
