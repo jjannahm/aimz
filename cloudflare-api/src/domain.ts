@@ -257,7 +257,12 @@ export function registerDomainRoutes(app: App): void {
   });
   app.patch("/api/v1/matches/:id", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const current = await getJoinedMatch(c.env, c.req.param("id"));
-    const merged = { ...current, ...body }; const input = await matchInput(c.env, merged); const updated = nowIso();
+    // SQLite stores a flag as 0 or 1, but the input rules demand a real boolean.
+    // Merging the stored row in raw therefore failed validation on any patch
+    // that left the flag alone — a lineup save, which patches only the format,
+    // came back "Check the highlighted fields" after saving perfectly well.
+    const merged = { ...current, has_extra_time: current.has_extra_time === 1, ...body };
+    const input = await matchInput(c.env, merged); const updated = nowIso();
     let clock;
     try { clock = transitionLegacyStatus(current, input.status, updated); }
     catch (error) {
