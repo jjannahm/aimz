@@ -58,6 +58,24 @@ npm run deploy
 
 Run `npm run db:migrate:local` and `npm run dev` for local Worker/D1 development. `.dev.vars`, `.wrangler/`, and all credentials are ignored by Git.
 
+### Mock match data
+
+`cloudflare-api/scripts/seed-mock-matches.mjs` fills each league with seven
+fictional fixtures — five results, one in progress and one to come — and logs
+their goals with varied scorers and assisters, so Standings and the Top scorers
+and Top assisters tabs have realistic numbers to show. It is staging-only data
+in keeping with the "Fictional data only" banner, and it reuses the teams and
+players already assigned to each competition rather than inventing more.
+
+```bash
+cd cloudflare-api
+API_URL=https://aimz-api-staging.shared-links.workers.dev ADMIN_EMAIL=... ADMIN_PASSWORD=... npm run seed:mock-matches -- --dry-run
+```
+
+Matches it has already written are recognised by their `AIMZ Mock Ground N`
+venue and left alone, so a rerun never duplicates a fixture. Drop `--dry-run` to
+write.
+
 ## Cloudflare Pages web app
 
 Build the Expo web app against the Worker and deploy the static export:
