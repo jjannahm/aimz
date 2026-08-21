@@ -82,9 +82,10 @@ describe('FormationPitch', () => {
     ];
     const screen = await render(<FormationPitch formation="1-1" starters={squad} />);
     expect(screen.getByText('1-1')).toBeTruthy();
-    // Surnames keep the pitch readable at small sizes.
-    expect(screen.getByText('Hassan')).toBeTruthy();
-    expect(screen.getByText('Nabil')).toBeTruthy();
+    // First names, since that is how the squad is called out on the touchline.
+    expect(screen.getByText('Nour')).toBeTruthy();
+    expect(screen.getByText('Salma')).toBeTruthy();
+    expect(screen.queryByText('Hassan')).toBeNull();
   });
 });
 
