@@ -37,6 +37,24 @@ export default function MatchDetailScreen() {
     {query.isLoading ? <LoadingState label="Loading match" /> : query.isError || !query.data ? <ErrorState message={(query.error as ApiError)?.message ?? 'Match not found.'} onRetry={() => query.refetch()} /> : <>
       <View style={styles.hero}><View style={styles.statusRow}><MatchStatusIndicator clock={clock} muted={query.data.match.status !== 'live'} /><Text style={styles.competition}>{query.data.match.competition?.name}</Text></View><View style={styles.scoreRow}><View style={styles.team}><Text style={styles.teamName}>{query.data.match.home_team?.name}</Text></View><Text accessibilityLabel={`${query.data.match.home_score} to ${query.data.match.away_score}`} style={styles.score}>{query.data.match.home_score}–{query.data.match.away_score}</Text><View style={[styles.team, styles.away]}><Text style={[styles.teamName, styles.alignRight]}>{query.data.match.away_team?.name}</Text></View></View><Text style={styles.meta}>{new Intl.DateTimeFormat('en-EG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(query.data.match.kickoff_datetime))} · {query.data.match.venue}</Text>{query.data.match.status === 'live' ? <MatchProgressRail clock={clock} /> : null}{user?.role === 'admin' ? <View style={styles.adminActions}><AppButton label={query.data.match.status === 'scheduled' ? 'Open match management' : 'Open live scoring'} onPress={() => router.push(`/live/${id}`)} />{query.data.match.status === 'live' ? <AppButton disabled={endMatch.isPending} label={endMatch.isPending ? 'Ending…' : 'End match'} onPress={() => confirmAction('End this match now?', 'Final score will be locked in.', 'End match', () => endMatch.mutate())} variant="secondary" /> : null}</View> : null}</View>
       <View style={styles.section}><Text style={styles.sectionTitle}>Timeline</Text>{query.data.events.length === 0 ? <Text style={styles.empty}>Match events will appear here.</Text> : query.data.events.map((event) => <View key={event.id} style={styles.event}><View style={styles.eventIcon}><Ionicons color={event.type === 'red_card' ? theme.colors.error : event.type === 'yellow_card' ? theme.colors.warning : theme.colors.lightBlue} name={event.type === 'substitution' ? 'swap-horizontal' : event.type.includes('card') ? 'square' : 'football'} size={18} /></View><View style={styles.eventCopy}><Text style={styles.eventTitle}>{eventLabel[event.type]}</Text><Text style={styles.eventPlayer}>{event.player_id ? playerNames.get(event.player_id) ?? 'Player' : query.data.match.home_team_id === event.team_id ? query.data.match.home_team?.name : query.data.match.away_team?.name}</Text></View><Text style={styles.minute}>{event.minute == null ? 'FT' : `${event.minute}'`}</Text></View>)}</View>
+      {(() => {
+        const lineupTeamId = query.data.lineup[0]?.team_id;
+        const sides = [query.data.match.home_team, query.data.match.away_team];
+        const squad = sides.find((team) => team?.id === lineupTeamId) ?? sides.find((team) => team?.is_aimz) ?? null;
+        const spells = computeMinutesPlayed(query.data.lineup, query.data.events, 999);
+        const onPitch = (playerId: string) => { const spell = spells.find((item) => item.playerId === playerId); return Boolean(spell) && spell!.offAt === null; };
+        const current = query.data.lineup.filter((entry) => onPitch(entry.player_id));
+        const starters = current.length ? current : query.data.lineup.filter((entry) => entry.is_starter);
+        if (!starters.length) return null;
+        const asPlayer = (entry: typeof query.data.lineup[number]) => ({ id: entry.player_id, name: playerNames.get(entry.player_id) ?? 'Player', position: entry.position ?? '', jersey_number: entry.jersey_number } as never);
+        return <View style={styles.section}>
+          {squad && (squad.coach || squad.assistant_coach || user?.role === 'admin') ? <View style={styles.staffRow}>
+            <View style={styles.staff}><Text style={styles.staffLabel}>Coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.coach && styles.staffUnset]}>{squad.coach ?? 'Set in Manage'}</Text></View>
+            <View style={styles.staff}><Text style={styles.staffLabel}>Assistant coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.assistant_coach && styles.staffUnset]}>{squad.assistant_coach ?? 'Set in Manage'}</Text></View>
+          </View> : null}
+          <FormationPitch captainId={query.data.lineup.find((entry) => entry.is_captain)?.player_id ?? null} formation={query.data.match.formation} starters={starters.map(asPlayer)} />
+        </View>;
+      })()}
       <View style={styles.section}>
         <View style={styles.lineupHeader}>
           <Text style={styles.sectionTitle}>Lineups</Text>
@@ -80,11 +98,6 @@ export default function MatchDetailScreen() {
             </>;
           }
           return <>
-            {squad && (squad.coach || squad.assistant_coach || user?.role === 'admin') ? <View style={styles.staffRow}>
-              <View style={styles.staff}><Text style={styles.staffLabel}>Coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.coach && styles.staffUnset]}>{squad.coach ?? 'Set in Manage'}</Text></View>
-              <View style={styles.staff}><Text style={styles.staffLabel}>Assistant coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.assistant_coach && styles.staffUnset]}>{squad.assistant_coach ?? 'Set in Manage'}</Text></View>
-            </View> : null}
-            {starters.length ? <FormationPitch captainId={query.data.lineup.find((entry) => entry.is_captain)?.player_id ?? null} formation={query.data.match.formation} starters={starters.map(asPlayer)} /> : null}
             <Text style={styles.groupTitle}>{current.length ? 'On the pitch' : 'Starting'} {starters.length}</Text>
             {starters.map(row)}
             <Text style={styles.groupTitle}>Substitutes {subs.length ? `(${subs.length})` : ''}</Text>

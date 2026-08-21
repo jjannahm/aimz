@@ -27,6 +27,8 @@ export interface TeamRow {
   logo_key: string | null;
   coach: string | null;
   assistant_coach: string | null;
+  /** Which league the team is entered in. */
+  competition_id: string | null;
   created_at: string;
   updated_at: string;
 }

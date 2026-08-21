@@ -151,6 +151,11 @@ class Team(TimestampMixin, Base):
     # Set once per squad rather than per match; coaches rarely change week to week.
     coach: Mapped[str | None] = mapped_column(String(160))
     assistant_coach: Mapped[str | None] = mapped_column(String(160))
+    # Which league the team is entered in, so it appears in that table before
+    # it has played anything.
+    competition_id: Mapped[str | None] = mapped_column(
+        ForeignKey("competitions.id", ondelete="SET NULL"), index=True
+    )
 
     players: Mapped[list[Player]] = relationship(back_populates="team")
 
