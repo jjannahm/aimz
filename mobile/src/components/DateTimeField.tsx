@@ -58,7 +58,11 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
   const meridiem = wall.hour < 12 ? 'AM' : 'PM';
 
   return (
-    <View style={styles.group}>
+    // An open panel has to paint over the fields after it. Later siblings win
+    // the stacking order by default, so the whole field is lifted while it is
+    // open and dropped back afterwards, which keeps it out of everything else's
+    // way when it is closed.
+    <View style={[styles.group, open && styles.groupOpen]}>
       <Text style={styles.label}>{label}</Text>
       <Pressable
         accessibilityHint="Opens a date and time picker below this field"
@@ -129,13 +133,14 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   group: { flex: 1, gap: theme.spacing.xs },
+  groupOpen: { elevation: 8, zIndex: 10 },
   label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
   shell: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 52, paddingHorizontal: theme.spacing.md },
   shellOpen: { borderColor: colors.accent },
   shellError: { borderColor: colors.error },
   pressed: { opacity: 0.7 },
   value: { color: colors.textPrimary, flex: 1, fontSize: theme.type.body },
-  panel: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
+  panel: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, elevation: 8, gap: theme.spacing.sm, padding: theme.spacing.md, shadowColor: colors.background, shadowOffset: { height: 6, width: 0 }, shadowOpacity: 0.4, shadowRadius: 12, zIndex: 10 },
   monthRow: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
   monthLabel: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '800' },
   step: { alignItems: 'center', borderRadius: theme.radius.sm, height: theme.touch.minimum, justifyContent: 'center', width: theme.touch.minimum },

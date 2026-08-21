@@ -18,6 +18,8 @@ export type PresignResponse = Schema['PresignResponse'];
 /** 8, 16 or 32 for a knockout; null for a competition that is only a table. */
 export type Competition = Schema['CompetitionRead'] & { team_count: number | null };
 export const KNOCKOUT_TEAM_COUNTS = [8, 16, 32] as const;
+/** Every group is a four, which is where the 8/16/32 sizes come from. */
+export const GROUP_SIZE = 4;
 export type KnockoutTeamCount = (typeof KNOCKOUT_TEAM_COUNTS)[number];
 export const isKnockout = (competition: Pick<Competition, 'team_count'> | null | undefined): boolean => competition?.team_count != null;
 
