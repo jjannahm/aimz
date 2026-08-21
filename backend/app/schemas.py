@@ -246,6 +246,11 @@ class MatchPhaseUpdate(BaseModel):
     ]
 
 
+LOGGABLE_EVENTS = frozenset(
+    {EventType.goal, EventType.yellow_card, EventType.red_card, EventType.substitution}
+)
+
+
 class MatchEventInput(BaseModel):
     type: EventType
     minute: int | None = Field(default=None, ge=0, le=150)
@@ -256,6 +261,14 @@ class MatchEventInput(BaseModel):
     notes: str | None = Field(default=None, max_length=1000)
     is_penalty: bool = False
     client_operation_id: str = Field(min_length=8, max_length=64)
+
+    @field_validator("type")
+    @classmethod
+    def loggable(cls, value: EventType) -> EventType:
+        # An assist is recorded on the goal it came from, not on its own.
+        if value not in LOGGABLE_EVENTS:
+            raise ValueError("Assists are recorded on the goal, not as their own event.")
+        return value
 
 
 class MatchEventUpdate(BaseModel):

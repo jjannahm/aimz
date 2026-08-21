@@ -88,3 +88,39 @@ describe('MatchDetailScreen — lineups', () => {
     expect(await screen.findByText('Malak Sherif')).toBeTruthy();
   });
 });
+
+const goal = (id: string, minute: number, scorer: string, assister: string | null) => ({
+  id, match_id: 'match-1', type: 'goal' as const, minute, team_id: 'home',
+  player_id: scorer, secondary_player_id: assister, related_event_id: null, notes: null,
+  is_penalty: false, client_operation_id: id, created_at: '', updated_at: '',
+});
+
+describe('MatchDetailScreen — timeline', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({
+      items: [
+        { id: 'p1', name: 'Amina Adel', team_id: 'home', position: 'Forward', jersey_number: 9, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' },
+        { id: 'p2', name: 'Aya Nabil', team_id: 'home', position: 'Midfielder', jersey_number: 6, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' },
+      ],
+      total: 2, limit: 100, offset: 0,
+    });
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  it('shows one row per goal, with the assister under the scorer', async () => {
+    jest.mocked(api.live).mockResolvedValue({ ...snapshot(), events: [goal('e1', 23, 'p1', 'p2')] } as never);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('Amina Adel')).toBeTruthy();
+    expect(screen.getByText('Assist: Aya Nabil')).toBeTruthy();
+    expect(screen.getByText("23'")).toBeTruthy();
+    // The old build listed the assist as an event in its own right.
+    expect(screen.queryByText('Assist')).toBeNull();
+  });
+
+  it('shows only the scorer when nobody is credited', async () => {
+    jest.mocked(api.live).mockResolvedValue({ ...snapshot(), events: [goal('e2', 41, 'p1', null)] } as never);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('Amina Adel')).toBeTruthy();
+    expect(screen.queryByText(/^Assist:/u)).toBeNull();
+  });
+});

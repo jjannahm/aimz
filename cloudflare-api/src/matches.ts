@@ -67,7 +67,7 @@ export function registerMatchRoutes(app: App): void {
     const duplicate = await c.env.DB.prepare("SELECT * FROM match_events WHERE client_operation_id = ?").bind(operationId).first<EventRow>();
     if (duplicate) return c.json(publicEvent(duplicate));
 
-    const type = enumField(body, "type", ["goal", "assist", "yellow_card", "red_card", "substitution"] as const);
+    const type = enumField(body, "type", ["goal", "yellow_card", "red_card", "substitution"] as const);
     const teamId = stringField(body, "team_id", { min: 1, max: 36 })!;
     if (teamId !== match.home_team_id && teamId !== match.away_team_id) throw new ApiProblem(422, "invalid_team", "The event team must be part of this match.");
     const minute = numberField(body, "minute", { optional: true, nullable: true, min: 0, max: 150 }) ?? null;
@@ -88,13 +88,21 @@ export function registerMatchRoutes(app: App): void {
     const statements = [
       c.env.DB.prepare("INSERT INTO match_events (id, match_id, type, minute, team_id, player_id, secondary_player_id, related_event_id, notes, is_penalty, client_operation_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(event.id, event.match_id, event.type, event.minute, event.team_id, event.player_id, event.secondary_player_id, event.related_event_id, event.notes, event.is_penalty, event.client_operation_id, now, now),
     ];
+    // A goal carries its own assist, so the provider is credited from the same row.
+    if (type === "goal" && event.secondary_player_id) {
+      statements.push(c.env.DB.prepare(`
+        INSERT INTO player_match_stats (id, match_id, player_id, appeared, minutes_played, goals, assists, yellow_cards, red_cards, created_at, updated_at)
+        VALUES (?, ?, ?, 1, 0, 0, 1, 0, 0, ?, ?)
+        ON CONFLICT(match_id, player_id) DO UPDATE SET assists = assists + 1, appeared = 1, updated_at = excluded.updated_at
+      `).bind(crypto.randomUUID(), match.id, event.secondary_player_id, now, now));
+    }
     const counter = eventCounter(type);
     if (playerId && counter) {
       statements.push(c.env.DB.prepare(`
         INSERT INTO player_match_stats (id, match_id, player_id, appeared, minutes_played, goals, assists, yellow_cards, red_cards, created_at, updated_at)
         VALUES (?, ?, ?, 1, 0, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(match_id, player_id) DO UPDATE SET ${counter} = ${counter} + 1, appeared = 1, updated_at = excluded.updated_at
-      `).bind(crypto.randomUUID(), match.id, playerId, type === "goal" ? 1 : 0, type === "assist" ? 1 : 0, type === "yellow_card" ? 1 : 0, type === "red_card" ? 1 : 0, now, now));
+      `).bind(crypto.randomUUID(), match.id, playerId, type === "goal" ? 1 : 0, 0, type === "yellow_card" ? 1 : 0, type === "red_card" ? 1 : 0, now, now));
     }
     statements.push(scoreRecalculation(c.env, match.id, now));
     try { await c.env.DB.batch(statements); }
@@ -112,7 +120,7 @@ export function registerMatchRoutes(app: App): void {
     const current = await c.env.DB.prepare("SELECT * FROM match_events WHERE id = ? AND match_id = ?").bind(c.req.param("eventId"), match.id).first<EventRow>();
     if (!current) throw new ApiProblem(404, "event_not_found", "Match event not found.");
     const body = await jsonObject(c);
-    const type = body.type === undefined ? current.type : enumField(body, "type", ["goal", "assist", "yellow_card", "red_card", "substitution"] as const);
+    const type = body.type === undefined ? current.type : enumField(body, "type", ["goal", "yellow_card", "red_card", "substitution"] as const);
     const teamId = stringField(body, "team_id", { optional: true, min: 1, max: 36 }) ?? current.team_id;
     if (teamId !== match.home_team_id && teamId !== match.away_team_id) throw new ApiProblem(422, "invalid_team", "The event team must be part of this match.");
     const event: EventRow = {
@@ -236,7 +244,8 @@ export function registerMatchRoutes(app: App): void {
 }
 
 function eventCounter(type: EventRow["type"]): "goals" | "assists" | "yellow_cards" | "red_cards" | null {
-  return ({ goal: "goals", assist: "assists", yellow_card: "yellow_cards", red_card: "red_cards", substitution: null } as const)[type];
+  // Assists are credited from the goal they came from, never from the event type.
+  return ({ goal: "goals", assist: null, yellow_card: "yellow_cards", red_card: "red_cards", substitution: null } as const)[type];
 }
 
 function scoreRecalculation(env: Env, matchId: string, updated: string): D1PreparedStatement {
@@ -244,7 +253,7 @@ function scoreRecalculation(env: Env, matchId: string, updated: string): D1Prepa
 }
 
 function statRecalculation(env: Env, matchId: string, updated: string): D1PreparedStatement {
-  return env.DB.prepare(`UPDATE player_match_stats SET goals=(SELECT COUNT(*) FROM match_events e WHERE e.match_id=player_match_stats.match_id AND e.player_id=player_match_stats.player_id AND e.type='goal'), assists=(SELECT COUNT(*) FROM match_events e WHERE e.match_id=player_match_stats.match_id AND e.player_id=player_match_stats.player_id AND e.type='assist'), yellow_cards=(SELECT COUNT(*) FROM match_events e WHERE e.match_id=player_match_stats.match_id AND e.player_id=player_match_stats.player_id AND e.type='yellow_card'), red_cards=(SELECT COUNT(*) FROM match_events e WHERE e.match_id=player_match_stats.match_id AND e.player_id=player_match_stats.player_id AND e.type='red_card'), updated_at=? WHERE match_id=?`).bind(updated, matchId);
+  return env.DB.prepare(`UPDATE player_match_stats SET goals=(SELECT COUNT(*) FROM match_events e WHERE e.match_id=player_match_stats.match_id AND e.player_id=player_match_stats.player_id AND e.type='goal'), assists=(SELECT COUNT(*) FROM match_events e WHERE e.match_id=player_match_stats.match_id AND e.secondary_player_id=player_match_stats.player_id AND e.type='goal'), yellow_cards=(SELECT COUNT(*) FROM match_events e WHERE e.match_id=player_match_stats.match_id AND e.player_id=player_match_stats.player_id AND e.type='yellow_card'), red_cards=(SELECT COUNT(*) FROM match_events e WHERE e.match_id=player_match_stats.match_id AND e.player_id=player_match_stats.player_id AND e.type='red_card'), updated_at=? WHERE match_id=?`).bind(updated, matchId);
 }
 
 async function requirePlayerOnTeam(env: Env, playerId: string, teamId: string): Promise<void> {
