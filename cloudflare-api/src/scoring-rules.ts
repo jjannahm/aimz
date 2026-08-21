@@ -48,3 +48,11 @@ export function applyStanding(row: StandingAccumulator, scored: number, conceded
     row.points += 1;
   } else row.lost += 1;
 }
+
+// Season totals count finished matches only, the same rule standings, leaders
+// and awards apply, so a match still being played never moves a player's
+// record. Built here rather than inline so it can be unit tested.
+export function playerStatsQuery(season: string | null): string {
+  const seasonFilter = season ? " AND cp.season=?" : "";
+  return `SELECT s.* FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN competitions cp ON cp.id=m.competition_id WHERE s.player_id=? AND m.status='finished'${seasonFilter} ORDER BY m.kickoff_datetime DESC`;
+}
