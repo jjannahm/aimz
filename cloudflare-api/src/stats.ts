@@ -1,7 +1,7 @@
 import { groupStandings } from "./knockout";
 import type { Hono } from "hono";
 import { ApiProblem, publicCompetition, publicPlayer, publicStat, publicTeam } from "./helpers";
-import { applyStanding, FORM_LENGTH, MIN_AWARD_APPEARANCES, outcome } from "./scoring-rules";
+import { applyStanding, FORM_LENGTH, MIN_AWARD_APPEARANCES, outcome, playerStatsQuery } from "./scoring-rules";
 import type { CompetitionGroupRow, CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -147,8 +147,8 @@ export function registerStatsRoutes(app: App): void {
 
   app.get("/api/v1/players/:id/stats", async (c) => {
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>(); if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
-    const season = new URL(c.req.url).searchParams.get("season"); const values: unknown[] = [player.id]; const where = season ? " AND cp.season=?" : ""; if (season) values.push(season);
-    const result = await c.env.DB.prepare(`SELECT s.* FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN competitions cp ON cp.id=m.competition_id WHERE s.player_id=?${where} ORDER BY m.kickoff_datetime DESC`).bind(...values).all<StatRow>();
+    const season = new URL(c.req.url).searchParams.get("season"); const values: unknown[] = [player.id]; if (season) values.push(season);
+    const result = await c.env.DB.prepare(playerStatsQuery(season)).bind(...values).all<StatRow>();
     const totals = result.results.reduce((sum, stat) => ({ appearances: sum.appearances + (stat.appeared ? 1 : 0), minutes_played: sum.minutes_played+stat.minutes_played, goals: sum.goals+stat.goals, assists: sum.assists+stat.assists, own_goals: sum.own_goals+stat.own_goals, yellow_cards: sum.yellow_cards+stat.yellow_cards, red_cards: sum.red_cards+stat.red_cards }), { appearances:0, minutes_played:0, goals:0, assists:0, own_goals:0, yellow_cards:0, red_cards:0 });
     return c.json({ player: publicPlayer(player), season, ...totals, matches: result.results.map(publicStat) });
   });

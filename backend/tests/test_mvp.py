@@ -1245,6 +1245,58 @@ async def test_scoring_marks_a_player_as_having_appeared(
 
 
 @pytest.mark.asyncio
+async def test_season_totals_count_finished_matches_only(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    ids = await _match_fixture(client, admin_headers, "Season Totals")
+    logged = await client.post(
+        f"/api/v1/matches/{ids['match_id']}/events",
+        headers=admin_headers,
+        json={
+            "type": "goal",
+            "minute": 18,
+            "team_id": ids["home_id"],
+            "player_id": ids["defender_id"],
+            "client_operation_id": "season-totals-op-1",
+        },
+    )
+    assert logged.status_code == 201, logged.text
+
+    # The goal is on the match the moment it is logged.
+    live = await client.get(f"/api/v1/matches/{ids['match_id']}/live", headers=admin_headers)
+    assert live.json()["match"]["home_score"] == 1
+
+    # A season summary counts finished matches only, the same rule standings,
+    # leaders and awards apply, so the record holds at nil until the whistle.
+    during = await client.get(
+        f"/api/v1/players/{ids['defender_id']}/stats", headers=admin_headers
+    )
+    assert during.status_code == 200, during.text
+    assert during.json()["goals"] == 0
+    assert during.json()["appearances"] == 0
+    assert during.json()["matches"] == []
+    filtered = await client.get(
+        f"/api/v1/players/{ids['defender_id']}/stats?season=2026%2F27", headers=admin_headers
+    )
+    assert filtered.json()["goals"] == 0
+
+    finished = await client.post(
+        f"/api/v1/matches/{ids['match_id']}/phase",
+        headers=admin_headers,
+        json={"action": "finish_match"},
+    )
+    assert finished.status_code == 200, finished.text
+
+    # Once the match is finished the same goal lands on the season total.
+    after = await client.get(
+        f"/api/v1/players/{ids['defender_id']}/stats", headers=admin_headers
+    )
+    assert after.json()["goals"] == 1
+    assert after.json()["appearances"] == 1
+    assert len(after.json()["matches"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_standings_carry_a_form_guide_and_head_to_head_reads_from_one_side(
     client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
