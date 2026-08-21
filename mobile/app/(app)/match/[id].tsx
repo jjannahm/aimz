@@ -44,7 +44,7 @@ export default function MatchDetailScreen() {
   const players = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
   const playerNames = new Map(players.data?.items.map((player) => [player.id, player.name]));
   const clock = useMatchClock(query.data?.match);
-  return <Screen action={<CloseButton />} eyebrow="Match detail" title="Game centre">
+  return <Screen action={<CloseButton />} title="Game centre">
     {query.isLoading ? <LoadingState label="Loading match" /> : query.isError || !query.data ? <ErrorState message={(query.error as ApiError)?.message ?? 'Match not found.'} onRetry={() => query.refetch()} /> : <>
       <View style={styles.hero}><View style={styles.statusRow}><MatchStatusIndicator clock={clock} muted={query.data.match.status !== 'live'} /><Text style={styles.competition}>{query.data.match.competition?.name}</Text></View><View style={styles.scoreRow}><View style={styles.team}><Text style={styles.teamName}>{query.data.match.home_team?.name}</Text></View><ScoreLine away={query.data.match.away_score} home={query.data.match.home_score} /><View style={[styles.team, styles.away]}><Text style={[styles.teamName, styles.alignRight]}>{query.data.match.away_team?.name}</Text></View></View><Text style={styles.meta}>{new Intl.DateTimeFormat('en-EG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(query.data.match.kickoff_datetime))} · {query.data.match.venue}</Text>{query.data.match.status === 'live' ? <MatchProgressRail clock={clock} /> : null}
       <View style={styles.timeline}><Text style={styles.timelineTitle}>Timeline</Text>{query.data.events.length === 0 ? <Text style={[styles.empty, styles.timelineEmpty]}>Match events will appear here.</Text> : query.data.events.map((event) => {

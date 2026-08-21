@@ -50,7 +50,6 @@ export default function AuditLogScreen() {
   const entries = trail.data?.items ?? [];
   return <Screen
     action={<CloseButton />}
-    eyebrow={matchId ? 'This match' : 'Every match'}
     title="Admin activity"
   >
     {trail.isLoading ? <LoadingState label="Loading activity" />

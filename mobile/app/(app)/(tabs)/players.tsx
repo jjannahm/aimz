@@ -154,7 +154,7 @@ export default function PlayersScreen() {
   const [selected, setSelected] = useState<string>('teams');
   const section = SECTIONS.find((item) => item.key === selected) ?? SECTIONS[0]!;
 
-  return <Screen eyebrow="Academy roster" title="Players">
+  return <Screen title="Players">
     <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
       {SECTIONS.map((item) => {
         const active = item.key === section.key;

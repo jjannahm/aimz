@@ -63,20 +63,47 @@ export function inferFormation(starters: Player[]): string | null {
   return rows.length >= 2 ? rows.join('-') : String(outfield.length);
 }
 
+/**
+ * Where each outfield row sits, as a share of the pitch height, back row first.
+ *
+ * The numbers are the markings: 67% is the top of the penalty box, so the back
+ * line stands on the eighteen-yard line, and 50% is the halfway line, so the
+ * midfield stands on it. Anything further forward is spread above the halfway
+ * line. A shape with only two rows keeps its back line on the box and pushes the
+ * other row into the attacking half rather than stranding it on halfway.
+ */
+const ROW_TOPS: Record<number, number[]> = { 1: [50], 2: [67, 36], 3: [67, 50, 28], 4: [67, 51, 35, 19] };
+const KEEPER_TOP = 88;
+/** Half a row: jersey, its gap, and the name beneath it. */
+const ROW_HALF = 28;
+
+function rowTops(count: number): number[] {
+  const known = ROW_TOPS[count];
+  if (known) return known;
+  // Beyond four rows, fall back to an even spread across the same band.
+  return Array.from({ length: count }, (unused, index) => 67 - (index * 48) / Math.max(1, count - 1));
+}
+
 export function FormationPitch({ starters, formation, captainId }: { starters: Player[]; formation?: string | null; captainId?: string | null }) {
   const styles = useThemedStyles(stylesheet);
   const shape = formation ?? inferFormation(starters);
   const { keeper, rows } = arrangeByFormation(starters, shape ?? String(Math.max(0, starters.length - 1)));
-  // Forwards belong at the top of the pitch, the keeper at the bottom.
-  const stacked = [...rows].reverse();
+  // Rows arrive back to front, which is the order they are placed in.
+  const tops = rowTops(rows.length);
 
   return <View accessibilityLabel={`Formation ${shape ?? 'not set'}`} style={styles.pitch}>
+    {/* Markings first, so every shirt draws on top of them. */}
     <View accessibilityElementsHidden style={styles.halfway} />
     <View accessibilityElementsHidden style={styles.circle} />
-    {stacked.map((row, rowIndex) => <View key={`row-${rowIndex}`} style={styles.row}>
+    <View accessibilityElementsHidden style={styles.centreSpot} />
+    <View accessibilityElementsHidden style={styles.penaltyBox} />
+    {/* Only the top of this circle clears the wrapper, which is the arc. */}
+    <View accessibilityElementsHidden style={styles.arcWindow}><View style={styles.arc} /></View>
+    <View accessibilityElementsHidden style={styles.sixYardBox} />
+    {rows.map((row, rowIndex) => <View key={`row-${rowIndex}`} style={[styles.row, { top: `${tops[rowIndex] ?? 50}%` }]}>
       {row.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} player={player} />)}
     </View>)}
-    {keeper.length ? <View style={styles.row}>{keeper.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} player={player} />)}</View> : null}
+    {keeper.length ? <View style={[styles.row, { top: `${KEEPER_TOP}%` }]}>{keeper.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} player={player} />)}</View> : null}
     <Text style={styles.badge}>{shape ?? '—'}{formation ? '' : ' · from positions'}</Text>
   </View>;
 }
@@ -96,21 +123,30 @@ function PitchPlayer({ player, captain = false }: { player: Player; captain?: bo
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   pitch: {
+    // Rows are placed against the markings rather than stacked, so the card
+    // needs a height of its own to place them in.
+    aspectRatio: 0.86,
     backgroundColor: PITCH,
     borderColor: PITCH_LINE,
     borderRadius: theme.radius.lg,
     borderWidth: 1,
-    gap: theme.spacing.md,
+    minHeight: 300,
     overflow: 'hidden',
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: theme.spacing.lg,
   },
   halfway: { backgroundColor: PITCH_LINE, height: 1, left: 0, position: 'absolute', right: 0, top: '50%' },
+  centreSpot: { alignSelf: 'center', backgroundColor: PITCH_LINE, borderRadius: 2, height: 4, marginTop: -2, position: 'absolute', top: '50%', width: 4 },
+  // The keeper's end. Widths are percentages so the box keeps its proportions at
+  // any card width, and each box drops its bottom border to read as open to the
+  // goal line rather than as a floating rectangle.
+  penaltyBox: { borderColor: PITCH_LINE, borderWidth: 1, borderBottomWidth: 0, bottom: 0, height: '33%', left: '19%', position: 'absolute', right: '19%' },
+  sixYardBox: { borderColor: PITCH_LINE, borderWidth: 1, borderBottomWidth: 0, bottom: 0, height: '15%', left: '34%', position: 'absolute', right: '34%' },
+  arcWindow: { bottom: '33%', height: 13, left: '38%', overflow: 'hidden', position: 'absolute', right: '38%' },
+  arc: { borderColor: PITCH_LINE, borderRadius: 44, borderWidth: 1, bottom: 0, height: 44, position: 'absolute', width: '100%' },
   circle: {
     alignSelf: 'center', borderColor: PITCH_LINE, borderRadius: 34, borderWidth: 1,
     height: 68, marginTop: -34, position: 'absolute', top: '50%', width: 68,
   },
-  row: { flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'space-evenly' },
+  row: { flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'space-evenly', left: theme.spacing.sm, marginTop: -ROW_HALF, position: 'absolute', right: theme.spacing.sm },
   player: { alignItems: 'center', flex: 1, gap: 2, maxWidth: 92 },
   playerName: { color: '#EAF6EF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   armband: {
@@ -120,6 +156,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   },
   armbandText: { color: colors.onAccent, fontSize: 10, fontWeight: '900', lineHeight: 12 },
   badge: {
+    bottom: theme.spacing.xs,
+    left: theme.spacing.sm,
+    position: 'absolute',
     alignSelf: 'flex-start', color: '#CDE9D9', fontSize: theme.type.caption,
     fontVariant: ['tabular-nums'], fontWeight: '900', letterSpacing: 0.6,
     paddingLeft: theme.spacing.xs,
