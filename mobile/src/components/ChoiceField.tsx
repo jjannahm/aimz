@@ -2,7 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Option = { label: string; value: string };
 type Anchor = { x: number; y: number; width: number; height: number };
@@ -31,6 +32,8 @@ export function getDropdownLayout(anchor: Anchor, optionCount: number, windowWid
 }
 
 export function ChoiceField({ label, value, options, onChange, placeholder = 'Choose one', error }: { label: string; value?: string; options: Option[]; onChange: (value: string) => void; placeholder?: string; error?: string }) {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [fieldSize, setFieldSize] = useState({ height: 52, width: 0 });
@@ -96,7 +99,7 @@ export function ChoiceField({ label, value, options, onChange, placeholder = 'Ch
         testID="choice-trigger"
       >
         <Text numberOfLines={1} style={[styles.value, !selected && styles.placeholder]}>{selected?.label ?? placeholder}</Text>
-        <Ionicons accessible={false} color={theme.colors.textMuted} importantForAccessibility="no" name={open ? 'chevron-up' : 'chevron-down'} size={20} />
+        <Ionicons accessible={false} color={colors.textMuted} importantForAccessibility="no" name={open ? 'chevron-up' : 'chevron-down'} size={20} />
       </Pressable>
       {error ? <Text accessibilityLiveRegion="polite" style={styles.error}>{error}</Text> : null}
       <Modal
@@ -147,7 +150,7 @@ export function ChoiceField({ label, value, options, onChange, placeholder = 'Ch
                       ]}
                     >
                       <Text numberOfLines={1} style={[styles.optionText, isSelected && styles.optionTextSelected]}>{option.label}</Text>
-                      {isSelected ? <Ionicons accessible={false} color={theme.colors.lightBlue} importantForAccessibility="no" name="checkmark" size={20} /> : null}
+                      {isSelected ? <Ionicons accessible={false} color={colors.accentSoft} importantForAccessibility="no" name="checkmark" size={20} /> : null}
                     </Pressable>
                   );
                 })}
@@ -160,23 +163,23 @@ export function ChoiceField({ label, value, options, onChange, placeholder = 'Ch
   );
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   group: { gap: theme.spacing.xs },
-  label: { color: theme.colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
-  field: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 52, paddingHorizontal: theme.spacing.md },
-  fieldError: { borderColor: theme.colors.error },
-  fieldOpen: { borderColor: theme.colors.accent },
-  value: { color: theme.colors.textPrimary, flex: 1, fontSize: theme.type.body, marginRight: theme.spacing.sm },
-  placeholder: { color: theme.colors.textMuted },
-  error: { color: theme.colors.errorText, fontSize: theme.type.caption },
+  label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
+  field: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 52, paddingHorizontal: theme.spacing.md },
+  fieldError: { borderColor: colors.error },
+  fieldOpen: { borderColor: colors.accent },
+  value: { color: colors.textPrimary, flex: 1, fontSize: theme.type.body, marginRight: theme.spacing.sm },
+  placeholder: { color: colors.textMuted },
+  error: { color: colors.errorText, fontSize: theme.type.caption },
   pressed: { opacity: 0.7 },
   overlay: { flex: 1 },
-  menu: { backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.accent, borderRadius: theme.radius.md, borderWidth: 1, elevation: 12, overflow: 'hidden', position: 'absolute', shadowColor: theme.colors.background, shadowOffset: { height: 8, width: 0 }, shadowOpacity: 0.45, shadowRadius: 14 },
+  menu: { backgroundColor: colors.surfaceRaised, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, elevation: 12, overflow: 'hidden', position: 'absolute', shadowColor: colors.background, shadowOffset: { height: 8, width: 0 }, shadowOpacity: 0.45, shadowRadius: 14 },
   options: { flexGrow: 1 },
-  option: { alignItems: 'center', backgroundColor: theme.colors.surfaceRaised, flexDirection: 'row', justifyContent: 'space-between', minHeight: OPTION_HEIGHT, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  optionDivider: { borderTopColor: theme.colors.border, borderTopWidth: StyleSheet.hairlineWidth },
-  optionSelected: { backgroundColor: theme.colors.highlightedSurface },
+  option: { alignItems: 'center', backgroundColor: colors.surfaceRaised, flexDirection: 'row', justifyContent: 'space-between', minHeight: OPTION_HEIGHT, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  optionDivider: { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+  optionSelected: { backgroundColor: colors.highlightedSurface },
   optionPressed: { opacity: 0.72 },
-  optionText: { color: theme.colors.textSecondary, flex: 1, fontSize: theme.type.body, fontWeight: '700', marginRight: theme.spacing.sm },
-  optionTextSelected: { color: theme.colors.textPrimary },
+  optionText: { color: colors.textSecondary, flex: 1, fontSize: theme.type.body, fontWeight: '700', marginRight: theme.spacing.sm },
+  optionTextSelected: { color: colors.textPrimary },
 });

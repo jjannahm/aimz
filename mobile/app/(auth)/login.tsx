@@ -10,12 +10,14 @@ import { AuthShell } from '@/src/components/AuthShell';
 import { FormField } from '@/src/components/FormField';
 import { appConfig } from '@/src/config';
 import { ApiError } from '@/src/lib/api';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 const schema = z.object({ email: z.email('Enter a valid email.'), password: z.string().min(1, 'Enter your password.') });
 type Values = z.infer<typeof schema>;
 
 export default function LoginScreen() {
+  const styles = useThemedStyles(stylesheet);
   const { signIn } = useAuth();
   const { control, handleSubmit, setError, formState: { errors, isSubmitting } } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { email: '', password: '' } });
   const submit = handleSubmit(async (values) => {
@@ -36,4 +38,4 @@ export default function LoginScreen() {
   </AuthShell>;
 }
 
-const styles = StyleSheet.create({ form: { gap: theme.spacing.md }, error: { backgroundColor: theme.colors.errorSurface, borderRadius: theme.radius.sm, color: theme.colors.errorText, padding: theme.spacing.md }, link: { color: theme.colors.lightBlue, fontWeight: '800', minHeight: theme.touch.minimum, paddingVertical: 12 }, disabledNote: { color: theme.colors.textMuted, fontSize: theme.type.label, lineHeight: 20 }, footer: { color: theme.colors.textSecondary, textAlign: 'center' } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ form: { gap: theme.spacing.md }, error: { backgroundColor: colors.errorSurface, borderRadius: theme.radius.sm, color: colors.errorText, padding: theme.spacing.md }, link: { color: colors.accentSoft, fontWeight: '800', minHeight: theme.touch.minimum, paddingVertical: 12 }, disabledNote: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20 }, footer: { color: colors.textSecondary, textAlign: 'center' } });

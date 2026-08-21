@@ -6,16 +6,20 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AppButton } from '@/src/components/AppButton';
+import { CloseButton } from '@/src/components/CloseButton';
 import { ChoiceField } from '@/src/components/ChoiceField';
 import { Screen } from '@/src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { FORMATIONS, LINEUP_FORMATS, type LineupFormat, type Player } from '@/src/types/api';
 
 export default function LineupScreen() {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const client = useQueryClient();
@@ -83,7 +87,7 @@ export default function LineupScreen() {
     return next;
   });
 
-  return <Screen action={<Pressable accessibilityLabel="Go back" accessibilityRole="button" hitSlop={10} onPress={() => router.back()} style={({ pressed }) => [styles.back, pressed && styles.pressed]}><Ionicons color={theme.colors.textPrimary} name="chevron-back" size={24} /></Pressable>} eyebrow={squad?.name ?? 'AIMZ squad'} title="Set lineup">
+  return <Screen action={<CloseButton />} eyebrow={squad?.name ?? 'AIMZ squad'} title="Set lineup">
     {matchQuery.isLoading || playersQuery.isLoading ? <LoadingState label="Loading squad" />
       : matchQuery.isError ? <ErrorState message={(matchQuery.error as ApiError).message} onRetry={() => matchQuery.refetch()} />
       : locked ? <EmptyState body="The starting lineup is locked once the match begins. Log a substitution from live scoring instead." title="Match already started" />
@@ -93,14 +97,14 @@ export default function LineupScreen() {
         {format === null ? <Text style={styles.hint}>Choose a format to pick the starting players.</Text> : <>
           <View style={styles.counterRow}>
             <Text accessibilityLiveRegion="polite" style={[styles.counter, complete && styles.counterDone]}>{selected} of {format} selected</Text>
-            {complete ? <Ionicons color={theme.colors.live} name="checkmark-circle" size={20} /> : null}
+            {complete ? <Ionicons color={colors.live} name="checkmark-circle" size={20} /> : null}
           </View>
           <Text style={styles.groupTitle}>Starting {format}</Text>
           {roster.map((player) => {
             const isStarter = starters.has(player.id);
             const full = !isStarter && selected >= format;
             return <Pressable accessibilityLabel={`${player.name}, ${player.position}`} accessibilityRole="checkbox" accessibilityState={{ checked: isStarter, disabled: full }} key={player.id} onPress={() => toggle(player.id)} style={({ pressed }) => [styles.row, isStarter && styles.rowActive, full && styles.rowFull, pressed && styles.pressed]}>
-              <View style={[styles.check, isStarter && styles.checkOn]}>{isStarter ? <Ionicons color={theme.colors.onAccent} name="checkmark" size={16} /> : null}</View>
+              <View style={[styles.check, isStarter && styles.checkOn]}>{isStarter ? <Ionicons color={colors.onAccent} name="checkmark" size={16} /> : null}</View>
               <View style={styles.copy}>
                 <Text style={styles.name}>{player.name}</Text>
                 <Text style={styles.meta}>{player.position}{player.jersey_number == null ? '' : ` · #${player.jersey_number}`}</Text>
@@ -117,4 +121,4 @@ export default function LineupScreen() {
   </Screen>;
 }
 
-const styles = StyleSheet.create({ back: { alignItems: 'center', backgroundColor: theme.colors.surface, borderRadius: 22, height: 44, justifyContent: 'center', width: 44 }, pressed: { opacity: 0.7 }, hint: { color: theme.colors.textMuted, lineHeight: 20 }, counterRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm }, counter: { color: theme.colors.lightBlue, fontSize: theme.type.body, fontWeight: '900' }, counterDone: { color: theme.colors.liveText }, groupTitle: { color: theme.colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900', marginTop: theme.spacing.sm }, row: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 60, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm }, rowActive: { borderColor: theme.colors.accent }, rowFull: { opacity: 0.45 }, check: { alignItems: 'center', borderColor: theme.colors.border, borderRadius: 6, borderWidth: 2, height: 24, justifyContent: 'center', width: 24 }, checkOn: { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent }, copy: { flex: 1 }, name: { color: theme.colors.textPrimary, fontWeight: '800' }, meta: { color: theme.colors.textMuted, marginTop: 2 } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ pressed: { opacity: 0.7 }, hint: { color: colors.textMuted, lineHeight: 20 }, counterRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm }, counter: { color: colors.accentSoft, fontSize: theme.type.body, fontWeight: '900' }, counterDone: { color: colors.liveText }, groupTitle: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900', marginTop: theme.spacing.sm }, row: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 60, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm }, rowActive: { borderColor: colors.accent }, rowFull: { opacity: 0.45 }, check: { alignItems: 'center', borderColor: colors.border, borderRadius: 6, borderWidth: 2, height: 24, justifyContent: 'center', width: 24 }, checkOn: { backgroundColor: colors.accent, borderColor: colors.accent }, copy: { flex: 1 }, name: { color: colors.textPrimary, fontWeight: '800' }, meta: { color: colors.textMuted, marginTop: 2 } });

@@ -4,7 +4,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { LiveDot } from '@/src/components/MatchStatusIndicator';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { useMatchClock } from '@/src/lib/matchClock';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { Match } from '@/src/types/api';
 
 function kickoffParts(value: string) {
@@ -16,6 +17,7 @@ function kickoffParts(value: string) {
 }
 
 export function MatchRow({ match, compact = false }: { match: Match; compact?: boolean }) {
+  const styles = useThemedStyles(stylesheet);
   const clock = useMatchClock(match);
   const homeName = match.home_team?.name ?? 'Home';
   const awayName = match.away_team?.name ?? 'Away';
@@ -60,21 +62,21 @@ export function MatchRow({ match, compact = false }: { match: Match; compact?: b
   );
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   row: { alignItems: 'center', flexDirection: 'row', minHeight: 94, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md },
   compactRow: { minHeight: 78, paddingVertical: theme.spacing.sm },
-  pressed: { backgroundColor: theme.colors.highlightedSurface, opacity: 0.86 },
+  pressed: { backgroundColor: colors.highlightedSurface, opacity: 0.86 },
   teamSide: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minWidth: 0 },
-  teamName: { color: theme.colors.textPrimary, flex: 1, fontSize: theme.type.label, fontWeight: '800', lineHeight: 18 },
+  teamName: { color: colors.textPrimary, flex: 1, fontSize: theme.type.label, fontWeight: '800', lineHeight: 18 },
   homeName: { textAlign: 'right' },
   center: { alignItems: 'center', justifyContent: 'center', minWidth: 92, paddingHorizontal: 6 },
-  score: { color: theme.colors.textPrimary, fontSize: 22, fontVariant: ['tabular-nums'], fontWeight: '900', letterSpacing: -0.5 },
+  score: { color: colors.textPrimary, fontSize: 22, fontVariant: ['tabular-nums'], fontWeight: '900', letterSpacing: -0.5 },
   kickoffRow: { alignItems: 'baseline', flexDirection: 'row', gap: 3 },
-  kickoff: { color: theme.colors.textPrimary, fontSize: 18, fontVariant: ['tabular-nums'], fontWeight: '900' },
-  period: { color: theme.colors.textSecondary, fontSize: 10, fontWeight: '800' },
-  secondary: { color: theme.colors.textMuted, fontSize: 10, marginTop: 3 },
-  stateBadge: { alignItems: 'center', backgroundColor: theme.colors.surfaceRaised, borderRadius: theme.radius.pill, flexDirection: 'row', gap: 5, marginTop: 5, minHeight: 24, paddingHorizontal: 8 },
-  liveBadge: { backgroundColor: theme.colors.liveSurface, borderColor: theme.colors.live, borderWidth: 1 },
-  stateText: { color: theme.colors.textMuted, fontSize: 10, fontVariant: ['tabular-nums'], fontWeight: '900' },
-  liveText: { color: theme.colors.liveText },
+  kickoff: { color: colors.textPrimary, fontSize: 18, fontVariant: ['tabular-nums'], fontWeight: '900' },
+  period: { color: colors.textSecondary, fontSize: 10, fontWeight: '800' },
+  secondary: { color: colors.textMuted, fontSize: 10, marginTop: 3 },
+  stateBadge: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.pill, flexDirection: 'row', gap: 5, marginTop: 5, minHeight: 24, paddingHorizontal: 8 },
+  liveBadge: { backgroundColor: colors.liveSurface, borderColor: colors.live, borderWidth: 1 },
+  stateText: { color: colors.textMuted, fontSize: 10, fontVariant: ['tabular-nums'], fontWeight: '900' },
+  liveText: { color: colors.liveText },
 });

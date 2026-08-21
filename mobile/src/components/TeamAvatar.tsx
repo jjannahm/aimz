@@ -1,6 +1,7 @@
 import { Image, StyleSheet, Text, View } from 'react-native';
 
-import { theme } from '@/src/theme';
+import { type ThemeColors } from '@/src/theme';
+import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Tone = 'accent' | 'light';
 
@@ -28,6 +29,7 @@ function toneFor(name: string): Tone {
 }
 
 export function TeamAvatar({ name, logoUrl, size = 44, tone }: Props) {
+  const styles = useThemedStyles(stylesheet);
   const circle = { borderRadius: size / 2, height: size, width: size };
   if (logoUrl) return <Image accessibilityElementsHidden source={{ uri: logoUrl }} style={circle} />;
   const resolved = tone ?? toneFor(name);
@@ -36,9 +38,9 @@ export function TeamAvatar({ name, logoUrl, size = 44, tone }: Props) {
   </View>;
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   fallback: { alignItems: 'center', justifyContent: 'center' },
-  accent: { backgroundColor: theme.colors.accent },
-  light: { backgroundColor: theme.colors.lightBlue },
-  initials: { color: theme.colors.onAccent, fontWeight: '900', letterSpacing: 0.3 },
+  accent: { backgroundColor: colors.accent },
+  light: { backgroundColor: colors.accentSoft },
+  initials: { color: colors.onAccent, fontWeight: '900', letterSpacing: 0.3 },
 });

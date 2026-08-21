@@ -2,7 +2,7 @@ import { render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
 import { initialsFor, TeamAvatar } from '@/src/components/TeamAvatar';
-import { theme } from '@/src/theme';
+import { darkColors } from '@/src/theme';
 
 const backgroundOf = (element: { props: Record<string, unknown> } | null) =>
   (StyleSheet.flatten(element?.props.style as never) as { backgroundColor?: string } | undefined)?.backgroundColor;
@@ -36,13 +36,13 @@ describe('TeamAvatar', () => {
     const second = await render(<TeamAvatar name="Giza Lions" />);
     const colour = backgroundOf(first.getByText('GL', { includeHiddenElements: true }).parent!);
     expect(colour).toBe(backgroundOf(second.getByText('GL', { includeHiddenElements: true }).parent!));
-    expect([theme.colors.accent, theme.colors.lightBlue]).toContain(colour);
+    expect([darkColors.accent, darkColors.accentSoft]).toContain(colour);
   });
 
   it('lets a caller pin the tone, so home and away stay distinct', async () => {
     const home = await render(<TeamAvatar name="Same Name" tone="accent" />);
     const away = await render(<TeamAvatar name="Same Name" tone="light" />);
-    expect(backgroundOf(home.getByText('SN', { includeHiddenElements: true }).parent!)).toBe(theme.colors.accent);
-    expect(backgroundOf(away.getByText('SN', { includeHiddenElements: true }).parent!)).toBe(theme.colors.lightBlue);
+    expect(backgroundOf(home.getByText('SN', { includeHiddenElements: true }).parent!)).toBe(darkColors.accent);
+    expect(backgroundOf(away.getByText('SN', { includeHiddenElements: true }).parent!)).toBe(darkColors.accentSoft);
   });
 });

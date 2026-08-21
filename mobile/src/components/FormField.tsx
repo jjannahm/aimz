@@ -2,11 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Props = TextInputProps & { label: string; error?: string; hint?: string };
 
 export function FormField({ label, error, hint, secureTextEntry, style, ...props }: Props) {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
   const [revealed, setRevealed] = useState(false);
   return (
     <View style={styles.group}>
@@ -15,9 +18,9 @@ export function FormField({ label, error, hint, secureTextEntry, style, ...props
         <TextInput
           accessibilityLabel={label}
           accessibilityHint={hint}
-          placeholderTextColor={theme.colors.textMuted}
+          placeholderTextColor={colors.textMuted}
           secureTextEntry={Boolean(secureTextEntry) && !revealed}
-          selectionColor={theme.colors.accent}
+          selectionColor={colors.accent}
           style={[styles.input, props.multiline && styles.multiline, style]}
           {...props}
         />
@@ -30,7 +33,7 @@ export function FormField({ label, error, hint, secureTextEntry, style, ...props
             style={({ pressed }) => [styles.reveal, pressed && styles.pressed]}
           >
             <Ionicons
-              color={theme.colors.textSecondary}
+              color={colors.textSecondary}
               name={revealed ? 'eye-off-outline' : 'eye-outline'}
               size={22}
             />
@@ -42,15 +45,15 @@ export function FormField({ label, error, hint, secureTextEntry, style, ...props
   );
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   group: { flex: 1, gap: theme.spacing.xs },
-  label: { color: theme.colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
-  inputShell: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', minHeight: 52 },
-  input: { color: theme.colors.textPrimary, flex: 1, fontSize: theme.type.body, minHeight: 50, paddingHorizontal: theme.spacing.md },
+  label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
+  inputShell: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', minHeight: 52 },
+  input: { color: colors.textPrimary, flex: 1, fontSize: theme.type.body, minHeight: 50, paddingHorizontal: theme.spacing.md },
   multiline: { minHeight: 96, paddingTop: theme.spacing.md, textAlignVertical: 'top' },
-  inputError: { borderColor: theme.colors.error },
+  inputError: { borderColor: colors.error },
   reveal: { alignItems: 'center', height: 44, justifyContent: 'center', marginRight: theme.spacing.xs, width: 44 },
   pressed: { opacity: 0.65 },
-  error: { color: theme.colors.errorText, fontSize: theme.type.caption },
-  hint: { color: theme.colors.textMuted, fontSize: theme.type.caption },
+  error: { color: colors.errorText, fontSize: theme.type.caption },
+  hint: { color: colors.textMuted, fontSize: theme.type.caption },
 });

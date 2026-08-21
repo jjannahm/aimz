@@ -2,6 +2,8 @@ import { fireEvent, render } from '@testing-library/react-native';
 
 import { AppButton } from '@/src/components/AppButton';
 
+jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
+
 describe('AppButton', () => {
   it('runs its action and exposes button semantics', async () => {
     const onPress = jest.fn();
@@ -15,5 +17,14 @@ describe('AppButton', () => {
     const screen = await render(<AppButton disabled label="Save match" onPress={onPress} />);
     fireEvent.press(screen.getByRole('button', { name: 'Save match' }));
     expect(onPress).not.toHaveBeenCalled();
+  });
+
+  it('keeps its accessible name when it shows only an icon', async () => {
+    const onPress = jest.fn();
+    const screen = await render(<AppButton icon="trash" iconOnly label="Delete" onPress={onPress} variant="danger" />);
+    fireEvent.press(screen.getByRole('button', { name: 'Delete' }));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    // The word itself is gone from the row; only the glyph remains.
+    expect(screen.queryByText('Delete')).toBeNull();
   });
 });

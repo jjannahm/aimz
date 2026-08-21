@@ -5,7 +5,7 @@
     "version": "0.1.0",
     "orientation": "default",
     "scheme": "aimz",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "icon": "./assets/branding/icon.png",
     "newArchEnabled": true,
     "plugins": [
@@ -27,8 +27,8 @@
       "favicon": "./assets/branding/favicon.png",
       "name": "AIMZ Egypt",
       "shortName": "AIMZ",
-      "themeColor": "#09112F",
-      "backgroundColor": "#09112F",
+      "themeColor": "#020817",
+      "backgroundColor": "#020817",
       "display": "standalone"
     },
     "ios": {

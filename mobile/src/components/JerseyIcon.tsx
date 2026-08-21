@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { theme } from '@/src/theme';
+import { type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Props = {
   /** Squad number printed on the shirt. Null falls back to an em dash. */
@@ -17,9 +18,12 @@ type Props = {
 const NUMBER_TOP = 0.46;
 const NUMBER_SIZE = 0.29;
 
-export function JerseyIcon({ number, size = 48, color = theme.colors.accent, label }: Props) {
+export function JerseyIcon({ number, size = 48, color, label }: Props) {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
+  const shirt = color ?? colors.accent;
   return <View accessibilityElementsHidden={!label} accessibilityLabel={label} style={[styles.wrap, { height: size, width: size }]}>
-    <Ionicons color={color} name="shirt" size={size} />
+    <Ionicons color={shirt} name="shirt" size={size} />
     <Text
       allowFontScaling={false}
       numberOfLines={1}
@@ -30,10 +34,10 @@ export function JerseyIcon({ number, size = 48, color = theme.colors.accent, lab
   </View>;
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center' },
   number: {
-    color: theme.colors.onAccent,
+    color: colors.onAccent,
     fontVariant: ['tabular-nums'],
     fontWeight: '900',
     position: 'absolute',

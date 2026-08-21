@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { JerseyIcon } from '@/src/components/JerseyIcon';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { formationRows, type Player } from '@/src/types/api';
 
 /** Pitch green, deliberately the one non-navy surface in the app. */
@@ -63,6 +64,7 @@ export function inferFormation(starters: Player[]): string | null {
 }
 
 export function FormationPitch({ starters, formation }: { starters: Player[]; formation?: string | null }) {
+  const styles = useThemedStyles(stylesheet);
   const shape = formation ?? inferFormation(starters);
   const { keeper, rows } = arrangeByFormation(starters, shape ?? String(Math.max(0, starters.length - 1)));
   // Forwards belong at the top of the pitch, the keeper at the bottom.
@@ -80,14 +82,16 @@ export function FormationPitch({ starters, formation }: { starters: Player[]; fo
 }
 
 function PitchPlayer({ player }: { player: Player }) {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
   const surname = player.name.trim().split(/\s+/u).slice(-1)[0] ?? player.name;
   return <View style={styles.player}>
-    <JerseyIcon color={theme.colors.textPrimary} number={player.jersey_number} size={40} />
+    <JerseyIcon color={colors.textPrimary} number={player.jersey_number} size={40} />
     <Text numberOfLines={1} style={styles.playerName}>{surname}</Text>
   </View>;
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   pitch: {
     backgroundColor: PITCH,
     borderColor: PITCH_LINE,

@@ -7,7 +7,8 @@ import { useState } from 'react';
 import { Platform, View } from 'react-native';
 
 import { AuthProvider } from '@/src/auth/AuthProvider';
-import { theme } from '@/src/theme';
+import { DialogHost } from '@/src/components/DialogHost';
+import { ThemeProvider, useAppTheme } from '@/src/theme/ThemeProvider';
 
 // Nothing registered the icon font on web, so every Ionicons glyph fell back to a
 // tofu box. The bundled copy is unreachable once deployed: its asset path sits
@@ -18,16 +19,29 @@ import { theme } from '@/src/theme';
 const iconFont = Platform.OS === 'web' ? { ionicons: '/fonts/Ionicons.ttf' } : Ionicons.font;
 
 export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <ThemedRoot />
+    </ThemeProvider>
+  );
+}
+
+// Split from `RootLayout` so the tree below can read the theme the provider
+// resolves: the status bar, the stack background and the font-loading holder
+// all have to follow the mode.
+function ThemedRoot() {
+  const { colors, mode } = useAppTheme();
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 20_000 } },
   }));
   const [iconsLoaded, iconError] = useFonts(iconFont);
-  if (!iconsLoaded && !iconError) return <View style={{ backgroundColor: theme.colors.background, flex: 1 }} />;
+  if (!iconsLoaded && !iconError) return <View style={{ backgroundColor: colors.background, flex: 1 }} />;
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <StatusBar style="light" />
-        <Stack screenOptions={{ contentStyle: { backgroundColor: theme.colors.background }, headerShown: false, animation: 'fade' }} />
+        <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+        <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerShown: false, animation: 'fade' }} />
+        <DialogHost />
       </AuthProvider>
     </QueryClientProvider>
   );

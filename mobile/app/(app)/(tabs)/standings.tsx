@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -6,10 +7,12 @@ import { Screen } from '@/src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { initialsFor, TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { Competition } from '@/src/types/api';
 
 function CompetitionHeader({ competition }: { competition: Competition }) {
+  const styles = useThemedStyles(stylesheet);
   return <View accessibilityLabel={`${competition.name}, season ${competition.season}`} style={styles.headerCard}>
     <View accessibilityElementsHidden style={styles.crest}><Text style={styles.crestText}>{initialsFor(competition.name)}</Text></View>
     <View style={styles.headerCopy}>
@@ -20,6 +23,8 @@ function CompetitionHeader({ competition }: { competition: Competition }) {
 }
 
 export default function StandingsScreen() {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
   const eligible = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -51,46 +56,52 @@ export default function StandingsScreen() {
         <View style={styles.teamCell}>
           <TeamAvatar logoUrl={row.team.logo_url} name={row.team.name} size={34} />
           <View style={styles.team}>
-            <Text numberOfLines={1} style={styles.teamName}>{row.team.name}</Text>
+            <View style={styles.nameRow}>
+              <Text numberOfLines={1} style={[styles.teamName, row.rank === 1 && styles.leaderName]}>{row.team.name}</Text>
+              {row.rank === 1 ? <Ionicons accessibilityLabel="First place" color={colors.leaderAccent} name="trophy" size={16} /> : null}
+            </View>
             {row.team.squad_code ? <Text numberOfLines={1} style={styles.code}>{row.team.squad_code}</Text> : null}
           </View>
         </View>
         <Text style={styles.stat}>{row.played}</Text>
         <Text style={styles.stat}>{row.goal_difference > 0 ? '+' : ''}{row.goal_difference}</Text>
-        <Text style={[styles.stat, styles.points]}>{row.points}</Text>
+        <Text style={[styles.stat, styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
       </View>)}
     </View>}
   </Screen>;
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   tabBar: { flexGrow: 0 },
   tabs: { gap: theme.spacing.sm },
-  tab: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
-  activeTab: { backgroundColor: theme.colors.accent, borderColor: theme.colors.accent },
-  tabLabel: { color: theme.colors.textSecondary, fontWeight: '800' },
-  activeLabel: { color: theme.colors.onAccent, fontWeight: '900' },
-  headerCard: { alignItems: 'center', backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.lg, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 80, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  crest: { alignItems: 'center', backgroundColor: theme.colors.surfaceRaised, borderColor: theme.colors.accent, borderRadius: 24, borderWidth: 1, height: 48, justifyContent: 'center', width: 48 },
-  crestText: { color: theme.colors.lightBlue, fontSize: theme.type.body, fontWeight: '900', letterSpacing: 0.3 },
+  tab: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
+  activeTab: { backgroundColor: colors.accent, borderColor: colors.accent },
+  tabLabel: { color: colors.textSecondary, fontWeight: '800' },
+  activeLabel: { color: colors.onAccent, fontWeight: '900' },
+  headerCard: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 80, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  crest: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderColor: colors.accent, borderRadius: 24, borderWidth: 1, height: 48, justifyContent: 'center', width: 48 },
+  crestText: { color: colors.accentSoft, fontSize: theme.type.body, fontWeight: '900', letterSpacing: 0.3 },
   headerCopy: { flex: 1, gap: 2 },
-  headerName: { color: theme.colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' },
-  headerSeason: { color: theme.colors.textMuted, fontSize: theme.type.label },
+  headerName: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' },
+  headerSeason: { color: colors.textMuted, fontSize: theme.type.label },
   pressed: { opacity: 0.7 },
-  table: { borderColor: theme.colors.border, borderRadius: theme.radius.lg, borderWidth: 1, overflow: 'hidden' },
-  tableHeader: { alignItems: 'center', backgroundColor: theme.colors.surfaceRaised, flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  headerText: { color: theme.colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 0.6 },
-  rankHeader: { color: theme.colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', width: 22 },
-  row: { alignItems: 'center', backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, borderTopWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 62, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  altRow: { backgroundColor: theme.colors.surfaceRaised },
-  aimzRow: { backgroundColor: theme.colors.highlightedSurface },
-  leaderRow: { borderLeftColor: theme.colors.warning, borderLeftWidth: 3 },
-  rank: { color: theme.colors.textMuted, fontVariant: ['tabular-nums'], fontWeight: '800', width: 22 },
-  leaderRank: { color: theme.colors.warning, fontWeight: '900' },
+  table: { borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, overflow: 'hidden' },
+  tableHeader: { alignItems: 'center', backgroundColor: colors.surfaceRaised, flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  headerText: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 0.6 },
+  rankHeader: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', width: 22 },
+  row: { alignItems: 'center', backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 62, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  altRow: { backgroundColor: colors.surfaceRaised },
+  aimzRow: { backgroundColor: colors.highlightedSurface },
+  leaderRow: { backgroundColor: colors.leaderSurface, borderLeftColor: colors.leaderAccent, borderLeftWidth: 4 },
+  rank: { color: colors.textMuted, fontVariant: ['tabular-nums'], fontWeight: '800', width: 22 },
+  leaderRank: { color: colors.leaderAccent, fontWeight: '900' },
   teamCell: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm },
   team: { flex: 1 },
-  teamName: { color: theme.colors.textPrimary, fontWeight: '800' },
-  code: { color: theme.colors.lightBlue, fontSize: theme.type.caption, marginTop: 2 },
-  stat: { color: theme.colors.textSecondary, fontVariant: ['tabular-nums'], textAlign: 'right', width: 38 },
-  points: { color: theme.colors.textPrimary, fontWeight: '900' },
+  nameRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
+  teamName: { color: colors.textPrimary, flexShrink: 1, fontWeight: '800' },
+  leaderName: { fontWeight: '900' },
+  leaderPoints: { color: colors.leaderAccent },
+  code: { color: colors.accentSoft, fontSize: theme.type.caption, marginTop: 2 },
+  stat: { color: colors.textSecondary, fontVariant: ['tabular-nums'], textAlign: 'right', width: 38 },
+  points: { color: colors.textPrimary, fontWeight: '900' },
 });
