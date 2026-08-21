@@ -2,7 +2,9 @@ export type UserRole = "player" | "admin";
 export type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
 export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";
-export type EventType = "goal" | "assist" | "yellow_card" | "red_card" | "substitution";
+export type EventType = "goal" | "assist" | "own_goal" | "penalty_missed" | "yellow_card" | "red_card" | "substitution";
+export type SubstitutionReason = "tactical" | "injury" | "concussion" | "disciplinary" | "other";
+export type PenaltyOutcome = "saved" | "off_target";
 
 export interface UserRow {
   id: string;
@@ -79,6 +81,8 @@ export interface MatchRow {
   lineup_format: number | null;
   /** Outfield shape, e.g. "4-4-2"; digits sum to lineup_format - 1. */
   formation: string | null;
+  /** Picked by an admin once the match is finished, not voted for. */
+  man_of_the_match_player_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -95,6 +99,10 @@ export interface EventRow {
   notes: string | null;
   /** Goals only: whether the goal came from a penalty kick. */
   is_penalty: number;
+  /** Substitutions only: why the player came off. */
+  substitution_reason: SubstitutionReason | null;
+  /** Missed penalties only: saved by the keeper, or off target. */
+  penalty_outcome: PenaltyOutcome | null;
   client_operation_id: string;
   created_at: string;
   updated_at: string;
@@ -119,6 +127,8 @@ export interface StatRow {
   minutes_played: number;
   goals: number;
   assists: number;
+  /** Kept apart from goals so an own goal never inflates a scoring record. */
+  own_goals: number;
   yellow_cards: number;
   red_cards: number;
   created_at: string;
@@ -134,6 +144,29 @@ export interface InviteRow {
   use_count: number;
   is_active: number;
   created_by_id: string | null;
+  created_at: string;
+}
+
+export interface StandingAccumulator {
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goals_for: number;
+  goals_against: number;
+  points: number;
+}
+
+export interface AuditRow {
+  id: string;
+  actor_id: string | null;
+  /** Kept alongside the id so a removed admin's actions still read. */
+  actor_name: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  match_id: string | null;
+  summary: string;
   created_at: string;
 }
 

@@ -251,7 +251,9 @@ export function registerDomainRoutes(app: App): void {
       : match.status === "finished"
         ? { status: "finished" as const, phase: "finished" as const, phase_started_at: null }
         : { status: "scheduled" as const, phase: "not_started" as const, phase_started_at: null };
-    const row: MatchRow = { id: crypto.randomUUID(), ...match, ...clock, home_score: 0, away_score: 0, revision: 0, created_at: now, updated_at: now };
+    // Man of the match is set through its own endpoint once the match finishes,
+    // so it is never written here or by the generic PATCH below.
+    const row: MatchRow = { id: crypto.randomUUID(), ...match, ...clock, home_score: 0, away_score: 0, revision: 0, man_of_the_match_player_id: null, created_at: now, updated_at: now };
     await c.env.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, phase, phase_started_at, home_score, away_score, revision, half_length_minutes, num_halves, half_time_break_minutes, has_extra_time, extra_time_half_length_minutes, lineup_format, formation, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.competition_id, row.home_team_id, row.away_team_id, row.kickoff_datetime, row.venue, row.status, row.phase, row.phase_started_at, row.half_length_minutes, row.num_halves, row.half_time_break_minutes, row.has_extra_time, row.extra_time_half_length_minutes, row.lineup_format, row.formation, now, now).run();
     return c.json(joinedMatch(await getJoinedMatch(c.env, row.id)), 201);
   });
