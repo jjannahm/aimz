@@ -24,11 +24,12 @@ describe('MatchRow', () => {
     expect(screen.getByText('Cairo Stars')).toBeTruthy();
   });
 
+  // Minutes count from one, so 34 minutes elapsed is the 35th minute.
   it.each([
-    ['first_half', '2026-08-20T18:30:00.000Z', "34'"],
+    ['first_half', '2026-08-20T18:30:00.000Z', "35'"],
     ['halftime', null, 'HT'],
-    ['second_half', '2026-08-20T18:49:00.000Z', "60'"],
-    ['extra_time', '2026-08-20T18:49:00.000Z', "ET 105'"],
+    ['second_half', '2026-08-20T18:49:00.000Z', "61'"],
+    ['extra_time', '2026-08-20T18:49:00.000Z', "ET 106'"],
   ] as const)('shows the %s live state', async (phase, startedAt, label) => {
     const screen = await render(<MatchRow match={{ ...base, status: 'live', phase, phase_started_at: startedAt, home_score: 2, away_score: 1 }} />);
     expect(screen.getByText('2 - 1')).toBeTruthy();
