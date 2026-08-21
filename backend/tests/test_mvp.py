@@ -813,3 +813,53 @@ async def test_lineup_records_a_captain(
     # The armband survives a round trip through the live snapshot.
     live = await client.get(f"/api/v1/matches/{match.json()['id']}/live", headers=admin_headers)
     assert [row["player_id"] for row in live.json()["lineup"] if row["is_captain"]] == captains
+
+
+@pytest.mark.asyncio
+async def test_team_entered_in_a_competition_appears_in_its_table(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Entry League", "season": "2026/27", "type": "league"},
+    )
+    competition_id = competition.json()["id"]
+
+    # An empty league has no table at all.
+    empty = await client.get(
+        f"/api/v1/competitions/{competition_id}/standings", headers=admin_headers
+    )
+    assert empty.json() == []
+
+    entered = await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={"name": "Delta FC", "competition_id": competition_id},
+    )
+    assert entered.status_code == 201, entered.text
+    assert entered.json()["competition_id"] == competition_id
+
+    # It now shows on nil, without having played anything.
+    table = await client.get(
+        f"/api/v1/competitions/{competition_id}/standings", headers=admin_headers
+    )
+    assert [row["team"]["name"] for row in table.json()] == ["Delta FC"]
+    row = table.json()[0]
+    assert (row["played"], row["points"], row["goal_difference"]) == (0, 0, 0)
+
+    # A team entered elsewhere stays out of this table.
+    other = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Other League", "season": "2026/27", "type": "league"},
+    )
+    await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={"name": "Faraway United", "competition_id": other.json()["id"]},
+    )
+    unchanged = await client.get(
+        f"/api/v1/competitions/{competition_id}/standings", headers=admin_headers
+    )
+    assert [row["team"]["name"] for row in unchanged.json()] == ["Delta FC"]

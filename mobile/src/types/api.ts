@@ -31,7 +31,7 @@ export type PlayerLeaderRow = {
 
 export type LeaderMetric = 'goals' | 'assists';
 
-export type TeamStaff = { coach: string | null; assistant_coach: string | null };
+export type TeamStaff = { coach: string | null; assistant_coach: string | null; competition_id: string | null };
 
 export type Team = TeamStaff & Omit<Schema['TeamRead'], 'squad_code' | 'age_group' | 'season' | 'logo_key'> & {
   squad_code: string | null;

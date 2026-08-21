@@ -181,10 +181,19 @@ export function registerMatchRoutes(app: App): void {
     if (competition.type === "friendly") return c.json([]);
     const result = await c.env.DB.prepare("SELECT * FROM matches WHERE competition_id=? AND status='finished'").bind(competition.id).all<MatchRow>();
     const teamIds = [...new Set(result.results.flatMap((match) => [match.home_team_id, match.away_team_id]))];
-    if (!teamIds.length) return c.json([]);
-    const teams = await c.env.DB.prepare(`SELECT * FROM teams WHERE id IN (${teamIds.map(() => "?").join(",")})`).bind(...teamIds).all<TeamRow>(); const teamMap = new Map(teams.results.map((team) => [team.id, team]));
+    const teams = teamIds.length
+      ? await c.env.DB.prepare(`SELECT * FROM teams WHERE id IN (${teamIds.map(() => "?").join(",")})`).bind(...teamIds).all<TeamRow>()
+      : { results: [] as TeamRow[] };
+    const teamMap = new Map(teams.results.map((team) => [team.id, team]));
     const rows = new Map<string, StandingAccumulator>();
     for (const id of teamIds) rows.set(id, { played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 });
+    // Teams entered in the competition appear on nil rather than waiting for a
+    // first result, so the table reads as a league from the day it is drawn up.
+    const entered = await c.env.DB.prepare("SELECT * FROM teams WHERE competition_id = ?").bind(competition.id).all<TeamRow>();
+    for (const team of entered.results) {
+      teamMap.set(team.id, team);
+      if (!rows.has(team.id)) rows.set(team.id, { played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 });
+    }
     for (const match of result.results) { applyStanding(rows.get(match.home_team_id)!, match.home_score, match.away_score); applyStanding(rows.get(match.away_team_id)!, match.away_score, match.home_score); }
     const sorted = [...rows.entries()].sort(([aId, a], [bId, b]) => b.points-a.points || (b.goals_for-b.goals_against)-(a.goals_for-a.goals_against) || b.goals_for-a.goals_for || (teamMap.get(aId)?.name ?? "").localeCompare(teamMap.get(bId)?.name ?? ""));
     return c.json(sorted.map(([id, row], index) => ({ rank: index+1, team: publicTeam(teamMap.get(id) ?? null), ...row, goal_difference: row.goals_for-row.goals_against })));

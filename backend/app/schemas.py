@@ -108,6 +108,7 @@ class TeamInput(BaseModel):
     logo_key: str | None = Field(default=None, max_length=512)
     coach: str | None = Field(default=None, max_length=160)
     assistant_coach: str | None = Field(default=None, max_length=160)
+    competition_id: str | None = None
 
 
 class TeamRead(TeamInput, ORMModel):
