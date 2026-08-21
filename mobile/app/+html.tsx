@@ -1,13 +1,22 @@
 import type { PropsWithChildren } from 'react';
 import { ScrollViewStyleReset } from 'expo-router/html';
 
+import { darkColors, lightColors } from '@/src/theme';
+
 /**
- * Document shell for the web build.
+ * Document shell for static rendering.
  *
  * Without this the document itself grows with the page, so scrolling moves the
  * whole app and the tab bar travels off the bottom of the window. Pinning the
  * root to the viewport height keeps scrolling inside each screen's own
  * container, which leaves the tab bar fixed where it belongs.
+ *
+ * Expo only reads this file when `web.output` is `static`. This app ships
+ * `single`, so today the shipped shell comes from Expo's own template plus
+ * `scripts/inject-web-branding.mjs`, and the two are kept in step by hand. The
+ * body colour shows only before the app paints, so it follows the system
+ * preference; `ThemeProvider` overwrites it once a saved Light / Dark choice is
+ * known.
  */
 const resetScroll = `
 html, body, #root {
@@ -16,7 +25,12 @@ html, body, #root {
 body {
   overflow: hidden;
   overscroll-behavior-y: none;
-  background-color: #09112F;
+  background-color: ${lightColors.background};
+}
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: ${darkColors.background};
+  }
 }
 `;
 

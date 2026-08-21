@@ -2,15 +2,15 @@ import type { PropsWithChildren, ReactNode, RefObject } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { StagingNotice } from '@/src/components/StagingNotice';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Props = PropsWithChildren<{ title: string; eyebrow?: string; action?: ReactNode; scroll?: boolean; scrollRef?: RefObject<ScrollView | null> }>;
 
 export function Screen({ title, eyebrow, action, scroll = true, scrollRef, children }: Props) {
+  const styles = useThemedStyles(stylesheet);
   const content = (
     <View style={styles.content}>
-      <StagingNotice />
       <View style={styles.header}>
         <View style={styles.heading}>
           {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
@@ -28,12 +28,12 @@ export function Screen({ title, eyebrow, action, scroll = true, scrollRef, child
   );
 }
 
-const styles = StyleSheet.create({
-  safe: { backgroundColor: theme.colors.background, flex: 1 },
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  safe: { backgroundColor: colors.background, flex: 1 },
   scroll: { flexGrow: 1 },
   content: { alignSelf: 'center', flex: 1, gap: theme.spacing.lg, maxWidth: 760, padding: theme.spacing.lg, paddingBottom: theme.spacing.xxxl, width: '100%' },
   header: { alignItems: 'flex-end', flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing.md },
   heading: { flex: 1 },
-  eyebrow: { color: theme.colors.lightBlue, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 1.1, textTransform: 'uppercase' },
-  title: { color: theme.colors.textPrimary, fontSize: theme.type.display, fontWeight: '900', letterSpacing: -0.7 },
+  eyebrow: { color: colors.accentSoft, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 1.1, textTransform: 'uppercase' },
+  title: { color: colors.textPrimary, fontSize: theme.type.display, fontWeight: '900', letterSpacing: -0.7 },
 });

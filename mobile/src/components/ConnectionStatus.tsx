@@ -3,11 +3,14 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 
 import { appConfig } from '@/src/config';
 import { api } from '@/src/lib/api';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type ConnectionState = 'checking' | 'retrying' | 'connected' | 'unreachable';
 
 export function ConnectionStatus() {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
   const [state, setState] = useState<ConnectionState>('checking');
 
   const checkConnection = useCallback(async () => {
@@ -45,7 +48,7 @@ export function ConnectionStatus() {
       onPress={() => void checkConnection()}
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
-      {waiting ? <ActivityIndicator color={theme.colors.warning} size="small" /> : <View
+      {waiting ? <ActivityIndicator color={colors.warning} size="small" /> : <View
         style={[styles.dot, connected && styles.dotConnected, state === 'unreachable' && styles.dotError]}
       />}
       <View style={styles.copy}>
@@ -59,11 +62,11 @@ export function ConnectionStatus() {
   );
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   card: {
     alignItems: 'center',
-    backgroundColor: theme.colors.surface,
-    borderColor: theme.colors.border,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
     borderRadius: theme.radius.md,
     borderWidth: 1,
     flexDirection: 'row',
@@ -72,29 +75,29 @@ const styles = StyleSheet.create({
   },
   pressed: { opacity: 0.78 },
   dot: {
-    backgroundColor: theme.colors.warning,
+    backgroundColor: colors.warning,
     borderRadius: 6,
     height: 12,
     width: 12,
   },
-  dotConnected: { backgroundColor: theme.colors.live },
-  dotError: { backgroundColor: theme.colors.error },
+  dotConnected: { backgroundColor: colors.live },
+  dotError: { backgroundColor: colors.error },
   copy: {
     flex: 1,
     marginHorizontal: theme.spacing.md,
   },
   label: {
-    color: theme.colors.textPrimary,
+    color: colors.textPrimary,
     fontSize: theme.type.label,
     fontWeight: '800',
   },
   detail: {
-    color: theme.colors.textMuted,
+    color: colors.textMuted,
     fontSize: theme.type.caption,
     marginTop: 3,
   },
   action: {
-    color: theme.colors.lightBlue,
+    color: colors.accentSoft,
     fontSize: theme.type.caption,
     fontWeight: '900',
     letterSpacing: 0.8,

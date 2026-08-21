@@ -9,7 +9,8 @@ import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView
 import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
 import { groupMatches } from '@/src/lib/matchGroups';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { MatchStatus } from '@/src/types/api';
 
 const filters: { label: string; value: MatchStatus }[] = [
@@ -17,6 +18,7 @@ const filters: { label: string; value: MatchStatus }[] = [
 ];
 
 export default function MatchesScreen() {
+  const styles = useThemedStyles(stylesheet);
   const [status, setStatus] = useState<MatchStatus>('live');
   const query = useQuery({ queryKey: ['matches', status], queryFn: () => api.matches(`?match_status=${status}&limit=50`), refetchInterval: status === 'finished' ? false : 12_000 });
   const matches = useMemo(() => query.data?.items ?? [], [query.data]);
@@ -26,4 +28,4 @@ export default function MatchesScreen() {
     {query.isLoading ? <LoadingState label="Loading matches" /> : query.isError ? <ErrorState message={query.error instanceof ApiError ? query.error.message : copy.offline} onRetry={() => query.refetch()} /> : matches.length === 0 ? <EmptyState body={copy.emptyMatches} title={`No ${filters.find((item) => item.value === status)?.label.toLowerCase()} matches`} /> : <FlatList contentContainerStyle={styles.listContent} data={dateGroups} keyExtractor={(group) => group.dateKey} renderItem={({ item }) => <View style={styles.dateSection}><DateSectionHeader date={item.date} isToday={item.isToday} matchCount={item.matchesCount} /><View style={styles.competitions}>{item.competitions.map((competition) => <CompetitionGroup group={competition} key={competition.competitionId} />)}</View></View>} showsVerticalScrollIndicator={false} style={styles.list} />}
   </Screen>;
 }
-const styles = StyleSheet.create({ tabs: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', padding: theme.spacing.xs }, tab: { alignItems: 'center', borderRadius: theme.radius.sm, flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum }, activeTab: { backgroundColor: theme.colors.accent }, tabLabel: { color: theme.colors.textSecondary, fontWeight: '800' }, activeLabel: { color: theme.colors.onAccent }, pressed: { opacity: 0.72 }, list: { flex: 1 }, listContent: { gap: theme.spacing.xl, paddingBottom: theme.spacing.xl }, dateSection: { gap: theme.spacing.md }, competitions: { gap: theme.spacing.md } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ tabs: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', padding: theme.spacing.xs }, tab: { alignItems: 'center', borderRadius: theme.radius.sm, flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum }, activeTab: { backgroundColor: colors.accent }, tabLabel: { color: colors.textSecondary, fontWeight: '800' }, activeLabel: { color: colors.onAccent }, pressed: { opacity: 0.72 }, list: { flex: 1 }, listContent: { gap: theme.spacing.xl, paddingBottom: theme.spacing.xl }, dateSection: { gap: theme.spacing.md }, competitions: { gap: theme.spacing.md } });

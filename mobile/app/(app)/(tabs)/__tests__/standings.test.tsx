@@ -83,4 +83,11 @@ describe('StandingsScreen', () => {
     expect(screen.getByText('GL', { includeHiddenElements: true })).toBeTruthy();
     expect(screen.getByText('AU', { includeHiddenElements: true })).toBeTruthy();
   });
+
+  it('marks first place with a trophy that nobody else gets', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    await screen.findByText('Giza Lions');
+    // Rank 1 only — a second trophy would make the highlight meaningless.
+    expect(screen.getAllByLabelText('First place')).toHaveLength(1);
+  });
 });

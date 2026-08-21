@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import { JerseyIcon } from '@/src/components/JerseyIcon';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { formationRows, type Player } from '@/src/types/api';
 
 /** Pitch green, deliberately the one non-navy surface in the app. */
@@ -63,6 +64,7 @@ export function inferFormation(starters: Player[]): string | null {
 }
 
 export function FormationPitch({ starters, formation, captainId }: { starters: Player[]; formation?: string | null; captainId?: string | null }) {
+  const styles = useThemedStyles(stylesheet);
   const shape = formation ?? inferFormation(starters);
   const { keeper, rows } = arrangeByFormation(starters, shape ?? String(Math.max(0, starters.length - 1)));
   // Forwards belong at the top of the pitch, the keeper at the bottom.
@@ -80,17 +82,19 @@ export function FormationPitch({ starters, formation, captainId }: { starters: P
 }
 
 function PitchPlayer({ player, captain = false }: { player: Player; captain?: boolean }) {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
   const firstName = player.name.trim().split(/\s+/u)[0] ?? player.name;
   return <View style={styles.player}>
     <View>
-      <JerseyIcon color={theme.colors.textPrimary} number={player.jersey_number} size={40} />
+      <JerseyIcon color={colors.textPrimary} number={player.jersey_number} size={40} />
       {captain ? <View accessibilityLabel={`${player.name}, captain`} style={styles.armband}><Text style={styles.armbandText}>C</Text></View> : null}
     </View>
     <Text numberOfLines={1} style={styles.playerName}>{firstName}</Text>
   </View>;
 }
 
-const styles = StyleSheet.create({
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   pitch: {
     backgroundColor: PITCH,
     borderColor: PITCH_LINE,
@@ -110,11 +114,11 @@ const styles = StyleSheet.create({
   player: { alignItems: 'center', flex: 1, gap: 2, maxWidth: 92 },
   playerName: { color: '#EAF6EF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   armband: {
-    alignItems: 'center', backgroundColor: theme.colors.warning, borderColor: PITCH,
+    alignItems: 'center', backgroundColor: colors.warning, borderColor: PITCH,
     borderRadius: 9, borderWidth: 1.5, height: 18, justifyContent: 'center',
     position: 'absolute', right: -2, top: -2, width: 18,
   },
-  armbandText: { color: theme.colors.onAccent, fontSize: 10, fontWeight: '900', lineHeight: 12 },
+  armbandText: { color: colors.onAccent, fontSize: 10, fontWeight: '900', lineHeight: 12 },
   badge: {
     alignSelf: 'flex-start', color: '#CDE9D9', fontSize: theme.type.caption,
     fontVariant: ['tabular-nums'], fontWeight: '900', letterSpacing: 0.6,

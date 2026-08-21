@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Props = {
   children: ReactNode;
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export function CollapsibleCard({ children, onCollapse, summary, title }: Props) {
+  const styles = useThemedStyles(stylesheet);
   const [expanded, setExpanded] = useState(false);
   const action = expanded ? 'Hide' : 'Show';
 
@@ -39,13 +41,13 @@ export function CollapsibleCard({ children, onCollapse, summary, title }: Props)
   );
 }
 
-const styles = StyleSheet.create({
-  action: { color: theme.colors.lightBlue, flexShrink: 0, fontSize: theme.type.label, fontWeight: '800' },
-  card: { backgroundColor: theme.colors.surface, borderColor: theme.colors.border, borderRadius: theme.radius.lg, borderWidth: 1, padding: theme.spacing.lg },
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  action: { color: colors.accentSoft, flexShrink: 0, fontSize: theme.type.label, fontWeight: '800' },
+  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, padding: theme.spacing.lg },
   content: { gap: theme.spacing.md, paddingTop: theme.spacing.lg },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.md, justifyContent: 'space-between', minHeight: theme.touch.minimum },
   headerCopy: { flex: 1, gap: theme.spacing.xs },
-  heading: { color: theme.colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' },
+  heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' },
   pressed: { opacity: 0.7 },
-  summary: { color: theme.colors.textMuted, fontSize: theme.type.label },
+  summary: { color: colors.textMuted, fontSize: theme.type.label },
 });

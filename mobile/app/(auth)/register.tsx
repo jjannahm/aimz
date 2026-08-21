@@ -9,12 +9,14 @@ import { AppButton } from '@/src/components/AppButton';
 import { AuthShell } from '@/src/components/AuthShell';
 import { FormField } from '@/src/components/FormField';
 import { ApiError } from '@/src/lib/api';
-import { theme } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 const schema = z.object({ name: z.string().min(2, 'Enter your full name.'), email: z.email('Enter a valid email.'), password: z.string().min(10, 'Use at least 10 characters.'), inviteCode: z.string().min(4, 'Enter your academy invite code.') });
 type Values = z.infer<typeof schema>;
 
 export default function RegisterScreen() {
+  const styles = useThemedStyles(stylesheet);
   const { register } = useAuth();
   const { control, handleSubmit, setError, formState: { errors, isSubmitting } } = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { name: '', email: '', password: '', inviteCode: '' } });
   const submit = handleSubmit(async (values) => {
@@ -33,4 +35,4 @@ export default function RegisterScreen() {
     <Text style={styles.footer}>Already registered? <Link href="/(auth)/login" style={styles.link}>Sign in</Link></Text>
   </AuthShell>;
 }
-const styles = StyleSheet.create({ form: { gap: theme.spacing.md }, error: { backgroundColor: theme.colors.errorSurface, borderRadius: theme.radius.sm, color: theme.colors.errorText, padding: theme.spacing.md }, link: { color: theme.colors.lightBlue, fontWeight: '800' }, footer: { color: theme.colors.textSecondary, textAlign: 'center' } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ form: { gap: theme.spacing.md }, error: { backgroundColor: colors.errorSurface, borderRadius: theme.radius.sm, color: colors.errorText, padding: theme.spacing.md }, link: { color: colors.accentSoft, fontWeight: '800' }, footer: { color: colors.textSecondary, textAlign: 'center' } });

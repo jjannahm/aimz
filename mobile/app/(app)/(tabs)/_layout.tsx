@@ -2,15 +2,16 @@ import { Tabs } from 'expo-router';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { TabIcon } from '@/src/components/TabIcon';
-import { theme } from '@/src/theme';
+import { useColors } from '@/src/theme/ThemeProvider';
 
 export default function TabsLayout() {
+  const colors = useColors();
   const { user } = useAuth();
   return <Tabs screenOptions={{
     headerShown: false,
-    tabBarActiveTintColor: theme.colors.lightBlue,
-    tabBarInactiveTintColor: theme.colors.textMuted,
-    tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border, minHeight: 64, paddingTop: 6 },
+    tabBarActiveTintColor: colors.accentSoft,
+    tabBarInactiveTintColor: colors.textMuted,
+    tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border, minHeight: 64, paddingTop: 6 },
     tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
   }}>
     <Tabs.Screen name="index" options={{ title: 'Matches', tabBarIcon: ({ color, size }) => <TabIcon color={color} name="matches" size={size} /> }} />
