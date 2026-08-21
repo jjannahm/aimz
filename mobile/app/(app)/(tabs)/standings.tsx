@@ -137,7 +137,7 @@ export default function StandingsScreen() {
       {rows.map((row: StandingRow, index: number) => <Pressable accessibilityHint="Opens head-to-head records against the other teams" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" key={row.team.id} onPress={() => setOpponentsFor(row.team.id)} style={({ pressed }) => [styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, pressed && styles.pressed]}>
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
-          <TeamAvatar logoUrl={row.team.logo_url} name={row.team.name} size={34} />
+          <TeamAvatar isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={34} />
           <View style={styles.team}>
             <View style={styles.nameRow}>
               <Text numberOfLines={1} style={[styles.teamName, row.rank === 1 && styles.leaderName]}>{row.team.name}</Text>

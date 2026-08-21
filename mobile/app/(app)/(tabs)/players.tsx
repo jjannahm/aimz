@@ -12,31 +12,26 @@ import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { LeaderMetric, Player, PlayerAward, PlayerLeaderRow, TeamAward } from '@/src/types/api';
+import type { LeaderMetric, Player, PlayerAward, PlayerLeaderRow } from '@/src/types/api';
 
-type Section = { key: string; label: string; metric?: LeaderMetric };
+type Section = { key: string; label: string };
 
 const SECTIONS: Section[] = [
   { key: 'teams', label: copy.teams },
-  { key: 'top-scorers', label: copy.topScorers, metric: 'goals' },
-  { key: 'top-assisters', label: copy.topAssisters, metric: 'assists' },
-  { key: 'discipline', label: copy.discipline, metric: 'cards' },
   { key: 'awards', label: copy.awards },
 ];
 
-const metricUnit: Record<LeaderMetric, string> = { goals: 'goals', assists: 'assists', cards: 'cards' };
+// Awards that are the top of a ranking the API can already produce, so the row
+// opens to show who came second and third. The rest have no leaderboard behind
+// them and stay as plain rows.
+// 'cards' is a valid leaders metric but spans two columns, so it is not one a
+// single award row can rank on.
+type RankedMetric = Extract<LeaderMetric, 'goals' | 'assists'>;
 
-// Cards are two columns rather than one, so the tally is derived instead of
-// indexed straight off the row the way goals and assists are.
-function metricTally(row: PlayerLeaderRow, metric: LeaderMetric): number {
-  return metric === 'cards' ? row.yellow_cards + row.red_cards : row[metric];
-}
-
-function metricDetail(row: PlayerLeaderRow, metric: LeaderMetric): string {
-  if (metric !== 'cards') return `${row[metric]} ${metricUnit[metric]}`;
-  const parts = [row.yellow_cards ? `${row.yellow_cards} yellow` : null, row.red_cards ? `${row.red_cards} red` : null].filter(Boolean);
-  return parts.join(' and ') || 'no cards';
-}
+const rankedAwards: Record<string, RankedMetric> = {
+  'Top scorer': 'goals',
+  'Most assists': 'assists',
+};
 
 function Chevron() {
   const colors = useColors();
@@ -87,7 +82,7 @@ function TeamsSection() {
     return <View style={styles.list}>{roster.squads.map((item, index) => {
       const count = item.players.length;
       return <Pressable accessibilityLabel={`${item.team.name}, ${count} ${count === 1 ? 'player' : 'players'}`} accessibilityRole="button" key={item.team.id} onPress={() => setOpenTeam(item.team.id)} style={({ pressed }) => [styles.row, index === roster.squads.length - 1 && styles.lastRow, pressed && styles.pressed]}>
-        <TeamAvatar logoUrl={item.team.logo_url} name={item.team.age_group ?? item.team.name} size={48} />
+        <TeamAvatar isAimz={item.team.is_aimz} logoUrl={item.team.logo_url} name={item.team.age_group ?? item.team.name} size={48} />
         <View style={styles.copy}><Text style={styles.name}>{item.team.name}</Text><Text style={styles.position}>{item.team.age_group ? `${item.team.age_group} · ` : ''}{count} {count === 1 ? 'player' : 'players'}</Text></View>
         <Chevron />
       </Pressable>;
@@ -104,23 +99,52 @@ function TeamsSection() {
   </View>;
 }
 
-function LeaderSection({ metric }: { metric: LeaderMetric }) {
+/** The full 1-2-3 ranking behind an award, fetched only once the row opens. */
+function LeaderList({ metric, competitionId }: { metric: RankedMetric; competitionId: string }) {
   const styles = useThemedStyles(stylesheet);
-  const leaders = useQuery({ queryKey: ['leaders', metric], queryFn: () => api.leaders(metric, { limit: 25 }) });
-  const unit = metricUnit[metric];
+  const leaders = useQuery({ queryKey: ['leaders', metric, competitionId], queryFn: () => api.leaders(metric, { competitionId, limit: 25 }) });
 
-  if (leaders.isLoading) return <LoadingState label={`Loading ${unit} leaders`} />;
+  if (leaders.isLoading) return <LoadingState label={`Loading ${metric}`} />;
   if (leaders.isError) return <ErrorState message={(leaders.error as ApiError).message} onRetry={() => leaders.refetch()} />;
-  if (!leaders.data?.length) return <EmptyState body={copy.emptyLeaders} title={`No ${unit} recorded yet`} />;
+  if (!leaders.data?.length) return <EmptyState body={copy.emptyLeaders} title={`No ${metric} recorded yet`} />;
   return <View style={styles.list}>{leaders.data.map((item: PlayerLeaderRow, index: number) => <View key={item.player.id} style={styles.leaderRow}>
     <Text accessibilityElementsHidden style={styles.rank}>{item.rank}</Text>
-    <View style={styles.leaderPlayer}><PlayerRow last={index === leaders.data.length - 1} player={item.player} subtitle={`${item.team.name}, ${metricDetail(item, metric)} in ${item.appearances} ${item.appearances === 1 ? 'appearance' : 'appearances'}`} trailing={<Text accessibilityElementsHidden style={styles.tally}>{metricTally(item, metric)}</Text>} /></View>
+    <View style={styles.leaderPlayer}><PlayerRow last={index === leaders.data.length - 1} player={item.player} subtitle={`${item.team.name}, ${item[metric]} ${metric} in ${item.appearances} ${item.appearances === 1 ? 'appearance' : 'appearances'}`} trailing={<Text accessibilityElementsHidden style={styles.tally}>{item[metric]}</Text>} /></View>
   </View>)}</View>;
+}
+
+/**
+ * One award. Rows with a ranking behind them open to reveal it; the rest are
+ * plain, so the chevron only ever appears where there is something to show.
+ */
+function AwardRow({ award, competitionId }: { award: PlayerAward; competitionId: string }) {
+  const colors = useColors();
+  const styles = useThemedStyles(stylesheet);
+  const [expanded, setExpanded] = useState(false);
+  const metric = rankedAwards[award.label];
+  const header = <>
+    <Ionicons accessibilityElementsHidden color={colors.leaderAccent} name="trophy" size={20} />
+    <View style={styles.copy}><Text style={styles.awardLabel}>{award.label}</Text><Text style={styles.name}>{award.player.name}</Text><Text style={styles.position}>{award.team.name}</Text></View>
+    <Text accessibilityElementsHidden style={styles.tally}>{award.value}</Text>
+  </>;
+  if (!metric) return <View style={styles.award}>{header}</View>;
+  return <View style={styles.awardOpen}>
+    <Pressable
+      accessibilityLabel={`${expanded ? 'Hide' : 'Show'} the full ${award.label.toLowerCase()} ranking`}
+      accessibilityRole="button"
+      accessibilityState={{ expanded }}
+      onPress={() => setExpanded((current) => !current)}
+      style={({ pressed }) => [styles.award, pressed && styles.pressed]}
+    >
+      {header}
+      <Ionicons accessibilityElementsHidden color={colors.textMuted} name={expanded ? 'chevron-up' : 'chevron-down'} size={18} />
+    </Pressable>
+    {expanded ? <LeaderList competitionId={competitionId} metric={metric} /> : null}
+  </View>;
 }
 
 function AwardsSection() {
   const styles = useThemedStyles(stylesheet);
-  const colors = useColors();
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
   const eligible = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -130,22 +154,14 @@ function AwardsSection() {
   if (competitions.isLoading) return <LoadingState label="Loading competitions" />;
   if (!eligible.length) return <EmptyState body={copy.emptyAwards} title="No competitions yet" />;
   if (awards.isError) return <ErrorState message={(awards.error as ApiError).message} onRetry={() => awards.refetch()} />;
-  const rows: (PlayerAward | TeamAward)[] = [...(awards.data?.player_awards ?? []), ...(awards.data?.team_awards ?? [])];
-  return <View style={styles.list}>
+  const rows = awards.data?.player_awards ?? [];
+  return <View style={styles.awardList}>
     {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
       {eligible.map((item) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: competition?.id === item.id }} key={item.id} onPress={() => setChosen(item.id)} style={({ pressed }) => [styles.chip, competition?.id === item.id && styles.chipActive, pressed && styles.pressed]}>
         <Text style={[styles.chipText, competition?.id === item.id && styles.chipTextActive]}>{item.name}</Text>
       </Pressable>)}
     </ScrollView> : null}
-    {awards.isLoading ? <LoadingState label="Loading awards" /> : rows.length === 0 ? <EmptyState body={copy.emptyAwards} title="No awards yet" /> : rows.map((award) => {
-      const holder = 'player' in award ? award.player.name : award.team.name;
-      const side = 'player' in award ? award.team.name : 'Squad';
-      return <View key={award.label} style={styles.award}>
-        <Ionicons accessibilityElementsHidden color={colors.leaderAccent} name="trophy" size={20} />
-        <View style={styles.copy}><Text style={styles.awardLabel}>{award.label}</Text><Text style={styles.name}>{holder}</Text><Text style={styles.position}>{side}</Text></View>
-        <Text accessibilityElementsHidden style={styles.tally}>{award.value}</Text>
-      </View>;
-    })}
+    {awards.isLoading ? <LoadingState label="Loading awards" /> : rows.length === 0 ? <EmptyState body={copy.emptyAwards} title="No awards yet" /> : rows.map((award: PlayerAward) => <AwardRow award={award} competitionId={competition!.id} key={award.label} />)}
   </View>;
 }
 
@@ -163,8 +179,8 @@ export default function PlayersScreen() {
         </Pressable>;
       })}
     </ScrollView>
-    {section.metric ? <LeaderSection metric={section.metric} /> : section.key === 'awards' ? <AwardsSection /> : <TeamsSection />}
+    {section.key === 'awards' ? <AwardsSection /> : <TeamsSection />}
   </Screen>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ chipBar: { flexGrow: 0 }, chips: { gap: theme.spacing.sm }, chip: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: colors.accent, borderColor: colors.accent }, chipText: { color: colors.textSecondary, fontWeight: '700' }, chipTextActive: { color: colors.onAccent, fontWeight: '900' }, stack: { gap: theme.spacing.md }, back: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.touch.minimum, paddingRight: theme.spacing.md }, backText: { color: colors.accentSoft, fontWeight: '800' }, squadTitle: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, list: { borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, overflow: 'hidden' }, row: { alignItems: 'center', backgroundColor: colors.surface, borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 72, padding: theme.spacing.md }, lastRow: { borderBottomWidth: 0 }, leaderRow: { alignItems: 'center', backgroundColor: colors.surface, flexDirection: 'row' }, leaderPlayer: { flex: 1 }, rank: { color: colors.textMuted, fontVariant: ['tabular-nums'], fontWeight: '800', paddingLeft: theme.spacing.md, textAlign: 'center', width: 34 }, tally: { color: colors.accentSoft, fontSize: theme.type.heading, fontVariant: ['tabular-nums'], fontWeight: '900' }, award: { alignItems: 'center', backgroundColor: colors.leaderSurface, borderLeftColor: colors.leaderAccent, borderLeftWidth: 4, borderRadius: theme.radius.md, flexDirection: 'row', gap: theme.spacing.md, padding: theme.spacing.md }, awardLabel: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' }, pressed: { opacity: 0.7 }, badge: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 24, height: 48, justifyContent: 'center', width: 48 }, badgeText: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '900' }, number: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 24, height: 48, justifyContent: 'center', width: 48 }, photo: { borderRadius: 24, height: 48, width: 48 }, numberText: { color: colors.accentSoft, fontSize: theme.type.heading, fontWeight: '900' }, copy: { flex: 1 }, name: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '800' }, position: { color: colors.textMuted, marginTop: 3 } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ chipBar: { flexGrow: 0 }, chips: { gap: theme.spacing.sm }, chip: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: colors.accent, borderColor: colors.accent }, chipText: { color: colors.textSecondary, fontWeight: '700' }, chipTextActive: { color: colors.onAccent, fontWeight: '900' }, stack: { gap: theme.spacing.md }, back: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.touch.minimum, paddingRight: theme.spacing.md }, backText: { color: colors.accentSoft, fontWeight: '800' }, squadTitle: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, list: { borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, overflow: 'hidden' }, row: { alignItems: 'center', backgroundColor: colors.surface, borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 72, padding: theme.spacing.md }, lastRow: { borderBottomWidth: 0 }, leaderRow: { alignItems: 'center', backgroundColor: colors.surface, flexDirection: 'row' }, leaderPlayer: { flex: 1 }, rank: { color: colors.textMuted, fontVariant: ['tabular-nums'], fontWeight: '800', paddingLeft: theme.spacing.md, textAlign: 'center', width: 34 }, tally: { color: colors.accentSoft, fontSize: theme.type.heading, fontVariant: ['tabular-nums'], fontWeight: '900' }, awardList: { gap: theme.spacing.sm }, awardOpen: { gap: theme.spacing.sm }, award: { alignItems: 'center', backgroundColor: colors.leaderSurface, borderLeftColor: colors.leaderAccent, borderLeftWidth: 4, borderRadius: theme.radius.md, flexDirection: 'row', gap: theme.spacing.md, padding: theme.spacing.md }, awardLabel: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' }, pressed: { opacity: 0.7 }, badge: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 24, height: 48, justifyContent: 'center', width: 48 }, badgeText: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '900' }, number: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 24, height: 48, justifyContent: 'center', width: 48 }, photo: { borderRadius: 24, height: 48, width: 48 }, numberText: { color: colors.accentSoft, fontSize: theme.type.heading, fontWeight: '900' }, copy: { flex: 1 }, name: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '800' }, position: { color: colors.textMuted, marginTop: 3 } });

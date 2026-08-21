@@ -10,7 +10,7 @@ import type { Player, PlayerLeaderRow, Team } from '@/src/types/api';
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 
 jest.mock('@/src/lib/api', () => ({
-  api: { teams: jest.fn(), players: jest.fn(), leaders: jest.fn() },
+  api: { teams: jest.fn(), players: jest.fn(), leaders: jest.fn(), competitions: jest.fn(), awards: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -33,6 +33,16 @@ const scorers: PlayerLeaderRow[] = [
   { rank: 1, player: players[1]!, team: teams[1]!, goals: 5, assists: 2, yellow_cards: 1, red_cards: 0, appearances: 4 },
 ];
 
+const competition = { id: 'c-1', name: 'Women U11', season: '2026/27', type: 'league' as const, team_count: null, created_at: '', updated_at: '' };
+const awards = {
+  competition,
+  player_awards: [
+    { label: 'Most man of the match', player: players[1]!, team: teams[1]!, value: 2, unit: 'awards' },
+    { label: 'Top scorer', player: players[1]!, team: teams[1]!, value: 5, unit: 'goals' },
+  ],
+  team_awards: [],
+};
+
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -46,17 +56,20 @@ describe('PlayersScreen', () => {
     jest.mocked(api.teams).mockResolvedValue({ items: teams, total: teams.length, limit: 100, offset: 0 });
     jest.mocked(api.players).mockResolvedValue({ items: players, total: players.length, limit: 100, offset: 0 });
     jest.mocked(api.leaders).mockResolvedValue(scorers);
+    jest.mocked(api.competitions).mockResolvedValue({ items: [competition], total: 1, limit: 100, offset: 0 });
+    jest.mocked(api.awards).mockResolvedValue(awards);
   });
   afterEach(() => jest.clearAllMocks());
 
-  it('offers exactly five top-level tabs', async () => {
+  it('offers two top-level tabs, with the rankings folded into Player stats', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByRole('tab', { name: 'Teams' });
-    expect(screen.getAllByRole('tab')).toHaveLength(5);
-    expect(screen.getByRole('tab', { name: 'Top Scorers' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Top Assisters' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Discipline' })).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Awards' })).toBeTruthy();
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getByRole('tab', { name: 'Player stats' })).toBeTruthy();
+    // These three were their own tabs and are now award rows.
+    expect(screen.queryByRole('tab', { name: 'Top Scorers' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Top Assisters' })).toBeNull();
+    expect(screen.queryByRole('tab', { name: 'Discipline' })).toBeNull();
   });
 
   it('lists the squads that exist, not a fixed set of age groups', async () => {
@@ -94,11 +107,25 @@ describe('PlayersScreen', () => {
     expect(screen.queryByText('Mariam Adel')).toBeNull();
   });
 
-  it('loads the goals leaderboard from the Top Scorers tab', async () => {
+  it('opens the top scorer award to reveal the ranking behind it', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
-    fireEvent.press(screen.getByRole('tab', { name: 'Top Scorers' }));
-    await waitFor(() => expect(api.leaders).toHaveBeenCalledWith('goals', { limit: 25 }));
-    expect(await screen.findByText('Mariam Adel')).toBeTruthy();
+    fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
+    expect(await screen.findByText('Top scorer')).toBeTruthy();
+    // Collapsed, the award shows only its winner; the ranking is not fetched.
+    expect(api.leaders).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText('Show the full top scorer ranking'));
+    await waitFor(() => expect(api.leaders).toHaveBeenCalledWith('goals', { competitionId: 'c-1', limit: 25 }));
+    // The ranked row carries its own subtitle, which the award header does not.
+    expect(await screen.findByText('AIMZ U13, 5 goals in 4 appearances')).toBeTruthy();
+  });
+
+  it('leaves an award with no ranking behind it as a plain row', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await screen.findByLabelText('AIMZ U9, 1 player');
+    fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
+    expect(await screen.findByText('Most man of the match')).toBeTruthy();
+    expect(screen.queryByLabelText(/Show the full most man of the match/)).toBeNull();
   });
 });

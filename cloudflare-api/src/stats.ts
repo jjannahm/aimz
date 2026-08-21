@@ -156,7 +156,7 @@ export function registerStatsRoutes(app: App): void {
   app.get("/api/v1/competitions/:id/awards", async (c) => {
     const competition = await c.env.DB.prepare("SELECT * FROM competitions WHERE id=?").bind(c.req.param("id")).first<CompetitionRow>();
     if (!competition) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
-    const totals = await c.env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.minutes_played) AS minutes, SUM(s.yellow_cards + s.red_cards) AS cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances FROM player_match_stats s JOIN matches m ON m.id=s.match_id WHERE m.status='finished' AND m.competition_id=? GROUP BY s.player_id`).bind(competition.id).all<AwardTotals>();
+    const totals = await c.env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.minutes_played) AS minutes, SUM(s.yellow_cards + s.red_cards) AS cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances, (SELECT COUNT(*) FROM matches mm WHERE mm.competition_id=m.competition_id AND mm.status='finished' AND mm.man_of_the_match_player_id=s.player_id) AS motm FROM player_match_stats s JOIN matches m ON m.id=s.match_id WHERE m.status='finished' AND m.competition_id=? GROUP BY s.player_id`).bind(competition.id).all<AwardTotals>();
     const playerIds = totals.results.map((row) => row.player_id);
     const players = playerIds.length
       ? await c.env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")})`).bind(...playerIds).all<PlayerRow>()
@@ -168,13 +168,14 @@ export function registerStatsRoutes(app: App): void {
       const player = playerMap.get(row.player_id) ?? null;
       return { label, player: publicPlayer(player), team: publicTeam(awardTeams.get(player?.team_id ?? "") ?? null), value, unit };
     };
-    const best = (label: string, key: "goals" | "assists" | "minutes" | "appearances", unit: string) => {
+    const best = (label: string, key: "motm" | "goals" | "assists" | "minutes" | "appearances", unit: string) => {
       const candidates = totals.results.filter((row) => row[key] >= 1);
       if (!candidates.length) return null;
       const winner = candidates.reduce((top, row) => row[key] > top[key] || (row[key] === top[key] && row.appearances < top.appearances) ? row : top);
       return shape(winner, label, winner[key], unit);
     };
     const playerAwards = [
+      best("Most man of the match", "motm", "awards"),
       best("Top scorer", "goals", "goals"),
       best("Most assists", "assists", "assists"),
       best("Most appearances", "appearances", "appearances"),
@@ -187,25 +188,15 @@ export function registerStatsRoutes(app: App): void {
       playerAwards.push(shape(cleanest, "Best discipline", cleanest.cards, "cards"));
     }
 
-    // Per-goalkeeper clean sheets would need a goalkeeper flag, which the player
-    // model does not carry, so the award goes to the team.
-    const matches = await c.env.DB.prepare("SELECT * FROM matches WHERE competition_id=? AND status='finished'").bind(competition.id).all<MatchRow>();
-    const sheets = new Map<string, number>();
-    for (const match of matches.results) {
-      if (match.away_score === 0) sheets.set(match.home_team_id, (sheets.get(match.home_team_id) ?? 0) + 1);
-      if (match.home_score === 0) sheets.set(match.away_team_id, (sheets.get(match.away_team_id) ?? 0) + 1);
-    }
-    const sheetTeams = await teamsByIds(c.env, [...sheets.keys()]);
-    const teamAwards = [...sheets.entries()]
-      .sort(([aId, a], [bId, b]) => b - a || (sheetTeams.get(aId)?.name ?? "").localeCompare(sheetTeams.get(bId)?.name ?? ""))
-      .slice(0, 1)
-      .map(([id, value]) => ({ label: "Most clean sheets", team: publicTeam(sheetTeams.get(id) ?? null), value, unit: "clean sheets" }));
-    return c.json({ competition: publicCompetition(competition), player_awards: playerAwards, team_awards: teamAwards });
+    // Every award is now a player award; team_awards stays on the response, and
+    // empty, so the shape does not change for older clients.
+    return c.json({ competition: publicCompetition(competition), player_awards: playerAwards, team_awards: [] });
   });
 }
 
 interface AwardTotals {
   player_id: string;
+  motm: number;
   goals: number;
   assists: number;
   minutes: number;

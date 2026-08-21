@@ -1,7 +1,6 @@
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image } from 'react-native';
 
-import { type ThemeColors } from '@/src/theme';
-import { useThemedStyles } from '@/src/theme/ThemeProvider';
+import { TeamBadge } from '@/src/components/TeamBadge';
 
 type Tone = 'accent' | 'light';
 
@@ -9,7 +8,9 @@ type Props = {
   name: string;
   logoUrl?: string | null;
   size?: number;
-  /** Pin the circle colour instead of deriving it from the name. */
+  /** AIMZ squads wear the club crest; everyone else gets the opponent shield. */
+  isAimz?: boolean;
+  /** Keeps home and away apart when both sides are AIMZ squads. */
   tone?: Tone;
 };
 
@@ -21,26 +22,13 @@ export function initialsFor(name: string): string {
   return letters.toUpperCase();
 }
 
-// Stable per name so a team keeps the same colour everywhere it appears.
-function toneFor(name: string): Tone {
-  let hash = 0;
-  for (const character of name) hash = (hash + character.codePointAt(0)!) % 2048;
-  return hash % 2 === 0 ? 'accent' : 'light';
+/**
+ * A team's crest. An uploaded logo still wins; otherwise the badge is drawn
+ * from whether the team is ours.
+ */
+export function TeamAvatar({ logoUrl, size = 44, isAimz, tone }: Props) {
+  if (logoUrl) {
+    return <Image accessibilityElementsHidden source={{ uri: logoUrl }} style={{ borderRadius: size / 2, height: size, width: size }} />;
+  }
+  return <TeamBadge isAimz={isAimz} size={size} tone={tone} />;
 }
-
-export function TeamAvatar({ name, logoUrl, size = 44, tone }: Props) {
-  const styles = useThemedStyles(stylesheet);
-  const circle = { borderRadius: size / 2, height: size, width: size };
-  if (logoUrl) return <Image accessibilityElementsHidden source={{ uri: logoUrl }} style={circle} />;
-  const resolved = tone ?? toneFor(name);
-  return <View accessibilityElementsHidden style={[styles.fallback, circle, resolved === 'accent' ? styles.accent : styles.light]}>
-    <Text style={[styles.initials, { fontSize: Math.max(11, Math.round(size * 0.36)) }]}>{initialsFor(name)}</Text>
-  </View>;
-}
-
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  fallback: { alignItems: 'center', justifyContent: 'center' },
-  accent: { backgroundColor: colors.accent },
-  light: { backgroundColor: colors.accentSoft },
-  initials: { color: colors.onAccent, fontWeight: '900', letterSpacing: 0.3 },
-});
