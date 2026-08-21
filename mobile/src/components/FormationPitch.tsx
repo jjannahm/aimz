@@ -80,10 +80,10 @@ export function FormationPitch({ starters, formation }: { starters: Player[]; fo
 }
 
 function PitchPlayer({ player }: { player: Player }) {
-  const surname = player.name.trim().split(/\s+/u).slice(-1)[0] ?? player.name;
+  const firstName = player.name.trim().split(/\s+/u)[0] ?? player.name;
   return <View style={styles.player}>
     <JerseyIcon color={theme.colors.textPrimary} number={player.jersey_number} size={40} />
-    <Text numberOfLines={1} style={styles.playerName}>{surname}</Text>
+    <Text numberOfLines={1} style={styles.playerName}>{firstName}</Text>
   </View>;
 }
 
