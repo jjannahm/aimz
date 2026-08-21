@@ -147,7 +147,7 @@ export default function LineupScreen() {
     return next;
   });
 
-  return <Screen action={<CloseButton />} eyebrow={squad?.name ?? 'AIMZ squad'} title="Set lineup">
+  return <Screen action={<CloseButton />} title="Set lineup">
     {matchQuery.isLoading || playersQuery.isLoading ? <LoadingState label="Loading squad" />
       : matchQuery.isError ? <ErrorState message={(matchQuery.error as ApiError).message} onRetry={() => matchQuery.refetch()} />
       : locked ? <EmptyState body="The starting lineup is locked once the match begins. Log a substitution from live scoring instead." title="Match already started" />

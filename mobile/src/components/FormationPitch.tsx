@@ -72,8 +72,8 @@ export function inferFormation(starters: Player[]): string | null {
  * line. A shape with only two rows keeps its back line on the box and pushes the
  * other row into the attacking half rather than stranding it on halfway.
  */
-const ROW_TOPS: Record<number, number[]> = { 1: [50], 2: [67, 40], 3: [67, 50, 30], 4: [67, 52, 38, 22] };
-const KEEPER_TOP = 87;
+const ROW_TOPS: Record<number, number[]> = { 1: [50], 2: [67, 36], 3: [67, 50, 28], 4: [67, 51, 35, 19] };
+const KEEPER_TOP = 88;
 /** Half a row: jersey, its gap, and the name beneath it. */
 const ROW_HALF = 28;
 
@@ -81,7 +81,7 @@ function rowTops(count: number): number[] {
   const known = ROW_TOPS[count];
   if (known) return known;
   // Beyond four rows, fall back to an even spread across the same band.
-  return Array.from({ length: count }, (unused, index) => 67 - (index * 45) / Math.max(1, count - 1));
+  return Array.from({ length: count }, (unused, index) => 67 - (index * 48) / Math.max(1, count - 1));
 }
 
 export function FormationPitch({ starters, formation, captainId }: { starters: Player[]; formation?: string | null; captainId?: string | null }) {
@@ -125,7 +125,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   pitch: {
     // Rows are placed against the markings rather than stacked, so the card
     // needs a height of its own to place them in.
-    aspectRatio: 0.92,
+    aspectRatio: 0.86,
     backgroundColor: PITCH,
     borderColor: PITCH_LINE,
     borderRadius: theme.radius.lg,

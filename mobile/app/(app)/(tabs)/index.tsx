@@ -23,7 +23,7 @@ export default function MatchesScreen() {
   const query = useQuery({ queryKey: ['matches', status], queryFn: () => api.matches(`?match_status=${status}&limit=50`), refetchInterval: status === 'finished' ? false : 12_000 });
   const matches = useMemo(() => query.data?.items ?? [], [query.data]);
   const dateGroups = useMemo(() => groupMatches(matches, status), [matches, status]);
-  return <Screen eyebrow="AIMZ girls' football" title="Match centre">
+  return <Screen title="Match centre">
     <View accessibilityRole="tablist" style={styles.tabs}>{filters.map((filter) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: filter.value === status }} key={filter.value} onPress={() => setStatus(filter.value)} style={({ pressed }) => [styles.tab, filter.value === status && styles.activeTab, pressed && styles.pressed]}><Text style={[styles.tabLabel, filter.value === status && styles.activeLabel]}>{filter.label}</Text></Pressable>)}</View>
     {query.isLoading ? <LoadingState label="Loading matches" /> : query.isError ? <ErrorState message={query.error instanceof ApiError ? query.error.message : copy.offline} onRetry={() => query.refetch()} /> : matches.length === 0 ? <EmptyState body={copy.emptyMatches} title={`No ${filters.find((item) => item.value === status)?.label.toLowerCase()} matches`} /> : <View style={styles.listContent}>{dateGroups.map((item) => <View key={item.dateKey} style={styles.dateSection}>{status === 'live' ? null : <DateSectionHeader date={item.date} isToday={item.isToday} matchCount={item.matchesCount} />}<View style={styles.competitions}>{item.competitions.map((competition) => <CompetitionGroup group={competition} key={competition.competitionId} />)}</View></View>)}</View>}
   </Screen>;

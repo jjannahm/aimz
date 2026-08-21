@@ -175,7 +175,7 @@ export default function ManageScreen() {
     } catch (error) { showMessage('Upload failed', (error as Error).message); }
   };
 
-  return <Screen eyebrow="Administrator tools" scrollRef={pageRef} title="Manage academy">
+  return <Screen scrollRef={pageRef} title="Manage academy">
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={styles.chipBar}>{resources.map((item) => <Pressable key={item.value} onPress={() => switchResource(item.value)} style={({ pressed }) => [styles.chip, resource === item.value && styles.chipActive, pressed && styles.pressed]}><Text style={[styles.chipText, resource === item.value && styles.chipTextActive]}>{item.label}</Text></Pressable>)}</ScrollView>
     <AppButton icon="receipt-outline" label="View admin activity" onPress={() => router.push('/audit')} variant="secondary" />
     {!appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}

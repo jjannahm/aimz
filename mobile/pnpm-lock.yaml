@@ -14,9 +14,6 @@ importers:
       '@hookform/resolvers':
         specifier: ^5.9.1
         version: 5.9.1(@sinclair/typebox@0.34.52)(react-hook-form@7.85.0(react@19.2.3))(zod@4.4.3)
-      '@react-native-community/datetimepicker':
-        specifier: ^9.1.0
-        version: 9.1.0(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.87.0(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)
       '@tanstack/react-query':
         specifier: ^5.101.4
         version: 5.101.4(react@19.2.3)
@@ -1545,19 +1542,6 @@ packages:
       react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
     peerDependenciesMeta:
       '@types/react':
-        optional: true
-
-  '@react-native-community/datetimepicker@9.1.0':
-    resolution: {integrity: sha512-eadbnk+I2vxvW30iTAsm/qlCnMMAadkifIMYNEB2lzhxN/SvlKc7S2V4k5DyrwjdCbqdcMk3t9K6fnUMcAV34w==}
-    peerDependencies:
-      expo: '>=52.0.0'
-      react: '*'
-      react-native: '*'
-      react-native-windows: '*'
-    peerDependenciesMeta:
-      expo:
-        optional: true
-      react-native-windows:
         optional: true
 
   '@react-native-masked-view/masked-view@0.3.2':
@@ -6051,14 +6035,6 @@ snapshots:
       react: 19.2.3
     optionalDependencies:
       '@types/react': 19.2.18
-
-  '@react-native-community/datetimepicker@9.1.0(expo@57.0.15)(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.87.0(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)':
-    dependencies:
-      invariant: 2.2.4
-      react: 19.2.3
-      react-native: 0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.87.0(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2)
-    optionalDependencies:
-      expo: 57.0.15(2c5f161af2d226b197f80c2113d7b7f4)
 
   '@react-native-masked-view/masked-view@0.3.2(react-native@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(@react-native/jest-preset@0.86.2(@babel/core@7.29.7(supports-color@10.2.2))(react@19.2.3)(supports-color@10.2.2))(@react-native/metro-config@0.87.0(@babel/core@7.29.7(supports-color@10.2.2))(supports-color@10.2.2))(@types/react@19.2.18)(react@19.2.3)(supports-color@10.2.2))(react@19.2.3)':
     dependencies:

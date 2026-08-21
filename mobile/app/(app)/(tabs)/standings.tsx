@@ -73,7 +73,7 @@ export default function StandingsScreen() {
   const setOpponentsFor = (teamId: string) => setComparing((current) =>
     current === null || current.teamId === teamId ? { teamId, opponentId: null } : { teamId: current.teamId, opponentId: teamId });
 
-  return <Screen eyebrow="Computed from final scores" title="Standings">
+  return <Screen title="Standings">
     {/* Only worth a switcher when more than one competition is running. */}
     {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.tabs} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
       {eligible.map((item) => {
