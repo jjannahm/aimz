@@ -300,6 +300,7 @@ class MatchLineupEntry(Base):
     )
     team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="RESTRICT"), index=True)
     is_starter: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_captain: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     position: Mapped[str | None] = mapped_column(String(60))
     jersey_number: Mapped[int | None] = mapped_column(Integer)
 

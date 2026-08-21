@@ -69,7 +69,7 @@ export default function MatchDetailScreen() {
             const note = status(entry);
             return <View key={entry.id} style={styles.lineupRow}>
               <JerseyIcon number={entry.jersey_number} size={34} />
-              <View style={styles.lineupCopy}><Text style={styles.lineupName}>{playerNames.get(entry.player_id) ?? 'Player'}</Text><Text style={styles.lineupMeta}>{describe(entry)}</Text></View>
+              <View style={styles.lineupCopy}><Text style={styles.lineupName}>{playerNames.get(entry.player_id) ?? 'Player'}{entry.is_captain ? ' (C)' : ''}</Text><Text style={styles.lineupMeta}>{describe(entry)}</Text></View>
               {note ? <Text style={[styles.swapNote, cameOff(entry.player_id) && styles.swapOff]}>{note}</Text> : null}
             </View>;
           };
@@ -84,7 +84,7 @@ export default function MatchDetailScreen() {
               <View style={styles.staff}><Text style={styles.staffLabel}>Coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.coach && styles.staffUnset]}>{squad.coach ?? 'Set in Manage'}</Text></View>
               <View style={styles.staff}><Text style={styles.staffLabel}>Assistant coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.assistant_coach && styles.staffUnset]}>{squad.assistant_coach ?? 'Set in Manage'}</Text></View>
             </View> : null}
-            {starters.length ? <FormationPitch formation={query.data.match.formation} starters={starters.map(asPlayer)} /> : null}
+            {starters.length ? <FormationPitch captainId={query.data.lineup.find((entry) => entry.is_captain)?.player_id ?? null} formation={query.data.match.formation} starters={starters.map(asPlayer)} /> : null}
             <Text style={styles.groupTitle}>{current.length ? 'On the pitch' : 'Starting'} {starters.length}</Text>
             {starters.map(row)}
             <Text style={styles.groupTitle}>Substitutes {subs.length ? `(${subs.length})` : ''}</Text>

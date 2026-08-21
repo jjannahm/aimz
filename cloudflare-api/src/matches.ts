@@ -11,7 +11,7 @@ function publicEvent(event: EventRow): Record<string, unknown> {
 }
 
 function publicLineup(entry: LineupRow): Record<string, unknown> {
-  return { ...entry, is_starter: Boolean(entry.is_starter) };
+  return { ...entry, is_starter: Boolean(entry.is_starter), is_captain: Boolean(entry.is_captain) };
 }
 
 function publicStat(stat: StatRow): Record<string, unknown> {
@@ -153,8 +153,8 @@ export function registerMatchRoutes(app: App): void {
       const playerId = stringField(item, "player_id", { min: 1, max: 36 })!; const teamId = stringField(item, "team_id", { min: 1, max: 36 })!;
       if (teamId !== match.home_team_id && teamId !== match.away_team_id) throw new ApiProblem(422, "invalid_team", "Every lineup team must be part of this match.");
       await requirePlayerOnTeam(c.env, playerId, teamId);
-      const row: LineupRow = { id: crypto.randomUUID(), match_id: match.id, player_id: playerId, team_id: teamId, is_starter: booleanField(item, "is_starter", false) ? 1 : 0, position: stringField(item, "position", { optional: true, nullable: true, max: 60 }) ?? null, jersey_number: numberField(item, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null };
-      output.push(row); statements.push(c.env.DB.prepare("INSERT INTO match_lineup_entries (id, match_id, player_id, team_id, is_starter, position, jersey_number) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.match_id, row.player_id, row.team_id, row.is_starter, row.position, row.jersey_number));
+      const row: LineupRow = { id: crypto.randomUUID(), match_id: match.id, player_id: playerId, team_id: teamId, is_starter: booleanField(item, "is_starter", false) ? 1 : 0, is_captain: booleanField(item, "is_captain", false) ? 1 : 0, position: stringField(item, "position", { optional: true, nullable: true, max: 60 }) ?? null, jersey_number: numberField(item, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null };
+      output.push(row); statements.push(c.env.DB.prepare("INSERT INTO match_lineup_entries (id, match_id, player_id, team_id, is_starter, is_captain, position, jersey_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.match_id, row.player_id, row.team_id, row.is_starter, row.is_captain, row.position, row.jersey_number));
     }
     statements.push(c.env.DB.prepare("UPDATE matches SET revision=revision+1, updated_at=? WHERE id=?").bind(nowIso(), match.id)); await c.env.DB.batch(statements); return c.json(output.map(publicLineup));
   });
