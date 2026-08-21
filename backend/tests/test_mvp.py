@@ -1213,6 +1213,38 @@ async def test_man_of_the_match_needs_a_finished_match_and_an_appearance(
 
 
 @pytest.mark.asyncio
+async def test_scoring_marks_a_player_as_having_appeared(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    ids = await _match_fixture(client, admin_headers, "Appearance")
+    await client.post(
+        f"/api/v1/matches/{ids['match_id']}/events",
+        headers=admin_headers,
+        json={
+            "type": "goal",
+            "minute": 12,
+            "team_id": ids["home_id"],
+            "player_id": ids["defender_id"],
+            "client_operation_id": "appearance-op-1",
+        },
+    )
+    await client.post(
+        f"/api/v1/matches/{ids['match_id']}/phase",
+        headers=admin_headers,
+        json={"action": "finish_match"},
+    )
+    # Logging an event creates the stat row and marks the appearance, so minutes
+    # do not have to be saved first for the player to be eligible for the award.
+    named = await client.post(
+        f"/api/v1/matches/{ids['match_id']}/man-of-the-match",
+        headers=admin_headers,
+        json={"player_id": ids["defender_id"]},
+    )
+    assert named.status_code == 200, named.text
+    assert named.json()["man_of_the_match_player_id"] == ids["defender_id"]
+
+
+@pytest.mark.asyncio
 async def test_standings_carry_a_form_guide_and_head_to_head_reads_from_one_side(
     client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
