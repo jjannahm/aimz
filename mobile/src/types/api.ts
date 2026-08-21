@@ -14,9 +14,31 @@ export type User = Schema['UserRead'];
 export type TokenResponse = Schema['TokenResponse'];
 export type RegistrationInvite = Schema['InviteRead'];
 export type PresignResponse = Schema['PresignResponse'];
-export type Competition = Schema['CompetitionRead'];
-// `form` is not in the generated schema yet; catches up on the next `npm run api:types`.
-export type StandingRow = Schema['StandingRow'] & { form: FormResult[] };
+// Not in the generated schema yet; catches up on the next `npm run api:types`.
+/** 8, 16 or 32 for a knockout; null for a competition that is only a table. */
+export type Competition = Schema['CompetitionRead'] & { team_count: number | null };
+export const KNOCKOUT_TEAM_COUNTS = [8, 16, 32] as const;
+export type KnockoutTeamCount = (typeof KNOCKOUT_TEAM_COUNTS)[number];
+export const isKnockout = (competition: Pick<Competition, 'team_count'> | null | undefined): boolean => competition?.team_count != null;
+
+export type CompetitionGroupRef = { id: string; name: string; position: number };
+/** `group` is null on a league row, and on a knockout team not yet drawn. */
+export type StandingRow = Schema['StandingRow'] & { form: FormResult[]; group?: CompetitionGroupRef | null };
+
+export type CompetitionGroup = CompetitionGroupRef & { competition_id: string; teams: Team[] };
+
+export type BracketSlot = {
+  id: string;
+  /** Teams left in the round: 16, 8, 4, 2. */
+  round: number;
+  position: number;
+  home_team: Team | null;
+  away_team: Team | null;
+  winner_team_id: string | null;
+  match_id: string | null;
+};
+export type BracketRound = { round: number; label: string; slots: BracketSlot[] };
+export type Bracket = { competition_id: string; team_count: number | null; rounds: BracketRound[] };
 export type PlayerMatchStat = Schema['PlayerMatchStatRead'];
 export type PlayerSeasonSummary = Schema['PlayerSeasonSummary'];
 
@@ -102,7 +124,7 @@ export const PENALTY_OUTCOMES: { label: string; value: PenaltyOutcome }[] = [
   { label: 'Off target', value: 'off_target' },
 ];
 
-export type TeamStaff = { coach: string | null; assistant_coach: string | null; competition_id: string | null };
+export type TeamStaff = { coach: string | null; assistant_coach: string | null; competition_id: string | null; competition_group_id: string | null };
 
 export type Team = TeamStaff & Omit<Schema['TeamRead'], 'squad_code' | 'age_group' | 'season' | 'logo_key'> & {
   squad_code: string | null;
