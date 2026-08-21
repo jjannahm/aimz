@@ -1,4 +1,4 @@
-import { formatMatchClock, getMatchClockState } from '@/src/lib/matchClock';
+import { formatMatchClock, getMatchClockState, minutesPlayedSoFar } from '@/src/lib/matchClock';
 
 const at = Date.parse('2026-08-20T12:00:00.000Z');
 
@@ -46,5 +46,33 @@ describe('match clock', () => {
 
   it('shows full time without a running clock', () => {
     expect(getMatchClockState({ status: 'finished', phase: 'finished', phase_started_at: null }, at)).toMatchObject({ label: 'FULL TIME', clockText: null, isRunning: false });
+  });
+});
+
+describe('minutesPlayedSoFar', () => {
+  const match = { status: 'live' as const, phase: 'first_half' as const, phase_started_at: '2026-08-20T18:30:00.000Z', half_length_minutes: 45, num_halves: 2 };
+
+  it('follows the running clock', () => {
+    expect(minutesPlayedSoFar(match, { phase: 'first_half', currentMinute: 23 })).toBe(23);
+  });
+
+  // The displayed minute is null whenever the clock stops, which used to drop
+  // every player on the pitch to nil — and saving minutes then wrote the nils.
+  it('holds the half at halftime rather than dropping to nothing', () => {
+    expect(minutesPlayedSoFar(match, { phase: 'halftime', currentMinute: null })).toBe(45);
+  });
+
+  it('credits the full match once it has finished', () => {
+    expect(minutesPlayedSoFar(match, { phase: 'finished', currentMinute: null })).toBe(90);
+  });
+
+  it('counts nothing before kickoff', () => {
+    expect(minutesPlayedSoFar(match, { phase: 'not_started', currentMinute: null })).toBe(0);
+  });
+
+  it('measures the halves the match actually plays', () => {
+    const short = { ...match, half_length_minutes: 30 };
+    expect(minutesPlayedSoFar(short, { phase: 'halftime', currentMinute: null })).toBe(30);
+    expect(minutesPlayedSoFar(short, { phase: 'finished', currentMinute: null })).toBe(60);
   });
 });

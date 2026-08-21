@@ -17,7 +17,7 @@ import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { computeMinutesPlayed } from '@/src/lib/matchMinutes';
-import { formatMatchClock, useMatchClock } from '@/src/lib/matchClock';
+import { formatMatchClock, minutesPlayedSoFar, useMatchClock } from '@/src/lib/matchClock';
 import { confirmAction, showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -95,7 +95,8 @@ export default function LiveScoringScreen() {
   });
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
 
-  const elapsed = clock.currentMinute ?? 0;
+  // Not the displayed minute: that goes blank the moment the clock stops.
+  const elapsed = match ? minutesPlayedSoFar(match, clock) : 0;
   // The minute follows the clock until the admin corrects it, then it is theirs.
   useEffect(() => {
     if (minuteEdited || clock.currentMinute === null) return;

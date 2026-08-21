@@ -114,6 +114,26 @@ export function getMatchClockState(match: ClockMatch, nowMs = Date.now()): Match
   };
 }
 
+/**
+ * Minutes of football played so far.
+ *
+ * The displayed minute is deliberately null whenever the clock is not running,
+ * which is right for a scoreboard — a paused clock should not read a minute —
+ * and wrong for a player's total: at halftime and again at full time every
+ * player on the pitch dropped to nil, and saving minutes then wrote those nils
+ * to their season. A stopped clock falls back to the minutes the match's own
+ * period structure says have been played by that point.
+ */
+export function minutesPlayedSoFar(match: ClockMatch, clock: Pick<MatchClockState, 'currentMinute' | 'phase'>): number {
+  const { halfSeconds, regulationSeconds } = clockDurations(match);
+  if (clock.phase === 'not_started') return 0;
+  if (clock.phase === 'halftime') return Math.round(halfSeconds / 60);
+  // A match ended early credits the full ninety, since nothing records when the
+  // whistle actually went once the phase clock is cleared.
+  if (clock.phase === 'finished') return Math.round(regulationSeconds / 60);
+  return clock.currentMinute ?? 0;
+}
+
 export function useMatchClock(match?: ClockMatch): MatchClockState {
   const safeMatch: ClockMatch = match ?? { status: 'scheduled', phase: 'not_started', phase_started_at: null };
   const [nowMs, setNowMs] = useState(Date.now);
