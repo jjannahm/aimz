@@ -17,7 +17,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn() }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
 jest.mock('@/src/lib/api', () => ({
-  api: { live: jest.fn(), players: jest.fn(), setMatchPhase: jest.fn() },
+  api: { live: jest.fn(), players: jest.fn(), setMatchPhase: jest.fn(), createEvent: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -101,5 +101,64 @@ describe('LiveScoringScreen — End match', () => {
 
     jest.mocked(confirmAction).mock.calls[0]![3]!();
     await waitFor(() => expect(api.setMatchPhase).toHaveBeenCalledWith('match-1', 'finish_match'));
+  });
+});
+
+describe('LiveScoringScreen — Cards', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+    jest.mocked(api.live).mockResolvedValue(snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:40:00.000Z' }));
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-20T18:40:00.000Z'));
+  });
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks(); });
+
+  it('replaces the Yellow and Red buttons with one Cards button', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    expect(await screen.findByText('Cards')).toBeTruthy();
+    expect(screen.queryByText('Yellow')).toBeNull();
+    expect(screen.queryByText('Red')).toBeNull();
+  });
+
+  it('asks which card before it shows the form', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Cards'));
+
+    expect(await screen.findByText('Yellow')).toBeTruthy();
+    expect(screen.getByText('Red')).toBeTruthy();
+    // The team, player and minute fields stay behind the card choice.
+    expect(screen.queryByText('Team')).toBeNull();
+    expect(screen.queryByText('Minute (optional)')).toBeNull();
+  });
+
+  it.each([
+    ['Yellow', 'Add Yellow'],
+    ['Red', 'Add Red'],
+  ])('opens the form on %s and names its own action', async (card, action) => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Cards'));
+    fireEvent.press(await screen.findByText(card));
+
+    expect(await screen.findByText(action)).toBeTruthy();
+    expect(screen.getByText('Team')).toBeTruthy();
+    expect(screen.getByText('Minute (optional)')).toBeTruthy();
+  });
+
+  it('swaps the action when the other card is picked', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Cards'));
+    fireEvent.press(await screen.findByText('Yellow'));
+    fireEvent.press(await screen.findByText('Red'));
+
+    expect(await screen.findByText('Add Red')).toBeTruthy();
+    expect(screen.queryByText('Add Yellow')).toBeNull();
+  });
+
+  it('leaves the other event types on their own single step', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    expect(await screen.findByText('Add Goal')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Sub'));
+    expect(await screen.findByText('Add Sub')).toBeTruthy();
+    expect(screen.getByText('Coming on')).toBeTruthy();
   });
 });

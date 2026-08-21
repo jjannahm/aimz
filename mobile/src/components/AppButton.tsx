@@ -17,6 +17,12 @@ type Props = {
   icon?: keyof typeof Ionicons.glyphMap;
   /** Renders the icon alone in a square. `label` still names it for screen readers. */
   iconOnly?: boolean;
+  /**
+   * Fills the button with a colour pair the palette does not own — the
+   * referee-card hues, so far. It carries its own ink because such a fill does
+   * not follow the theme, so neither can the text on it.
+   */
+  tint?: { fill: string; ink: string };
   style?: ViewStyle;
 };
 
@@ -36,11 +42,12 @@ export function AppButton({
   compact = false,
   icon,
   iconOnly = false,
+  tint,
   style,
 }: Props) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
-  const ink = inkFor(colors)[variant];
+  const ink = tint ? tint.ink : inkFor(colors)[variant];
   const showIconOnly = iconOnly && icon !== undefined;
   return (
     <Pressable
@@ -52,6 +59,7 @@ export function AppButton({
       style={({ pressed }) => [
         styles.base,
         styles[variant],
+        tint ? { backgroundColor: tint.fill, borderColor: tint.fill } : null,
         compact && styles.compact,
         showIconOnly && styles.square,
         (disabled || loading) && styles.disabled,
@@ -66,7 +74,7 @@ export function AppButton({
       ) : (
         <>
           {icon ? <Ionicons accessibilityElementsHidden color={ink} name={icon} size={18} /> : null}
-          <Text style={[styles.label, styles[`${variant}Label`]]}>{label}</Text>
+          <Text style={[styles.label, styles[`${variant}Label`], tint ? { color: ink } : null]}>{label}</Text>
         </>
       )}
     </Pressable>
