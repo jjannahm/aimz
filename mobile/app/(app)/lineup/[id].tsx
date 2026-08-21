@@ -53,12 +53,15 @@ export default function LineupScreen() {
   }, [matchQuery.data, match, format]);
 
   const save = useMutation({
-    mutationFn: () => api.lineup(id, roster.map((player) => ({
-      player_id: player.id, team_id: player.team_id, is_starter: starters.has(player.id),
-      is_captain: captain === player.id && starters.has(player.id),
-      position: player.position, jersey_number: player.jersey_number,
-    }))),
-    onSuccess: async () => {
+    // Both writes belong to the save, so both run here. Patching the match from
+    // `onSuccess` reported a failed format update as "Lineup not saved" even
+    // though the entries were already stored, and swallowed the redirect with it.
+    mutationFn: async () => {
+      await api.lineup(id, roster.map((player) => ({
+        player_id: player.id, team_id: player.team_id, is_starter: starters.has(player.id),
+        is_captain: captain === player.id && starters.has(player.id),
+        position: player.position, jersey_number: player.jersey_number,
+      })));
       // The format lives on the match, so it is saved alongside the entries.
       if (match && format) {
         await api.updateMatch(id, {
@@ -67,12 +70,20 @@ export default function LineupScreen() {
           venue: match.venue, status: match.status, lineup_format: format, formation,
         });
       }
+    },
+    onSuccess: async () => {
       await invalidateAfterWrite(client, 'lineup', 'match');
       // Land on the match, where the lineup and pitch are, rather than wherever
       // the admin happened to come from.
       router.replace(`/match/${id}`);
     },
-    onError: (error) => showMessage('Lineup not saved', (error as ApiError).message),
+    // Name the fields the server actually rejected: a bare "check the
+    // highlighted fields" says nothing when nothing on screen is highlighted.
+    onError: (error) => {
+      const failure = error as ApiError;
+      const fields = failure.fields?.map((item) => `${item.field}: ${item.message}`).join('\n');
+      showMessage('Lineup not saved', fields ? `${failure.message}\n\n${fields}` : failure.message);
+    },
   });
 
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
