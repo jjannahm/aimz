@@ -11,7 +11,7 @@ function publicEvent(event: EventRow): Record<string, unknown> {
 }
 
 function publicLineup(entry: LineupRow): Record<string, unknown> {
-  return { ...entry, is_starter: Boolean(entry.is_starter) };
+  return { ...entry, is_starter: Boolean(entry.is_starter), is_captain: Boolean(entry.is_captain) };
 }
 
 function publicStat(stat: StatRow): Record<string, unknown> {
@@ -153,8 +153,8 @@ export function registerMatchRoutes(app: App): void {
       const playerId = stringField(item, "player_id", { min: 1, max: 36 })!; const teamId = stringField(item, "team_id", { min: 1, max: 36 })!;
       if (teamId !== match.home_team_id && teamId !== match.away_team_id) throw new ApiProblem(422, "invalid_team", "Every lineup team must be part of this match.");
       await requirePlayerOnTeam(c.env, playerId, teamId);
-      const row: LineupRow = { id: crypto.randomUUID(), match_id: match.id, player_id: playerId, team_id: teamId, is_starter: booleanField(item, "is_starter", false) ? 1 : 0, position: stringField(item, "position", { optional: true, nullable: true, max: 60 }) ?? null, jersey_number: numberField(item, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null };
-      output.push(row); statements.push(c.env.DB.prepare("INSERT INTO match_lineup_entries (id, match_id, player_id, team_id, is_starter, position, jersey_number) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.match_id, row.player_id, row.team_id, row.is_starter, row.position, row.jersey_number));
+      const row: LineupRow = { id: crypto.randomUUID(), match_id: match.id, player_id: playerId, team_id: teamId, is_starter: booleanField(item, "is_starter", false) ? 1 : 0, is_captain: booleanField(item, "is_captain", false) ? 1 : 0, position: stringField(item, "position", { optional: true, nullable: true, max: 60 }) ?? null, jersey_number: numberField(item, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null };
+      output.push(row); statements.push(c.env.DB.prepare("INSERT INTO match_lineup_entries (id, match_id, player_id, team_id, is_starter, is_captain, position, jersey_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.match_id, row.player_id, row.team_id, row.is_starter, row.is_captain, row.position, row.jersey_number));
     }
     statements.push(c.env.DB.prepare("UPDATE matches SET revision=revision+1, updated_at=? WHERE id=?").bind(nowIso(), match.id)); await c.env.DB.batch(statements); return c.json(output.map(publicLineup));
   });
@@ -181,10 +181,19 @@ export function registerMatchRoutes(app: App): void {
     if (competition.type === "friendly") return c.json([]);
     const result = await c.env.DB.prepare("SELECT * FROM matches WHERE competition_id=? AND status='finished'").bind(competition.id).all<MatchRow>();
     const teamIds = [...new Set(result.results.flatMap((match) => [match.home_team_id, match.away_team_id]))];
-    if (!teamIds.length) return c.json([]);
-    const teams = await c.env.DB.prepare(`SELECT * FROM teams WHERE id IN (${teamIds.map(() => "?").join(",")})`).bind(...teamIds).all<TeamRow>(); const teamMap = new Map(teams.results.map((team) => [team.id, team]));
+    const teams = teamIds.length
+      ? await c.env.DB.prepare(`SELECT * FROM teams WHERE id IN (${teamIds.map(() => "?").join(",")})`).bind(...teamIds).all<TeamRow>()
+      : { results: [] as TeamRow[] };
+    const teamMap = new Map(teams.results.map((team) => [team.id, team]));
     const rows = new Map<string, StandingAccumulator>();
     for (const id of teamIds) rows.set(id, { played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 });
+    // Teams entered in the competition appear on nil rather than waiting for a
+    // first result, so the table reads as a league from the day it is drawn up.
+    const entered = await c.env.DB.prepare("SELECT * FROM teams WHERE competition_id = ?").bind(competition.id).all<TeamRow>();
+    for (const team of entered.results) {
+      teamMap.set(team.id, team);
+      if (!rows.has(team.id)) rows.set(team.id, { played: 0, won: 0, drawn: 0, lost: 0, goals_for: 0, goals_against: 0, points: 0 });
+    }
     for (const match of result.results) { applyStanding(rows.get(match.home_team_id)!, match.home_score, match.away_score); applyStanding(rows.get(match.away_team_id)!, match.away_score, match.home_score); }
     const sorted = [...rows.entries()].sort(([aId, a], [bId, b]) => b.points-a.points || (b.goals_for-b.goals_against)-(a.goals_for-a.goals_against) || b.goals_for-a.goals_for || (teamMap.get(aId)?.name ?? "").localeCompare(teamMap.get(bId)?.name ?? ""));
     return c.json(sorted.map(([id, row], index) => ({ rank: index+1, team: publicTeam(teamMap.get(id) ?? null), ...row, goal_difference: row.goals_for-row.goals_against })));

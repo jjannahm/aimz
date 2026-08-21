@@ -19,7 +19,7 @@ const competition = (id: string, name: string, season: string): Competition => (
 
 const team = (id: string, name: string, is_aimz = false): Team => ({
   id, name, is_aimz, squad_code: null, age_group: null, season: '2026', is_active: true,
-  logo_key: null, coach: null, assistant_coach: null, created_at: '', updated_at: '',
+  logo_key: null, coach: null, assistant_coach: null, competition_id: null, created_at: '', updated_at: '',
 });
 
 const row = (rank: number, t: Team, points: number): StandingRow => ({

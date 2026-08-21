@@ -48,6 +48,13 @@ async def standings(competition_id: str, _: CurrentUser, session: SessionDep) ->
         lambda: {"played": 0, "won": 0, "drawn": 0, "lost": 0, "gf": 0, "ga": 0, "points": 0}
     )
     teams: dict[str, Team] = {}
+    # Teams entered in the competition appear on nil rather than waiting for a
+    # first result, so the table reads as a league from the day it is drawn up.
+    for entered in (
+        await session.scalars(select(Team).where(Team.competition_id == competition_id))
+    ).all():
+        teams[entered.id] = entered
+        table[entered.id]
     for match in matches:
         teams[match.home_team_id] = match.home_team
         teams[match.away_team_id] = match.away_team

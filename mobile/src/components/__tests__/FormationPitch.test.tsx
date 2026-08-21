@@ -82,9 +82,10 @@ describe('FormationPitch', () => {
     ];
     const screen = await render(<FormationPitch formation="1-1" starters={squad} />);
     expect(screen.getByText('1-1')).toBeTruthy();
-    // Surnames keep the pitch readable at small sizes.
-    expect(screen.getByText('Hassan')).toBeTruthy();
-    expect(screen.getByText('Nabil')).toBeTruthy();
+    // First names, since that is how the squad is called out on the touchline.
+    expect(screen.getByText('Nour')).toBeTruthy();
+    expect(screen.getByText('Salma')).toBeTruthy();
+    expect(screen.queryByText('Hassan')).toBeNull();
   });
 });
 
@@ -120,5 +121,24 @@ describe('FormationPitch without a stored formation', () => {
     const screen = await render(<FormationPitch formation={null} starters={squad} />);
     expect(screen.getByText(/1-1/u)).toBeTruthy();
     expect(screen.getByText(/from positions/u)).toBeTruthy();
+  });
+});
+
+describe('captain armband', () => {
+  const squad = [
+    player('gk', 'Nour Hassan', 'Goalkeeper', 1),
+    player('d0', 'Salma Nabil', 'Defender', 2),
+    player('f0', 'Mariam Adel', 'Forward', 9),
+  ];
+
+  it('marks only the captain', async () => {
+    const screen = await render(<FormationPitch captainId="d0" formation="1-1" starters={squad} />);
+    expect(screen.getByLabelText('Salma Nabil, captain')).toBeTruthy();
+    expect(screen.queryByLabelText('Nour Hassan, captain')).toBeNull();
+  });
+
+  it('shows no armband when nobody is named', async () => {
+    const screen = await render(<FormationPitch captainId={null} formation="1-1" starters={squad} />);
+    expect(screen.queryByText('C')).toBeNull();
   });
 });

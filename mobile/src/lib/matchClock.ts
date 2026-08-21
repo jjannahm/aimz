@@ -20,6 +20,8 @@ export type MatchClockState = {
   clockText: string | null;
   accessibilityLabel: string;
   minuteLabel: string | null;
+  /** Displayed match minute, and what a logged event defaults to. */
+  currentMinute: number | null;
   isRunning: boolean;
   isExtraTime: boolean;
   regulationProgress: number;
@@ -47,18 +49,33 @@ function runningElapsedSeconds(match: ClockMatch, nowMs: number): number {
   return Math.max(0, Math.floor((nowMs - startedAt) / 1000));
 }
 
+
+/**
+ * The minute a match is *in*, counting from one.
+ *
+ * Kickoff is the first minute, so a flooring count reads 0' for a whole minute
+ * and looks like a stopped clock. Capped at the period's nominal length so it
+ * holds at 45' through stoppage rather than running past it.
+ */
+export function displayMinute(totalSeconds: number, capSeconds?: number): number {
+  const elapsed = Math.max(0, totalSeconds);
+  const minute = Math.floor(elapsed / 60) + 1;
+  const cap = capSeconds === undefined ? undefined : Math.ceil(capSeconds / 60);
+  return cap === undefined ? minute : Math.min(minute, cap);
+}
+
 export function getMatchClockState(match: ClockMatch, nowMs = Date.now()): MatchClockState {
   const phase = resolveMatchPhase(match);
   const elapsed = runningElapsedSeconds(match, nowMs);
   const { halfSeconds, regulationSeconds, extraTimeSeconds } = clockDurations(match);
   if (match.status === 'scheduled' || phase === 'not_started') {
-    return { phase: 'not_started', label: 'SCHEDULED', clockText: null, minuteLabel: null, accessibilityLabel: 'Scheduled', isRunning: false, isExtraTime: false, regulationProgress: 0, extraTimeProgress: 0 };
+    return { phase: 'not_started', label: 'SCHEDULED', clockText: null, minuteLabel: null, currentMinute: null, accessibilityLabel: 'Scheduled', isRunning: false, isExtraTime: false, regulationProgress: 0, extraTimeProgress: 0 };
   }
   if (match.status === 'finished' || phase === 'finished') {
-    return { phase: 'finished', label: 'FULL TIME', clockText: null, minuteLabel: 'FT', accessibilityLabel: 'Full time', isRunning: false, isExtraTime: false, regulationProgress: 1, extraTimeProgress: 0 };
+    return { phase: 'finished', label: 'FULL TIME', clockText: null, minuteLabel: 'FT', currentMinute: null, accessibilityLabel: 'Full time', isRunning: false, isExtraTime: false, regulationProgress: 1, extraTimeProgress: 0 };
   }
   if (phase === 'halftime') {
-    return { phase, label: 'HALFTIME', clockText: null, minuteLabel: 'HT', accessibilityLabel: 'Halftime', isRunning: false, isExtraTime: false, regulationProgress: 0.5, extraTimeProgress: 0 };
+    return { phase, label: 'HALFTIME', clockText: null, minuteLabel: 'HT', currentMinute: null, accessibilityLabel: 'Halftime', isRunning: false, isExtraTime: false, regulationProgress: 0.5, extraTimeProgress: 0 };
   }
   if (phase === 'extra_time') {
     const total = regulationSeconds + elapsed;
@@ -67,7 +84,8 @@ export function getMatchClockState(match: ClockMatch, nowMs = Date.now()): Match
       phase,
       label: 'EXTRA TIME',
       clockText,
-      minuteLabel: `${Math.floor(total / 60)}'`,
+      minuteLabel: `${displayMinute(total, regulationSeconds + extraTimeSeconds)}'`,
+      currentMinute: displayMinute(total, regulationSeconds + extraTimeSeconds),
       accessibilityLabel: `Extra time, ${clockText}`,
       isRunning: true,
       isExtraTime: true,
@@ -86,7 +104,8 @@ export function getMatchClockState(match: ClockMatch, nowMs = Date.now()): Match
     phase,
     label: 'LIVE',
     clockText,
-    minuteLabel: `${Math.floor(total / 60)}'`,
+    minuteLabel: `${displayMinute(total, isSecondHalf ? regulationSeconds : halfSeconds)}'`,
+    currentMinute: displayMinute(total, isSecondHalf ? regulationSeconds : halfSeconds),
     accessibilityLabel: `Live, ${clockText}`,
     isRunning: true,
     isExtraTime: false,

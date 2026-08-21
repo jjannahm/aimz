@@ -71,14 +71,14 @@ export function joinedMatch(row: JoinedMatchRow): Record<string, unknown> {
     id: row.home_team_id, name: row.home_name, squad_code: row.home_squad_code,
     age_group: row.home_age_group, season: row.home_season, is_aimz: row.home_is_aimz,
     is_active: row.home_is_active, logo_key: row.home_logo_key,
-    coach: row.home_coach, assistant_coach: row.home_assistant_coach,
+    coach: row.home_coach, assistant_coach: row.home_assistant_coach, competition_id: null,
     created_at: row.home_created_at, updated_at: row.home_updated_at,
   };
   const away: TeamRow = {
     id: row.away_team_id, name: row.away_name, squad_code: row.away_squad_code,
     age_group: row.away_age_group, season: row.away_season, is_aimz: row.away_is_aimz,
     is_active: row.away_is_active, logo_key: row.away_logo_key,
-    coach: row.away_coach, assistant_coach: row.away_assistant_coach,
+    coach: row.away_coach, assistant_coach: row.away_assistant_coach, competition_id: null,
     created_at: row.away_created_at, updated_at: row.away_updated_at,
   };
   const competition: CompetitionRow = {
@@ -135,9 +135,10 @@ export function registerDomainRoutes(app: App): void {
       logo_key: stringField(body, "logo_key", { optional: true, nullable: true, max: 512 }) ?? null,
       coach: stringField(body, "coach", { optional: true, nullable: true, max: 160 }) ?? null,
       assistant_coach: stringField(body, "assistant_coach", { optional: true, nullable: true, max: 160 }) ?? null,
+      competition_id: stringField(body, "competition_id", { optional: true, nullable: true, max: 36 }) ?? null,
       created_at: now, updated_at: now,
     };
-    await c.env.DB.prepare("INSERT INTO teams (id, name, squad_code, age_group, season, is_aimz, is_active, logo_key, coach, assistant_coach, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(team.id, team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, now, now).run();
+    await c.env.DB.prepare("INSERT INTO teams (id, name, squad_code, age_group, season, is_aimz, is_active, logo_key, coach, assistant_coach, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(team.id, team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, team.competition_id, now, now).run();
     return c.json(publicTeam(team), 201);
   });
 
@@ -155,11 +156,12 @@ export function registerDomainRoutes(app: App): void {
       logo_key: optionalNullableText(body, "logo_key", current.logo_key, 512),
       coach: optionalNullableText(body, "coach", current.coach, 160),
       assistant_coach: optionalNullableText(body, "assistant_coach", current.assistant_coach, 160),
+      competition_id: optionalNullableText(body, "competition_id", current.competition_id, 36),
       is_aimz: typeof body.is_aimz === "boolean" ? (body.is_aimz ? 1 : 0) : current.is_aimz,
       is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active,
       updated_at: nowIso(),
     };
-    await c.env.DB.prepare("UPDATE teams SET name=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, coach=?, assistant_coach=?, updated_at=? WHERE id=?").bind(team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, team.updated_at, team.id).run();
+    await c.env.DB.prepare("UPDATE teams SET name=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, coach=?, assistant_coach=?, competition_id=?, updated_at=? WHERE id=?").bind(team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, team.competition_id, team.updated_at, team.id).run();
     return c.json(publicTeam(team));
   });
   app.delete("/api/v1/teams/:id", async (c) => deleteRestricted(c, "teams", "team", c.req.param("id")));

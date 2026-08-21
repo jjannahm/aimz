@@ -28,12 +28,12 @@ const eventOptions: { label: string; value: EventType; icon: keyof typeof Ionico
 export default function LiveScoringScreen() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
-  const { id, event } = useLocalSearchParams<{ id: string; event?: string }>();
+  const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const client = useQueryClient();
   const matchQuery = useQuery({ queryKey: ['live-match', id], queryFn: () => api.live(id), enabled: Boolean(id), refetchInterval: 12_000 });
   const playersQuery = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
-  const [teamId, setTeamId] = useState(''); const [playerId, setPlayerId] = useState(''); const [minute, setMinute] = useState(''); const [eventType, setEventType] = useState<EventType>(event === 'substitution' ? 'substitution' : 'goal'); const [isPenalty, setIsPenalty] = useState(false); const [offPlayerId, setOffPlayerId] = useState('');
+  const [teamId, setTeamId] = useState(''); const [playerId, setPlayerId] = useState(''); const [minute, setMinute] = useState(''); const [eventType, setEventType] = useState<EventType>('goal'); const [isPenalty, setIsPenalty] = useState(false); const [offPlayerId, setOffPlayerId] = useState(''); const [minuteEdited, setMinuteEdited] = useState(false);
   const match = matchQuery.data?.match;
   const clock = useMatchClock(match);
   const eligiblePlayers = useMemo(() => playersQuery.data?.items.filter((player) => player.team_id === match?.home_team_id || player.team_id === match?.away_team_id) ?? [], [playersQuery.data, match]);
@@ -52,11 +52,16 @@ export default function LiveScoringScreen() {
     mutationFn: () => api.createEvent(id, { type: eventType, minute: minute ? Number(minute) : null, team_id: teamId, player_id: playerId || null, secondary_player_id: eventType === 'substitution' ? offPlayerId || null : null, is_penalty: eventType === 'goal' && isPenalty, client_operation_id: `${Date.now()}-${Math.random().toString(36).slice(2)}` }),
     onMutate: async () => { await client.cancelQueries({ queryKey: ['live-match', id] }); const previous = client.getQueryData<LiveMatchSnapshot>(['live-match', id]); if (previous) { const optimistic: MatchEvent = { id: `pending-${Date.now()}`, match_id: id, is_penalty: eventType === 'goal' && isPenalty, type: eventType, minute: minute ? Number(minute) : null, team_id: teamId, player_id: playerId || null, secondary_player_id: null, related_event_id: null, notes: null, client_operation_id: 'pending', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }; client.setQueryData<LiveMatchSnapshot>(['live-match', id], { ...previous, events: [...previous.events, optimistic], match: { ...previous.match, home_score: previous.match.home_score + (eventType === 'goal' && teamId === previous.match.home_team_id ? 1 : 0), away_score: previous.match.away_score + (eventType === 'goal' && teamId === previous.match.away_team_id ? 1 : 0) } }); } return { previous }; },
     onError: (error, _variables, context) => { if (context?.previous) client.setQueryData(['live-match', id], context.previous); showMessage('Event not saved', (error as ApiError).message); },
-    onSuccess: async () => { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); setMinute(''); setIsPenalty(false); setOffPlayerId(''); await invalidateAfterWrite(client, 'event'); },
+    onSuccess: async () => { await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success); setMinuteEdited(false); setIsPenalty(false); setOffPlayerId(''); await invalidateAfterWrite(client, 'event'); },
   });
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
 
-  const elapsed = Number(clock.minuteLabel?.replace(/[^0-9]/gu, '') ?? 0);
+  const elapsed = clock.currentMinute ?? 0;
+  // The minute follows the clock until the admin corrects it, then it is theirs.
+  useEffect(() => {
+    if (minuteEdited || clock.currentMinute === null) return;
+    setMinute(String(clock.currentMinute));
+  }, [clock.currentMinute, minuteEdited]);
   const spells = useMemo(
     () => matchQuery.data ? computeMinutesPlayed(matchQuery.data.lineup, matchQuery.data.events, elapsed) : [],
     [matchQuery.data, elapsed],

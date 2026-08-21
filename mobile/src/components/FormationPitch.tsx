@@ -63,7 +63,7 @@ export function inferFormation(starters: Player[]): string | null {
   return rows.length >= 2 ? rows.join('-') : String(outfield.length);
 }
 
-export function FormationPitch({ starters, formation }: { starters: Player[]; formation?: string | null }) {
+export function FormationPitch({ starters, formation, captainId }: { starters: Player[]; formation?: string | null; captainId?: string | null }) {
   const styles = useThemedStyles(stylesheet);
   const shape = formation ?? inferFormation(starters);
   const { keeper, rows } = arrangeByFormation(starters, shape ?? String(Math.max(0, starters.length - 1)));
@@ -74,20 +74,23 @@ export function FormationPitch({ starters, formation }: { starters: Player[]; fo
     <View accessibilityElementsHidden style={styles.halfway} />
     <View accessibilityElementsHidden style={styles.circle} />
     {stacked.map((row, rowIndex) => <View key={`row-${rowIndex}`} style={styles.row}>
-      {row.map((player) => <PitchPlayer key={player.id} player={player} />)}
+      {row.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} player={player} />)}
     </View>)}
-    {keeper.length ? <View style={styles.row}>{keeper.map((player) => <PitchPlayer key={player.id} player={player} />)}</View> : null}
+    {keeper.length ? <View style={styles.row}>{keeper.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} player={player} />)}</View> : null}
     <Text style={styles.badge}>{shape ?? '—'}{formation ? '' : ' · from positions'}</Text>
   </View>;
 }
 
-function PitchPlayer({ player }: { player: Player }) {
+function PitchPlayer({ player, captain = false }: { player: Player; captain?: boolean }) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
-  const surname = player.name.trim().split(/\s+/u).slice(-1)[0] ?? player.name;
+  const firstName = player.name.trim().split(/\s+/u)[0] ?? player.name;
   return <View style={styles.player}>
-    <JerseyIcon color={colors.textPrimary} number={player.jersey_number} size={40} />
-    <Text numberOfLines={1} style={styles.playerName}>{surname}</Text>
+    <View>
+      <JerseyIcon color={colors.textPrimary} number={player.jersey_number} size={40} />
+      {captain ? <View accessibilityLabel={`${player.name}, captain`} style={styles.armband}><Text style={styles.armbandText}>C</Text></View> : null}
+    </View>
+    <Text numberOfLines={1} style={styles.playerName}>{firstName}</Text>
   </View>;
 }
 
@@ -110,6 +113,12 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   row: { flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'space-evenly' },
   player: { alignItems: 'center', flex: 1, gap: 2, maxWidth: 92 },
   playerName: { color: '#EAF6EF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
+  armband: {
+    alignItems: 'center', backgroundColor: colors.warning, borderColor: PITCH,
+    borderRadius: 9, borderWidth: 1.5, height: 18, justifyContent: 'center',
+    position: 'absolute', right: -2, top: -2, width: 18,
+  },
+  armbandText: { color: colors.onAccent, fontSize: 10, fontWeight: '900', lineHeight: 12 },
   badge: {
     alignSelf: 'flex-start', color: '#CDE9D9', fontSize: theme.type.caption,
     fontVariant: ['tabular-nums'], fontWeight: '900', letterSpacing: 0.6,

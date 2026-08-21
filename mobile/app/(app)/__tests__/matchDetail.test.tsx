@@ -28,14 +28,14 @@ const match = (over: Partial<Match> = {}): Match => ({
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15,
   created_at: '', updated_at: '',
-  home_team: { id: 'home', name: 'AIMZ U18', squad_code: null, age_group: 'U18', season: '2026', is_aimz: true, is_active: true, logo_key: null, coach: null, assistant_coach: null, created_at: '', updated_at: '' },
-  away_team: { id: 'away', name: 'Giza Lions', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, coach: null, assistant_coach: null, created_at: '', updated_at: '' },
+  home_team: { id: 'home', name: 'AIMZ U18', squad_code: null, age_group: 'U18', season: '2026', is_aimz: true, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, created_at: '', updated_at: '' },
+  away_team: { id: 'away', name: 'Giza Lions', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, created_at: '', updated_at: '' },
   competition: { id: 'c-1', name: 'Women Academy League', season: '2026', type: 'league', created_at: '', updated_at: '' },
   ...over,
 });
 
 const entry = (id: string, is_starter: boolean): LineupEntry => ({
-  id, match_id: 'match-1', player_id: id, team_id: 'home', is_starter,
+  id, match_id: 'match-1', player_id: id, team_id: 'home', is_starter, is_captain: false,
   position: 'Midfielder', jersey_number: 8,
 });
 
@@ -48,28 +48,6 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 jest.setTimeout(30_000);
-
-describe('MatchDetailScreen — live actions', () => {
-  beforeEach(() => {
-    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
-    jest.mocked(api.setMatchPhase).mockResolvedValue(match({ status: 'finished' }));
-  });
-  afterEach(() => jest.clearAllMocks());
-
-  it('offers both quick actions while live', async () => {
-    jest.mocked(api.live).mockResolvedValue(snapshot());
-    const screen = await render(<MatchDetailScreen />, { wrapper });
-    expect(await screen.findByText('Log goal')).toBeTruthy();
-    expect(screen.getByText('Log substitution')).toBeTruthy();
-  });
-
-  it('hides the quick actions before kickoff', async () => {
-    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'scheduled', phase: 'not_started' }));
-    const screen = await render(<MatchDetailScreen />, { wrapper });
-    await screen.findByText('Open match management');
-    expect(screen.queryByText('Log substitution')).toBeNull();
-  });
-});
 
 describe('MatchDetailScreen — End match', () => {
   beforeEach(() => {

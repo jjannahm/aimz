@@ -151,6 +151,11 @@ class Team(TimestampMixin, Base):
     # Set once per squad rather than per match; coaches rarely change week to week.
     coach: Mapped[str | None] = mapped_column(String(160))
     assistant_coach: Mapped[str | None] = mapped_column(String(160))
+    # Which league the team is entered in, so it appears in that table before
+    # it has played anything.
+    competition_id: Mapped[str | None] = mapped_column(
+        ForeignKey("competitions.id", ondelete="SET NULL"), index=True
+    )
 
     players: Mapped[list[Player]] = relationship(back_populates="team")
 
@@ -300,6 +305,7 @@ class MatchLineupEntry(Base):
     )
     team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="RESTRICT"), index=True)
     is_starter: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    is_captain: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     position: Mapped[str | None] = mapped_column(String(60))
     jersey_number: Mapped[int | None] = mapped_column(Integer)
 
