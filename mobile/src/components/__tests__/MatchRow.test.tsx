@@ -32,13 +32,13 @@ describe('MatchRow', () => {
     ['extra_time', '2026-08-20T18:49:00.000Z', "ET 106'"],
   ] as const)('shows the %s live state', async (phase, startedAt, label) => {
     const screen = await render(<MatchRow match={{ ...base, status: 'live', phase, phase_started_at: startedAt, home_score: 2, away_score: 1 }} />);
-    expect(screen.getByText('2 - 1')).toBeTruthy();
+    expect(screen.getByLabelText(/AIMZ Women 2, Cairo Stars 1\./)).toBeTruthy();
     expect(screen.getByText(label)).toBeTruthy();
   });
 
   it('shows full time for a result', async () => {
     const screen = await render(<MatchRow match={{ ...base, status: 'finished', phase: 'finished', home_score: 3, away_score: 2 }} />);
-    expect(screen.getByText('3 - 2')).toBeTruthy();
+    expect(screen.getByLabelText(/AIMZ Women 3, Cairo Stars 2\./)).toBeTruthy();
     expect(screen.getByText('FT')).toBeTruthy();
   });
 });

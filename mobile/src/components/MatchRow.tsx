@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { LiveDot } from '@/src/components/MatchStatusIndicator';
+import { ScoreLine } from '@/src/components/ScoreLine';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { useMatchClock } from '@/src/lib/matchClock';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -46,7 +47,7 @@ export function MatchRow({ match, compact = false }: { match: Match; compact?: b
           <View style={styles.kickoffRow}><Text style={styles.kickoff}>{kickoff.time}</Text>{kickoff.period ? <Text style={styles.period}>{kickoff.period}</Text> : null}</View>
           <Text style={styles.secondary}>Scheduled</Text>
         </> : <>
-          <Text style={styles.score}>{match.home_score} - {match.away_score}</Text>
+          <ScoreLine away={match.away_score} decorative home={match.home_score} size="row" />
           <View style={[styles.stateBadge, isLive && styles.liveBadge]}>
             {isLive && clock.phase !== 'halftime' ? <LiveDot testID={`live-dot-${match.id}`} /> : null}
             <Text style={[styles.stateText, isLive && styles.liveText]}>{isLive ? liveStateLabel : 'FT'}</Text>
@@ -70,7 +71,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   teamName: { color: colors.textPrimary, flex: 1, fontSize: theme.type.label, fontWeight: '800', lineHeight: 18 },
   homeName: { textAlign: 'right' },
   center: { alignItems: 'center', justifyContent: 'center', minWidth: 92, paddingHorizontal: 6 },
-  score: { color: colors.textPrimary, fontSize: 22, fontVariant: ['tabular-nums'], fontWeight: '900', letterSpacing: -0.5 },
   kickoffRow: { alignItems: 'baseline', flexDirection: 'row', gap: 3 },
   kickoff: { color: colors.textPrimary, fontSize: 18, fontVariant: ['tabular-nums'], fontWeight: '900' },
   period: { color: colors.textSecondary, fontSize: 10, fontWeight: '800' },

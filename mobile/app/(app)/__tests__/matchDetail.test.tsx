@@ -1,10 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import MatchDetailScreen from '@/app/(app)/match/[id]';
 import { api } from '@/src/lib/api';
-import { confirmAction } from '@/src/lib/platformAlert';
 import type { LineupEntry, LiveMatchSnapshot, Match } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
@@ -16,7 +15,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn() }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
 jest.mock('@/src/lib/api', () => ({
-  api: { live: jest.fn(), players: jest.fn(), setMatchPhase: jest.fn() },
+  api: { live: jest.fn(), players: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -49,48 +48,17 @@ function wrapper({ children }: { children: ReactNode }) {
 
 jest.setTimeout(30_000);
 
-describe('MatchDetailScreen — End match', () => {
+describe('MatchDetailScreen — End match moved to live scoring', () => {
   beforeEach(() => {
     jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
-    jest.mocked(api.setMatchPhase).mockResolvedValue(match({ status: 'finished' }));
   });
   afterEach(() => jest.clearAllMocks());
 
-  it('offers End match while the match is live', async () => {
+  it('no longer offers End match while the match is live', async () => {
     jest.mocked(api.live).mockResolvedValue(snapshot());
-    const screen = await render(<MatchDetailScreen />, { wrapper });
-    expect(await screen.findByText('End match')).toBeTruthy();
-  });
-
-  it('hides End match once the match is finished', async () => {
-    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'finished', phase: 'finished' }));
     const screen = await render(<MatchDetailScreen />, { wrapper });
     await screen.findByText('Open live scoring');
     expect(screen.queryByText('End match')).toBeNull();
-  });
-
-  it('hides End match before kickoff', async () => {
-    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'scheduled', phase: 'not_started' }));
-    const screen = await render(<MatchDetailScreen />, { wrapper });
-    await screen.findByText('Open match management');
-    expect(screen.queryByText('End match')).toBeNull();
-  });
-
-  it('asks for confirmation and only then finishes the match', async () => {
-    jest.mocked(api.live).mockResolvedValue(snapshot());
-    const screen = await render(<MatchDetailScreen />, { wrapper });
-    fireEvent.press(await screen.findByText('End match'));
-
-    // Nothing is sent until the confirmation is accepted.
-    expect(api.setMatchPhase).not.toHaveBeenCalled();
-    expect(confirmAction).toHaveBeenCalledWith(
-      'End this match now?', 'Final score will be locked in.', 'End match', expect.any(Function),
-      { destructive: true },
-    );
-
-    const confirm = jest.mocked(confirmAction).mock.calls[0]![3];
-    confirm();
-    await waitFor(() => expect(api.setMatchPhase).toHaveBeenCalledWith('match-1', 'finish_match'));
   });
 });
 

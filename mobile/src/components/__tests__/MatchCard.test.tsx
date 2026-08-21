@@ -23,6 +23,9 @@ describe('MatchCard', () => {
     const card = screen.getByRole('button', { name: /AIMZ Navy 2, Cairo Stars 1. LIVE/i });
     fireEvent.press(card);
     expect(router.push).toHaveBeenCalledWith('/match/match-1');
-    expect(screen.getByText('2 - 1')).toBeTruthy();
+    // Separate nodes now, so the dash can stay centred; the row announces the
+    // score itself, so the digits are hidden from assistive tech.
+    expect(screen.getByText('2', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByText('1', { includeHiddenElements: true })).toBeTruthy();
   });
 });
