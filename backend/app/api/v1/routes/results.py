@@ -27,7 +27,6 @@ from app.schemas import (
     PlayerSeasonSummary,
     SeasonAwards,
     StandingRow,
-    TeamAward,
     TeamRead,
 )
 
@@ -312,7 +311,21 @@ async def season_awards(
     competition = await session.get(Competition, competition_id)
     if competition is None:
         raise api_error(404, "competition_not_found", "Competition not found.")
-    matches = await finished_matches(session, competition_id)
+    # Awards are counted on the match, not on a player_match_stats row, so this
+    # one is a correlated subquery rather than another sum. It comes last in the
+    # select because best() reads Player and Team off positions 0 and 1.
+    motm = (
+        select(func.count())
+        .select_from(Match)
+        .where(
+            Match.competition_id == competition_id,
+            Match.status == MatchStatus.finished,
+            Match.man_of_the_match_player_id == Player.id,
+        )
+        .correlate(Player)
+        .scalar_subquery()
+        .label("motm")
+    )
     totals = (
         await session.execute(
             select(
@@ -323,6 +336,7 @@ async def season_awards(
                 func.sum(PlayerMatchStat.minutes_played).label("minutes"),
                 func.sum(PlayerMatchStat.yellow_cards + PlayerMatchStat.red_cards).label("cards"),
                 func.sum(case((PlayerMatchStat.appeared, 1), else_=0)).label("appearances"),
+                motm,
             )
             .select_from(PlayerMatchStat)
             .join(Match, Match.id == PlayerMatchStat.match_id)
@@ -349,6 +363,7 @@ async def season_awards(
     player_awards = [
         award
         for award in (
+            best("Most man of the match", "motm", "awards"),
             best("Top scorer", "goals", "goals"),
             best("Most assists", "assists", "assists"),
             best("Most appearances", "appearances", "appearances"),
@@ -370,29 +385,9 @@ async def season_awards(
             )
         )
 
-    # Per-goalkeeper clean sheets would need a goalkeeper flag, which the player
-    # model does not carry, so the award goes to the team.
-    sheets: dict[str, int] = defaultdict(int)
-    teams: dict[str, Team] = {}
-    for match in matches:
-        teams[match.home_team_id] = match.home_team
-        teams[match.away_team_id] = match.away_team
-        sheets[match.home_team_id] += match.away_score == 0
-        sheets[match.away_team_id] += match.home_score == 0
-    team_awards: list[TeamAward] = []
-    kept = {team_id: count for team_id, count in sheets.items() if count > 0}
-    if kept:
-        team_id = max(kept, key=lambda key: (kept[key], teams[key].name.lower()))
-        team_awards.append(
-            TeamAward(
-                label="Most clean sheets",
-                team=TeamRead.model_validate(teams[team_id]),
-                value=kept[team_id],
-                unit="clean sheets",
-            )
-        )
+    # Every award is now a player award; team_awards stays on the schema, and
+    # empty, so the response shape does not change for older clients.
     return SeasonAwards(
         competition=CompetitionRead.model_validate(competition),
         player_awards=player_awards,
-        team_awards=team_awards,
     )

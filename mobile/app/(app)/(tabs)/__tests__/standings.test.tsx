@@ -78,11 +78,12 @@ describe('StandingsScreen', () => {
     expect(await screen.findByLabelText('Delta Cup, season 2026')).toBeTruthy();
   });
 
-  it('shows a team avatar beside each name', async () => {
+  it('badges each team by whether it is ours', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
     await screen.findByText('Giza Lions');
-    expect(screen.getByText('GL', { includeHiddenElements: true })).toBeTruthy();
-    expect(screen.getByText('AU', { includeHiddenElements: true })).toBeTruthy();
+    // One AIMZ squad and one opponent are in the fixture table.
+    expect(screen.getByTestId('badge-aimz', { includeHiddenElements: true })).toBeTruthy();
+    expect(screen.getByTestId('badge-opponent', { includeHiddenElements: true })).toBeTruthy();
   });
 
   it('marks first place with a trophy that nobody else gets', async () => {

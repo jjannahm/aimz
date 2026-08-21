@@ -17,9 +17,10 @@ const common = {
 
 function MatchesIcon() {
   return <>
-    <circle cx="12" cy="12" r="8.5" />
-    <path d="m9.3 10.1 2.7-2 2.7 2-1 3.2h-3.4l-1-3.2Z" />
-    <path d="m12 3.5 0 4.6M3.9 9.2l5.4.9M6.4 18.8l3.9-5.5M17.6 18.8l-3.9-5.5M20.1 9.2l-5.4.9" />
+    <rect height="15" rx="1.5" width="20" x="2" y="4.5" />
+    <path d="M12 4.5v15" />
+    <circle cx="12" cy="12" r="2.8" />
+    <path d="M2 8.8h2.8v6.4H2M22 8.8h-2.8v6.4H22" />
   </>;
 }
 

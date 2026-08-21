@@ -1,11 +1,6 @@
 import { render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
 
 import { initialsFor, TeamAvatar } from '@/src/components/TeamAvatar';
-import { darkColors } from '@/src/theme';
-
-const backgroundOf = (element: { props: Record<string, unknown> } | null) =>
-  (StyleSheet.flatten(element?.props.style as never) as { backgroundColor?: string } | undefined)?.backgroundColor;
 
 describe('initialsFor', () => {
   it('takes one letter from each of the first two words', () => {
@@ -24,25 +19,34 @@ describe('initialsFor', () => {
 });
 
 describe('TeamAvatar', () => {
-  // The circle is decorative: the team name is announced separately, so the
-  // avatar is hidden from assistive tech and queries must opt into hidden nodes.
-  it('shows initials when the team has no crest', async () => {
-    const screen = await render(<TeamAvatar name="AIMZ U18 Women" />);
-    expect(screen.getByText('AU', { includeHiddenElements: true })).toBeTruthy();
+  // The badge is decorative: the team name is announced separately, so it is
+  // hidden from assistive tech and queries must opt into hidden nodes.
+  const hidden = { includeHiddenElements: true } as const;
+
+  it('gives an AIMZ squad the club crest', async () => {
+    const screen = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={48} />);
+    expect(screen.getByTestId('badge-aimz', hidden)).toBeTruthy();
+    expect(screen.getByText('aimz', hidden)).toBeTruthy();
   });
 
-  it('gives a team the same colour everywhere it appears', async () => {
-    const first = await render(<TeamAvatar name="Giza Lions" />);
-    const second = await render(<TeamAvatar name="Giza Lions" />);
-    const colour = backgroundOf(first.getByText('GL', { includeHiddenElements: true }).parent!);
-    expect(colour).toBe(backgroundOf(second.getByText('GL', { includeHiddenElements: true }).parent!));
-    expect([darkColors.accent, darkColors.accentSoft]).toContain(colour);
+  it('gives an opponent the neutral shield, with no club wordmark', async () => {
+    const screen = await render(<TeamAvatar name="Giza Lions" size={48} />);
+    expect(screen.getByTestId('badge-opponent', hidden)).toBeTruthy();
+    expect(screen.queryByText('aimz', hidden)).toBeNull();
   });
 
-  it('lets a caller pin the tone, so home and away stay distinct', async () => {
-    const home = await render(<TeamAvatar name="Same Name" tone="accent" />);
-    const away = await render(<TeamAvatar name="Same Name" tone="light" />);
-    expect(backgroundOf(home.getByText('SN', { includeHiddenElements: true }).parent!)).toBe(darkColors.accent);
-    expect(backgroundOf(away.getByText('SN', { includeHiddenElements: true }).parent!)).toBe(darkColors.accentSoft);
+  it('drops the crest detail at table-row size, where it would be unreadable', async () => {
+    const large = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={48} />);
+    const small = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={34} />);
+    expect(large.getByText('aimz', hidden)).toBeTruthy();
+    // Still the crest, just without the stripes and wordmark.
+    expect(small.getByTestId('badge-aimz', hidden)).toBeTruthy();
+    expect(small.queryByText('aimz', hidden)).toBeNull();
+  });
+
+  it('prefers an uploaded crest over the drawn badge', async () => {
+    const screen = await render(<TeamAvatar isAimz logoUrl="https://example.test/crest.png" name="AIMZ U18 Women" />);
+    expect(screen.queryByTestId('badge-aimz', hidden)).toBeNull();
+    expect(screen.queryByTestId('badge-opponent', hidden)).toBeNull();
   });
 });

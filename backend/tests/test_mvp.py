@@ -1360,17 +1360,60 @@ async def test_card_leaders_and_season_awards(
     )
     assert [row["player"]["id"] for row in scoped.json()] == [ids["forward_id"]]
 
+    await client.put(
+        f"/api/v1/matches/{ids['match_id']}/player-stats",
+        headers=admin_headers,
+        json=[{"player_id": ids["defender_id"], "appeared": True, "minutes_played": 90}],
+    )
+    await client.post(
+        f"/api/v1/matches/{ids['match_id']}/man-of-the-match",
+        headers=admin_headers,
+        json={"player_id": ids["defender_id"]},
+    )
+
     awards = await client.get(
         f"/api/v1/competitions/{ids['competition_id']}/awards", headers=admin_headers
     )
     assert awards.status_code == 200, awards.text
-    labels = {award["label"]: award for award in awards.json()["player_awards"]}
+    rows = awards.json()["player_awards"]
+    labels = {award["label"]: award for award in rows}
     assert labels["Top scorer"]["player"]["id"] == ids["defender_id"]
     assert labels["Top scorer"]["value"] == 1
-    # The home team conceded nothing, so it takes the clean-sheet award.
-    sheets = awards.json()["team_awards"][0]
-    assert sheets["team"]["id"] == ids["home_id"]
-    assert sheets["value"] == 1
+    # Man of the match leads the list, and clean sheets are gone with it.
+    assert rows[0]["label"] == "Most man of the match"
+    assert rows[0]["player"]["id"] == ids["defender_id"]
+    assert rows[0]["value"] == 1
+    assert awards.json()["team_awards"] == []
+
+
+@pytest.mark.asyncio
+async def test_awards_leave_out_man_of_the_match_when_nobody_was_named(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    ids = await _match_fixture(client, admin_headers, "No Award")
+    await client.post(
+        f"/api/v1/matches/{ids['match_id']}/events",
+        headers=admin_headers,
+        json={
+            "type": "goal",
+            "minute": 5,
+            "team_id": ids["home_id"],
+            "player_id": ids["defender_id"],
+            "client_operation_id": "no-award-goal",
+        },
+    )
+    await client.post(
+        f"/api/v1/matches/{ids['match_id']}/phase",
+        headers=admin_headers,
+        json={"action": "finish_match"},
+    )
+    awards = await client.get(
+        f"/api/v1/competitions/{ids['competition_id']}/awards", headers=admin_headers
+    )
+    labels = [award["label"] for award in awards.json()["player_awards"]]
+    # A zero total wins nothing, so the row is absent rather than showing 0.
+    assert "Most man of the match" not in labels
+    assert labels[0] == "Top scorer"
 
 
 @pytest.mark.asyncio
