@@ -48,11 +48,11 @@ export default function MatchDetailScreen() {
         if (!starters.length) return null;
         const asPlayer = (entry: typeof query.data.lineup[number]) => ({ id: entry.player_id, name: playerNames.get(entry.player_id) ?? 'Player', position: entry.position ?? '', jersey_number: entry.jersey_number } as never);
         return <View style={styles.section}>
+          <FormationPitch captainId={query.data.lineup.find((entry) => entry.is_captain)?.player_id ?? null} formation={query.data.match.formation} starters={starters.map(asPlayer)} />
           {squad && (squad.coach || squad.assistant_coach || user?.role === 'admin') ? <View style={styles.staffRow}>
             <View style={styles.staff}><Text style={styles.staffLabel}>Coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.coach && styles.staffUnset]}>{squad.coach ?? 'Set in Manage'}</Text></View>
             <View style={styles.staff}><Text style={styles.staffLabel}>Assistant coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.assistant_coach && styles.staffUnset]}>{squad.assistant_coach ?? 'Set in Manage'}</Text></View>
           </View> : null}
-          <FormationPitch captainId={query.data.lineup.find((entry) => entry.is_captain)?.player_id ?? null} formation={query.data.match.formation} starters={starters.map(asPlayer)} />
         </View>;
       })()}
       <View style={styles.section}>

@@ -863,3 +863,47 @@ async def test_team_entered_in_a_competition_appears_in_its_table(
         f"/api/v1/competitions/{competition_id}/standings", headers=admin_headers
     )
     assert [row["team"]["name"] for row in unchanged.json()] == ["Delta FC"]
+
+
+@pytest.mark.asyncio
+async def test_entered_team_appears_in_the_table_before_playing(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Entry League", "season": "2026/27", "type": "league"},
+    )
+    entered = await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={"name": "Delta FC", "competition_id": competition.json()["id"]},
+    )
+    assert entered.status_code == 201, entered.text
+    assert entered.json()["competition_id"] == competition.json()["id"]
+
+    # No match has been played, yet the club is already in the table on nil.
+    table = await client.get(
+        f"/api/v1/competitions/{competition.json()['id']}/standings", headers=admin_headers
+    )
+    assert table.status_code == 200, table.text
+    rows = {row["team"]["name"]: row for row in table.json()}
+    assert "Delta FC" in rows
+    assert rows["Delta FC"]["played"] == 0
+    assert rows["Delta FC"]["points"] == 0
+
+    # A club entered elsewhere stays out of this table.
+    other = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Other League", "season": "2026/27", "type": "league"},
+    )
+    await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={"name": "Faraway United", "competition_id": other.json()["id"]},
+    )
+    again = await client.get(
+        f"/api/v1/competitions/{competition.json()['id']}/standings", headers=admin_headers
+    )
+    assert "Faraway United" not in {row["team"]["name"] for row in again.json()}
