@@ -24,6 +24,7 @@ export default function LineupScreen() {
   const [format, setFormat] = useState<LineupFormat | null>(null);
   const [starters, setStarters] = useState<Set<string>>(new Set());
   const [formation, setFormation] = useState<string | null>(null);
+  const [captain, setCaptain] = useState<string | null>(null);
   const match = matchQuery.data?.match;
 
   // Only AIMZ's own squad is managed here; the opponent is just a name.
@@ -42,6 +43,7 @@ export default function LineupScreen() {
     if (!matchQuery.data || format !== null) return;
     setFormat((match?.lineup_format as LineupFormat | null) ?? null);
     setFormation(match?.formation ?? null);
+    setCaptain(matchQuery.data.lineup.find((entry) => entry.is_captain)?.player_id ?? null);
     const saved = matchQuery.data.lineup.filter((entry) => entry.is_starter).map((entry) => entry.player_id);
     if (saved.length) setStarters(new Set(saved));
   }, [matchQuery.data, match, format]);
@@ -49,6 +51,7 @@ export default function LineupScreen() {
   const save = useMutation({
     mutationFn: () => api.lineup(id, roster.map((player) => ({
       player_id: player.id, team_id: player.team_id, is_starter: starters.has(player.id),
+      is_captain: captain === player.id && starters.has(player.id),
       position: player.position, jersey_number: player.jersey_number,
     }))),
     onSuccess: async () => {
@@ -77,7 +80,7 @@ export default function LineupScreen() {
 
   const toggle = (playerId: string) => setStarters((current) => {
     const next = new Set(current);
-    if (next.has(playerId)) next.delete(playerId);
+    if (next.has(playerId)) { next.delete(playerId); setCaptain((current) => (current === playerId ? null : current)); }
     else if (format === null || next.size < format) next.add(playerId);
     else return current; // Full: deselect someone first rather than silently swapping.
     return next;
@@ -110,6 +113,7 @@ export default function LineupScreen() {
           <Text style={styles.groupTitle}>Substitutes ({bench.length})</Text>
           <Text style={styles.hint}>{bench.length ? bench.map((player) => player.name).join(', ') : 'Everyone is starting.'}</Text>
           {complete ? <ChoiceField label="Formation" onChange={setFormation} options={FORMATIONS[format].map((shape) => ({ label: shape, value: shape }))} placeholder={`Shapes for ${format - 1} outfield players`} value={formation ?? undefined} /> : null}
+          {complete ? <ChoiceField label="Captain (optional)" onChange={(value) => setCaptain(value || null)} options={[{ label: 'No captain', value: '' }, ...roster.filter((player) => starters.has(player.id)).map((player) => ({ label: `#${player.jersey_number ?? '–'} ${player.name}`, value: player.id }))]} placeholder="Choose a captain" value={captain ?? ''} /> : null}
           <AppButton disabled={!ready || save.isPending} label={save.isPending ? 'Saving…' : 'Save lineup'} onPress={() => save.mutate()} />
           {!complete ? <Text style={styles.hint}>Select exactly {format} starters to save.</Text> : !formation ? <Text style={styles.hint}>Choose a formation to save.</Text> : null}
         </>}

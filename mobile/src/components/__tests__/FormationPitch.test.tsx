@@ -123,3 +123,22 @@ describe('FormationPitch without a stored formation', () => {
     expect(screen.getByText(/from positions/u)).toBeTruthy();
   });
 });
+
+describe('captain armband', () => {
+  const squad = [
+    player('gk', 'Nour Hassan', 'Goalkeeper', 1),
+    player('d0', 'Salma Nabil', 'Defender', 2),
+    player('f0', 'Mariam Adel', 'Forward', 9),
+  ];
+
+  it('marks only the captain', async () => {
+    const screen = await render(<FormationPitch captainId="d0" formation="1-1" starters={squad} />);
+    expect(screen.getByLabelText('Salma Nabil, captain')).toBeTruthy();
+    expect(screen.queryByLabelText('Nour Hassan, captain')).toBeNull();
+  });
+
+  it('shows no armband when nobody is named', async () => {
+    const screen = await render(<FormationPitch captainId={null} formation="1-1" starters={squad} />);
+    expect(screen.queryByText('C')).toBeNull();
+  });
+});

@@ -111,7 +111,10 @@ export type MatchEvent = MatchEventExtras & Omit<
   notes: string | null;
 };
 
-export type LineupEntry = Omit<
+// Not in the generated schema yet; catches up on the next `npm run api:types`.
+export type LineupCaptain = { is_captain: boolean };
+
+export type LineupEntry = LineupCaptain & Omit<
   Schema['LineupEntryRead'],
   'position' | 'jersey_number'
 > & {

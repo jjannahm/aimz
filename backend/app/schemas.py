@@ -278,6 +278,7 @@ class LineupEntryInput(BaseModel):
     player_id: str
     team_id: str
     is_starter: bool = False
+    is_captain: bool = False
     position: str | None = Field(default=None, max_length=60)
     jersey_number: int | None = Field(default=None, ge=0, le=99)
 

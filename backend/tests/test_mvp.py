@@ -752,3 +752,64 @@ async def test_formation_must_fit_the_format_and_coaches_live_on_the_team(
     )
     assert cleared.status_code == 200, cleared.text
     assert cleared.json()["coach"] is None
+
+
+@pytest.mark.asyncio
+async def test_lineup_records_a_captain(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    squad = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Armband", "is_aimz": True}
+    )
+    away = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "Tanta Town"})
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Armband Cup", "season": "2026/27", "type": "league"},
+    )
+    keeper = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Nour Hassan", "team_id": squad.json()["id"], "position": "Goalkeeper"},
+    )
+    skipper = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Salma Nabil", "team_id": squad.json()["id"], "position": "Defender"},
+    )
+    match = await client.post(
+        "/api/v1/matches",
+        headers=admin_headers,
+        json={
+            "competition_id": competition.json()["id"],
+            "home_team_id": squad.json()["id"],
+            "away_team_id": away.json()["id"],
+            "kickoff_datetime": (datetime.now(UTC) + timedelta(days=2)).isoformat(),
+            "venue": "AIMZ Training Ground",
+            "status": "scheduled",
+        },
+    )
+    saved = await client.put(
+        f"/api/v1/matches/{match.json()['id']}/lineup",
+        headers=admin_headers,
+        json=[
+            {
+                "player_id": keeper.json()["id"],
+                "team_id": squad.json()["id"],
+                "is_starter": True,
+            },
+            {
+                "player_id": skipper.json()["id"],
+                "team_id": squad.json()["id"],
+                "is_starter": True,
+                "is_captain": True,
+            },
+        ],
+    )
+    assert saved.status_code == 200, saved.text
+    captains = [row["player_id"] for row in saved.json() if row["is_captain"]]
+    assert captains == [skipper.json()["id"]]
+
+    # The armband survives a round trip through the live snapshot.
+    live = await client.get(f"/api/v1/matches/{match.json()['id']}/live", headers=admin_headers)
+    assert [row["player_id"] for row in live.json()["lineup"] if row["is_captain"]] == captains

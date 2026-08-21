@@ -104,6 +104,7 @@ export interface LineupRow {
   player_id: string;
   team_id: string;
   is_starter: number;
+  is_captain: number;
   position: string | null;
   jersey_number: number | null;
 }
