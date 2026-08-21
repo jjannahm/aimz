@@ -1,6 +1,6 @@
 import type { PropsWithChildren, ReactNode, RefObject } from 'react';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/src/components/BrandMark';
@@ -11,7 +11,6 @@ type Props = PropsWithChildren<{ title: string; action?: ReactNode; scroll?: boo
 
 export function Screen({ title, action, scroll = true, scrollRef, children }: Props) {
   const styles = useThemedStyles(stylesheet);
-  const { height } = useWindowDimensions();
   const [headerHeight, setHeaderHeight] = useState(0);
   const content = (
     <View style={[styles.content, scroll ? styles.growing : styles.filling]}>
@@ -32,13 +31,21 @@ export function Screen({ title, action, scroll = true, scrollRef, children }: Pr
   );
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'left', 'right']}>
-      {scroll ? <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" style={{ maxHeight: height }}>{content}</ScrollView> : content}
+      {/* The scroller takes its height from the area it is given, never from the
+       * window. Sizing it to the window let the software keyboard — which
+       * shrinks the viewport out from under the app — leave the content cut off
+       * short of the keyboard with a band of bare background between them.
+       * `minHeight: 0` is what makes `flex: 1` hold: a flex child defaults to
+       * `min-height: auto` and grows to its content, which is why capping the
+       * height was reached for in the first place. */}
+      {scroll ? <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" style={styles.scroller}>{content}</ScrollView> : content}
     </SafeAreaView>
   );
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   safe: { backgroundColor: colors.background, flex: 1 },
+  scroller: { flex: 1, minHeight: 0 },
   scroll: { flexGrow: 1 },
   content: { alignSelf: 'center', gap: theme.spacing.lg, maxWidth: 760, padding: theme.spacing.lg, paddingBottom: theme.spacing.xxxl, width: '100%' },
   growing: { flexGrow: 1 },
