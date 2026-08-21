@@ -401,8 +401,8 @@ async def test_stat_leaders_rank_by_metric_and_age_group(
 
     operations = count()
 
-    async def play(team_id: str, tallies: list[tuple[str, str, int]]) -> str:
-        """Create a match and log `count` events of `type` for each player."""
+    async def play(team_id: str, tallies: list[tuple[str, str | None, int]]) -> str:
+        """Create a match and log `count` goals for each scorer/assister pair."""
         created = await client.post(
             "/api/v1/matches", headers=admin_headers, json=payload_for(team_id, "scheduled")
         )
@@ -412,16 +412,17 @@ async def test_stat_leaders_rank_by_metric_and_age_group(
             f"/api/v1/matches/{match_id}", headers=admin_headers, json=payload_for(team_id, "live")
         )
         assert started.status_code == 200, started.text
-        for player_id, event_type, tally in tallies:
+        for player_id, assister_id, tally in tallies:
             for index in range(tally):
                 event = await client.post(
                     f"/api/v1/matches/{match_id}/events",
                     headers=admin_headers,
                     json={
-                        "type": event_type,
+                        "type": "goal",
                         "minute": 10 + index,
                         "team_id": team_id,
                         "player_id": player_id,
+                        "secondary_player_id": assister_id,
                         "client_operation_id": f"leaders-op-{next(operations)}",
                     },
                 )
@@ -431,13 +432,13 @@ async def test_stat_leaders_rank_by_metric_and_age_group(
     squad_match = await play(
         squad.json()["id"],
         [
-            (scorer.json()["id"], "goal", 3),
-            (scorer.json()["id"], "assist", 1),
-            (creator.json()["id"], "goal", 1),
-            (creator.json()["id"], "assist", 4),
+            # Three goals for the scorer, each laid on by the creator.
+            (scorer.json()["id"], creator.json()["id"], 3),
+            # One back the other way.
+            (creator.json()["id"], scorer.json()["id"], 1),
         ],
     )
-    other_match = await play(other.json()["id"], [(outsider.json()["id"], "goal", 5)])
+    other_match = await play(other.json()["id"], [(outsider.json()["id"], None, 5)])
 
     # Only finished matches count toward the leaderboards.
     assert (
@@ -462,7 +463,7 @@ async def test_stat_leaders_rank_by_metric_and_age_group(
 
     assisters = await client.get("/api/v1/stats/leaders?metric=assists", headers=admin_headers)
     assert [(row["player"]["name"], row["assists"]) for row in assisters.json()] == [
-        ("Hana Samir", 4),
+        ("Hana Samir", 3),
         ("Mariam Adel", 1),
     ]
 
@@ -907,3 +908,102 @@ async def test_entered_team_appears_in_the_table_before_playing(
         f"/api/v1/competitions/{competition.json()['id']}/standings", headers=admin_headers
     )
     assert "Faraway United" not in {row["team"]["name"] for row in again.json()}
+
+
+@pytest.mark.asyncio
+async def test_goal_carries_its_assist_and_standalone_assists_are_refused(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    squad = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Combined", "is_aimz": True}
+    )
+    away = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "Minya Meteors"})
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Combined Cup", "season": "2026/27", "type": "league"},
+    )
+    scorer = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Farida Sami", "team_id": squad.json()["id"], "position": "Forward"},
+    )
+    provider = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Nada Wagdy", "team_id": squad.json()["id"], "position": "Midfielder"},
+    )
+    match = await client.post(
+        "/api/v1/matches",
+        headers=admin_headers,
+        json={
+            "competition_id": competition.json()["id"],
+            "home_team_id": squad.json()["id"],
+            "away_team_id": away.json()["id"],
+            "kickoff_datetime": (datetime.now(UTC) + timedelta(hours=1)).isoformat(),
+            "venue": "AIMZ Training Ground",
+            "status": "live",
+        },
+    )
+    match_id = match.json()["id"]
+
+    assisted = await client.post(
+        f"/api/v1/matches/{match_id}/events",
+        headers=admin_headers,
+        json={
+            "type": "goal",
+            "minute": 19,
+            "team_id": squad.json()["id"],
+            "player_id": scorer.json()["id"],
+            "secondary_player_id": provider.json()["id"],
+            "client_operation_id": "combined-goal-1",
+        },
+    )
+    assert assisted.status_code == 201, assisted.text
+    assert assisted.json()["secondary_player_id"] == provider.json()["id"]
+
+    # A goal with nobody credited is just as valid.
+    solo = await client.post(
+        f"/api/v1/matches/{match_id}/events",
+        headers=admin_headers,
+        json={
+            "type": "goal",
+            "minute": 55,
+            "team_id": squad.json()["id"],
+            "player_id": scorer.json()["id"],
+            "client_operation_id": "combined-goal-2",
+        },
+    )
+    assert solo.status_code == 201, solo.text
+    assert solo.json()["secondary_player_id"] is None
+
+    # One row per goal, not one per contribution.
+    live = await client.get(f"/api/v1/matches/{match_id}/live", headers=admin_headers)
+    assert [event["type"] for event in live.json()["events"]] == ["goal", "goal"]
+    assert live.json()["match"]["home_score"] == 2
+
+    # Season totals only count finished matches.
+    finished = await client.post(
+        f"/api/v1/matches/{match_id}/phase", headers=admin_headers, json={"action": "finish_match"}
+    )
+    assert finished.status_code == 200, finished.text
+
+    # The provider is still credited, from the goal rather than an event of their own.
+    stats = await client.get(
+        f"/api/v1/players/{provider.json()['id']}/stats", headers=admin_headers
+    )
+    assert stats.json()["assists"] == 1
+    assert stats.json()["goals"] == 0
+
+    rejected = await client.post(
+        f"/api/v1/matches/{match_id}/events",
+        headers=admin_headers,
+        json={
+            "type": "assist",
+            "minute": 60,
+            "team_id": squad.json()["id"],
+            "player_id": provider.json()["id"],
+            "client_operation_id": "standalone-assist",
+        },
+    )
+    assert rejected.status_code == 422

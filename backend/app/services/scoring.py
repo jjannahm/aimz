@@ -49,12 +49,16 @@ async def recompute_match(session: AsyncSession, match: Match) -> None:
     for event in events:
         if event.player_id and event.type in {
             EventType.goal,
-            EventType.assist,
             EventType.yellow_card,
             EventType.red_card,
         }:
             counters.setdefault(event.player_id, {}).setdefault(event.type, 0)
             counters[event.player_id][event.type] += 1
+        # A goal carries its own assist, so the provider is credited from the
+        # same row rather than from a separate event.
+        if event.type == EventType.goal and event.secondary_player_id:
+            counters.setdefault(event.secondary_player_id, {}).setdefault(EventType.assist, 0)
+            counters[event.secondary_player_id][EventType.assist] += 1
 
     stats = list(
         (
