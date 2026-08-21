@@ -41,4 +41,14 @@ describe('MatchRow', () => {
     expect(screen.getByLabelText(/AIMZ Women 3, Cairo Stars 2\./)).toBeTruthy();
     expect(screen.getByText('FT')).toBeTruthy();
   });
+
+  // Regression: the crest used to be tinted gold in the away slot, so an
+  // AIMZ-vs-AIMZ fixture (or simply AIMZ playing away) showed a yellow badge.
+  it('shows the same club crest whichever side of the fixture it plays on', async () => {
+    const home = await render(<MatchRow match={base} />);
+    const swapped = await render(<MatchRow match={{ ...base, home_team: base.away_team, away_team: base.home_team }} />);
+    const hidden = { includeHiddenElements: true } as const;
+    expect(home.getByTestId('badge-aimz', hidden)).toBeTruthy();
+    expect(swapped.getByTestId('badge-aimz', hidden)).toBeTruthy();
+  });
 });

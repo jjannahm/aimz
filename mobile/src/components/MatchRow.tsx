@@ -39,7 +39,7 @@ export function MatchRow({ match, compact = false }: { match: Match; compact?: b
     >
       <View style={styles.teamSide}>
         <Text numberOfLines={2} style={[styles.teamName, styles.homeName]}>{homeName}</Text>
-        <TeamAvatar isAimz={match.home_team?.is_aimz} logoUrl={match.home_team?.logo_url} name={homeName} size={compact ? 36 : 40} tone="accent" />
+        <TeamAvatar isAimz={match.home_team?.is_aimz} logoUrl={match.home_team?.logo_url} name={homeName} size={compact ? 36 : 40} />
       </View>
 
       <View style={styles.center}>
@@ -56,7 +56,7 @@ export function MatchRow({ match, compact = false }: { match: Match; compact?: b
       </View>
 
       <View style={styles.teamSide}>
-        <TeamAvatar isAimz={match.away_team?.is_aimz} logoUrl={match.away_team?.logo_url} name={awayName} size={compact ? 36 : 40} tone="light" />
+        <TeamAvatar isAimz={match.away_team?.is_aimz} logoUrl={match.away_team?.logo_url} name={awayName} size={compact ? 36 : 40} />
         <Text numberOfLines={2} style={styles.teamName}>{awayName}</Text>
       </View>
     </Pressable>
