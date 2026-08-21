@@ -12,6 +12,8 @@ export const cacheKeys = {
   competitions: ['competitions'] as const,
   matches: ['matches'] as const,
   standings: ['standings'] as const,
+  groups: ['competition-groups'] as const,
+  bracket: ['bracket'] as const,
   leaders: ['leaders'] as const,
   playerStats: ['player-stats'] as const,
   invites: ['invites'] as const,
@@ -21,7 +23,7 @@ export const cacheKeys = {
   allLiveMatches: ['live-match'] as const,
 };
 
-type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award';
+type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award' | 'bracket';
 
 /**
  * What a write touches, including everything derived from it.
@@ -33,11 +35,12 @@ type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' |
  * matches, timelines and leaderboards.
  */
 const affects: Record<Entity, (readonly string[])[]> = {
-  team: [cacheKeys.teams, cacheKeys.players, cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.allLiveMatches],
+  team: [cacheKeys.teams, cacheKeys.players, cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.allLiveMatches, cacheKeys.groups, cacheKeys.bracket],
   player: [cacheKeys.players, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.allLiveMatches],
-  competition: [cacheKeys.competitions, cacheKeys.matches, cacheKeys.standings, cacheKeys.awards],
-  match: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.allLiveMatches],
-  event: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.auditLog, cacheKeys.allLiveMatches],
+  competition: [cacheKeys.competitions, cacheKeys.matches, cacheKeys.standings, cacheKeys.awards, cacheKeys.groups, cacheKeys.bracket],
+  match: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.allLiveMatches, cacheKeys.bracket],
+  event: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.auditLog, cacheKeys.allLiveMatches, cacheKeys.bracket],
+  bracket: [cacheKeys.bracket, cacheKeys.groups, cacheKeys.standings, cacheKeys.teams],
   lineup: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches],
   invite: [cacheKeys.invites],
   // Naming a man of the match changes the match, not the table or the scorers.

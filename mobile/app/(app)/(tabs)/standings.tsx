@@ -1,15 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAuth } from '@/src/auth/AuthProvider';
+import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { initialsFor, TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { Competition, FormResult, StandingRow } from '@/src/types/api';
+import { invalidateAfterWrite } from '@/src/lib/cache';
+import { showMessage } from '@/src/lib/platformAlert';
+import { isKnockout, type BracketSlot, type Competition, type FormResult, type StandingRow } from '@/src/types/api';
 
 // A five-match strip under the team name: the row is too tight for another column.
 function FormStrip({ form }: { form: FormResult[] }) {
@@ -62,12 +66,39 @@ function HeadToHead({ teamId, opponentId, onClose }: { teamId: string; opponentI
 export default function StandingsScreen() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
+  const { user } = useAuth();
+  const client = useQueryClient();
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
   const eligible = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
   const [selected, setSelected] = useState<string | null>(null);
   const competition = eligible.find((item) => item.id === selected) ?? eligible[0];
   const competitionId = competition?.id;
+  const knockout = isKnockout(competition);
   const table = useQuery({ queryKey: ['standings', competitionId], queryFn: () => api.standings(competitionId!), enabled: Boolean(competitionId) });
+  const bracket = useQuery({ queryKey: ['bracket', competitionId], queryFn: () => api.bracket(competitionId!), enabled: Boolean(competitionId) && knockout });
+  const [view, setView] = useState<'groups' | 'bracket'>('groups');
+  // Who goes through is the admin's call, so both writes are explicit actions.
+  const draw = useMutation({
+    mutationFn: (round: number) => api.advanceRound(competitionId!, round),
+    onError: (error) => showMessage('Round not drawn', (error as ApiError).message),
+    onSuccess: async () => { await invalidateAfterWrite(client, 'bracket'); },
+  });
+  const pickWinner = useMutation({
+    mutationFn: ({ slot, teamId }: { slot: BracketSlot; teamId: string }) => api.setBracketWinner(slot.id, slot.winner_team_id === teamId ? null : teamId),
+    onError: (error) => showMessage('Winner not saved', (error as ApiError).message),
+    onSuccess: async () => { await invalidateAfterWrite(client, 'bracket'); },
+  });
+  // A knockout's rows arrive ordered by group, so grouping them keeps that order.
+  const groupedRows = useMemo(() => {
+    const groups = new Map<string, { name: string; rows: StandingRow[] }>();
+    for (const row of table.data ?? []) {
+      const key = row.group?.id ?? 'undrawn';
+      const existing = groups.get(key) ?? { name: row.group?.name ?? 'Not yet drawn', rows: [] };
+      existing.rows.push(row);
+      groups.set(key, existing);
+    }
+    return [...groups.values()];
+  }, [table.data]);
   // Tapping a team picks it, then a second team compares the two.
   const [comparing, setComparing] = useState<{ teamId: string; opponentId: string | null } | null>(null);
   const setOpponentsFor = (teamId: string) => setComparing((current) =>
@@ -84,10 +115,18 @@ export default function StandingsScreen() {
       })}
     </ScrollView> : null}
     {competition ? <CompetitionHeader competition={competition} /> : null}
+    {knockout ? <View accessibilityRole="tablist" style={styles.viewToggle}>{([['groups', 'Groups'], ['bracket', 'Bracket']] as const).map(([value, label]) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: view === value }} key={value} onPress={() => setView(value)} style={({ pressed }) => [styles.viewTab, view === value && styles.activeTab, pressed && styles.pressed]}><Text style={[styles.tabLabel, view === value && styles.activeLabel]}>{label}</Text></Pressable>)}</View> : null}
     {comparing ? (comparing.opponentId
       ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
       : <View style={styles.h2h}><Text style={styles.h2hPrompt}>Pick another team to compare with {table.data?.find((row) => row.team.id === comparing.teamId)?.team.name ?? 'this team'}.</Text></View>) : null}
-    {competitions.isLoading || table.isLoading ? <LoadingState label="Calculating table" /> : competitions.isError || table.isError ? <ErrorState message={(competitions.error as ApiError | null)?.message ?? (table.error as ApiError | null)?.message ?? 'Could not load standings.'} onRetry={() => { competitions.refetch(); table.refetch(); }} /> : !competitionId || !table.data?.length ? <EmptyState body="Finished league and tournament matches will create the table automatically." title="No standings yet" /> : <View style={styles.table}>
+    {competitions.isLoading || table.isLoading ? <LoadingState label="Calculating table" /> : competitions.isError || table.isError ? <ErrorState message={(competitions.error as ApiError | null)?.message ?? (table.error as ApiError | null)?.message ?? 'Could not load standings.'} onRetry={() => { competitions.refetch(); table.refetch(); }} /> : knockout && view === 'bracket' ? (bracket.data?.rounds.length ? <BracketView bracket={bracket.data} busy={draw.isPending || pickWinner.isPending} onAdvance={user?.role === 'admin' ? (round) => draw.mutate(round) : undefined} onPickWinner={user?.role === 'admin' ? (slot, teamId) => pickWinner.mutate({ slot, teamId }) : undefined} /> : <EmptyState body="The bracket appears once the competition is drawn." title="No bracket yet" />)
+      : !competitionId || !table.data?.length ? <EmptyState body="Finished matches will create the table automatically." title="No standings yet" />
+      : knockout ? <View style={styles.groups}>{groupedRows.map((group) => <View key={group.name} style={styles.group}><Text style={styles.groupName}>{group.name}</Text>{tableFor(group.rows)}</View>)}</View>
+      : tableFor(table.data)}
+  </Screen>;
+
+  function tableFor(rows: StandingRow[]) {
+    return <View style={styles.table}>
       <View style={styles.tableHeader}>
         <Text style={styles.rankHeader}>#</Text>
         <Text style={[styles.team, styles.headerText]}>TEAM</Text>
@@ -95,7 +134,7 @@ export default function StandingsScreen() {
         <Text style={[styles.stat, styles.headerText]}>GD</Text>
         <Text style={[styles.stat, styles.headerText]}>PTS</Text>
       </View>
-      {table.data.map((row: StandingRow, index: number) => <Pressable accessibilityHint="Opens head-to-head records against the other teams" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" key={row.team.id} onPress={() => setOpponentsFor(row.team.id)} style={({ pressed }) => [styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, pressed && styles.pressed]}>
+      {rows.map((row: StandingRow, index: number) => <Pressable accessibilityHint="Opens head-to-head records against the other teams" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" key={row.team.id} onPress={() => setOpponentsFor(row.team.id)} style={({ pressed }) => [styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, pressed && styles.pressed]}>
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
           <TeamAvatar logoUrl={row.team.logo_url} name={row.team.name} size={34} />
@@ -112,12 +151,17 @@ export default function StandingsScreen() {
         <Text style={styles.stat}>{row.goal_difference > 0 ? '+' : ''}{row.goal_difference}</Text>
         <Text style={[styles.stat, styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
       </Pressable>)}
-    </View>}
-  </Screen>;
+    </View>;
+  }
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   tabBar: { flexGrow: 0 },
+  viewToggle: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', padding: theme.spacing.xs },
+  viewTab: { alignItems: 'center', borderRadius: theme.radius.sm, flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum },
+  groups: { gap: theme.spacing.lg },
+  group: { gap: theme.spacing.sm },
+  groupName: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
   tabs: { gap: theme.spacing.sm },
   tab: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
   activeTab: { backgroundColor: colors.accent, borderColor: colors.accent },

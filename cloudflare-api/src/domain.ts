@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import { generationStatements, teamCountField } from "./knockout";
 import {
   ApiProblem,
   adminUser,
@@ -45,6 +46,7 @@ interface JoinedMatchRow extends MatchRow {
   competition_name: string;
   competition_season: string;
   competition_type: "league" | "tournament" | "friendly";
+  competition_team_count: number | null;
   competition_created_at: string;
   competition_updated_at: string;
 }
@@ -60,6 +62,7 @@ const matchSelect = `
     a.logo_key away_logo_key, a.coach away_coach, a.assistant_coach away_assistant_coach,
     a.created_at away_created_at, a.updated_at away_updated_at,
     c.name competition_name, c.season competition_season, c.type competition_type,
+    c.team_count competition_team_count,
     c.created_at competition_created_at, c.updated_at competition_updated_at
   FROM matches m
   JOIN teams h ON h.id = m.home_team_id
@@ -71,19 +74,19 @@ export function joinedMatch(row: JoinedMatchRow): Record<string, unknown> {
     id: row.home_team_id, name: row.home_name, squad_code: row.home_squad_code,
     age_group: row.home_age_group, season: row.home_season, is_aimz: row.home_is_aimz,
     is_active: row.home_is_active, logo_key: row.home_logo_key,
-    coach: row.home_coach, assistant_coach: row.home_assistant_coach, competition_id: null,
+    coach: row.home_coach, assistant_coach: row.home_assistant_coach, competition_id: null, competition_group_id: null,
     created_at: row.home_created_at, updated_at: row.home_updated_at,
   };
   const away: TeamRow = {
     id: row.away_team_id, name: row.away_name, squad_code: row.away_squad_code,
     age_group: row.away_age_group, season: row.away_season, is_aimz: row.away_is_aimz,
     is_active: row.away_is_active, logo_key: row.away_logo_key,
-    coach: row.away_coach, assistant_coach: row.away_assistant_coach, competition_id: null,
+    coach: row.away_coach, assistant_coach: row.away_assistant_coach, competition_id: null, competition_group_id: null,
     created_at: row.away_created_at, updated_at: row.away_updated_at,
   };
   const competition: CompetitionRow = {
     id: row.competition_id, name: row.competition_name, season: row.competition_season,
-    type: row.competition_type, created_at: row.competition_created_at,
+    type: row.competition_type, team_count: row.competition_team_count, created_at: row.competition_created_at,
     updated_at: row.competition_updated_at,
   };
   return publicMatch(row, home, away, competition);
@@ -136,9 +139,10 @@ export function registerDomainRoutes(app: App): void {
       coach: stringField(body, "coach", { optional: true, nullable: true, max: 160 }) ?? null,
       assistant_coach: stringField(body, "assistant_coach", { optional: true, nullable: true, max: 160 }) ?? null,
       competition_id: stringField(body, "competition_id", { optional: true, nullable: true, max: 36 }) ?? null,
+      competition_group_id: stringField(body, "competition_group_id", { optional: true, nullable: true, max: 36 }) ?? null,
       created_at: now, updated_at: now,
     };
-    await c.env.DB.prepare("INSERT INTO teams (id, name, squad_code, age_group, season, is_aimz, is_active, logo_key, coach, assistant_coach, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(team.id, team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, team.competition_id, now, now).run();
+    await c.env.DB.prepare("INSERT INTO teams (id, name, squad_code, age_group, season, is_aimz, is_active, logo_key, coach, assistant_coach, competition_id, competition_group_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(team.id, team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, team.competition_id, team.competition_group_id, now, now).run();
     return c.json(publicTeam(team), 201);
   });
 
@@ -157,12 +161,15 @@ export function registerDomainRoutes(app: App): void {
       coach: optionalNullableText(body, "coach", current.coach, 160),
       assistant_coach: optionalNullableText(body, "assistant_coach", current.assistant_coach, 160),
       competition_id: optionalNullableText(body, "competition_id", current.competition_id, 36),
+      competition_group_id: optionalNullableText(body, "competition_group_id", current.competition_group_id, 36),
       is_aimz: typeof body.is_aimz === "boolean" ? (body.is_aimz ? 1 : 0) : current.is_aimz,
       is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active,
       updated_at: nowIso(),
     };
-    await c.env.DB.prepare("UPDATE teams SET name=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, coach=?, assistant_coach=?, competition_id=?, updated_at=? WHERE id=?").bind(team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, team.competition_id, team.updated_at, team.id).run();
-    return c.json(publicTeam(team));
+    // Leaving a competition leaves its group with it.
+    const groupId = team.competition_id === current.competition_id ? team.competition_group_id : null;
+    await c.env.DB.prepare("UPDATE teams SET name=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, coach=?, assistant_coach=?, competition_id=?, competition_group_id=?, updated_at=? WHERE id=?").bind(team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.coach, team.assistant_coach, team.competition_id, groupId, team.updated_at, team.id).run();
+    return c.json(publicTeam({ ...team, competition_group_id: groupId }));
   });
   app.delete("/api/v1/teams/:id", async (c) => deleteRestricted(c, "teams", "team", c.req.param("id")));
 
@@ -183,8 +190,14 @@ export function registerDomainRoutes(app: App): void {
   });
   app.post("/api/v1/competitions", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const now = nowIso();
-    const competition: CompetitionRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, season: stringField(body, "season", { min: 2, max: 40 })!, type: enumField(body, "type", ["league", "tournament", "friendly"] as const), created_at: now, updated_at: now };
-    try { await c.env.DB.prepare("INSERT INTO competitions (id, name, season, type, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)").bind(competition.id, competition.name, competition.season, competition.type, now, now).run(); }
+    const competition: CompetitionRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, season: stringField(body, "season", { min: 2, max: 40 })!, type: enumField(body, "type", ["league", "tournament", "friendly"] as const), team_count: teamCountField(body, null), created_at: now, updated_at: now };
+    // Groups and an empty bracket are written with the competition itself, so a
+    // failure cannot leave a knockout half drawn.
+    const statements = [
+      c.env.DB.prepare("INSERT INTO competitions (id, name, season, type, team_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(competition.id, competition.name, competition.season, competition.type, competition.team_count, now, now),
+      ...(competition.team_count === null ? [] : generationStatements(c.env, competition.id, competition.team_count)),
+    ];
+    try { await c.env.DB.batch(statements); }
     catch { throw new ApiProblem(409, "competition_exists", "A competition with that name and season already exists."); }
     return c.json(publicCompetition(competition), 201);
   });
@@ -192,8 +205,19 @@ export function registerDomainRoutes(app: App): void {
     await adminUser(c); const body = await jsonObject(c);
     const current = await c.env.DB.prepare("SELECT * FROM competitions WHERE id = ?").bind(c.req.param("id")).first<CompetitionRow>();
     if (!current) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
-    const item: CompetitionRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, season: stringField(body, "season", { optional: true, min: 2, max: 40 }) ?? current.season, type: body.type === undefined ? current.type : enumField(body, "type", ["league", "tournament", "friendly"] as const), updated_at: nowIso() };
-    try { await c.env.DB.prepare("UPDATE competitions SET name=?, season=?, type=?, updated_at=? WHERE id=?").bind(item.name, item.season, item.type, item.updated_at, item.id).run(); }
+    const item: CompetitionRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, season: stringField(body, "season", { optional: true, min: 2, max: 40 }) ?? current.season, type: body.type === undefined ? current.type : enumField(body, "type", ["league", "tournament", "friendly"] as const), team_count: teamCountField(body, current.team_count), updated_at: nowIso() };
+    // Redrawing the groups would orphan every team already placed in one, so the
+    // size is settled while the competition is still empty and not after.
+    if (item.team_count !== current.team_count) {
+      const drawn = await c.env.DB.prepare("SELECT id FROM teams WHERE competition_id = ? LIMIT 1").bind(current.id).first();
+      if (drawn) throw new ApiProblem(409, "team_count_locked", "Remove the teams from this competition before changing its size.");
+      await c.env.DB.batch([
+        c.env.DB.prepare("DELETE FROM competition_groups WHERE competition_id = ?").bind(current.id),
+        c.env.DB.prepare("DELETE FROM bracket_slots WHERE competition_id = ?").bind(current.id),
+        ...(item.team_count === null ? [] : generationStatements(c.env, current.id, item.team_count)),
+      ]);
+    }
+    try { await c.env.DB.prepare("UPDATE competitions SET name=?, season=?, type=?, team_count=?, updated_at=? WHERE id=?").bind(item.name, item.season, item.type, item.team_count, item.updated_at, item.id).run(); }
     catch { throw new ApiProblem(409, "competition_exists", "A competition with that name and season already exists."); }
     return c.json(publicCompetition(item));
   });

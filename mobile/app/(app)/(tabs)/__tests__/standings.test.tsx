@@ -7,6 +7,7 @@ import { api } from '@/src/lib/api';
 import type { Competition, StandingRow, Team } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
+jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'player' } }) }));
 
 jest.mock('@/src/lib/api', () => ({
   api: { competitions: jest.fn(), standings: jest.fn(), headToHead: jest.fn() },
@@ -14,12 +15,12 @@ jest.mock('@/src/lib/api', () => ({
 }));
 
 const competition = (id: string, name: string, season: string): Competition => ({
-  id, name, season, type: 'league', created_at: '', updated_at: '',
+  id, name, season, type: 'league', team_count: null, created_at: '', updated_at: '',
 });
 
 const team = (id: string, name: string, is_aimz = false): Team => ({
   id, name, is_aimz, squad_code: null, age_group: null, season: '2026', is_active: true,
-  logo_key: null, coach: null, assistant_coach: null, competition_id: null, created_at: '', updated_at: '',
+  logo_key: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '',
 });
 
 const row = (rank: number, t: Team, points: number): StandingRow => ({

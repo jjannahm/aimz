@@ -7,6 +7,8 @@ import type {
   LineupEntry,
   LiveMatchSnapshot,
   Match,
+  Bracket,
+  CompetitionGroup,
   MatchPhaseAction,
   MatchEvent,
   HeadToHead,
@@ -264,6 +266,12 @@ export const api = {
   lineup: (matchId: string, payload: Partial<LineupEntry>[]) => request<LineupEntry[]>(`/api/v1/matches/${matchId}/lineup`, { method: 'PUT', body: payload }),
   stats: (matchId: string, payload: Partial<PlayerMatchStat>[]) => request<PlayerMatchStat[]>(`/api/v1/matches/${matchId}/player-stats`, { method: 'PUT', body: payload }),
   standings: (competitionId: string) => request<StandingRow[]>(`/api/v1/competitions/${competitionId}/standings`),
+  groups: (competitionId: string) => request<CompetitionGroup[]>(`/api/v1/competitions/${competitionId}/groups`),
+  setGroupTeams: (competitionId: string, groupId: string, teamIds: string[]) =>
+    request<CompetitionGroup>(`/api/v1/competitions/${competitionId}/groups/${groupId}/teams`, { method: 'PUT', body: teamIds.map((team_id) => ({ team_id })) }),
+  bracket: (competitionId: string) => request<Bracket>(`/api/v1/competitions/${competitionId}/bracket`),
+  advanceRound: (competitionId: string, round: number) => request<Bracket>(`/api/v1/competitions/${competitionId}/advance`, { method: 'POST', body: { round } }),
+  setBracketWinner: (slotId: string, winner_team_id: string | null) => request<Bracket>(`/api/v1/bracket-slots/${slotId}`, { method: 'PATCH', body: { winner_team_id } }),
   leaders: (metric: LeaderMetric, options: { ageGroup?: string; season?: string; competitionId?: string; limit?: number } = {}) => {
     const params = new URLSearchParams({ metric });
     if (options.ageGroup) params.set('age_group', options.ageGroup);

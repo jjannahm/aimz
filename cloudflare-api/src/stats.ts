@@ -1,7 +1,8 @@
+import { groupStandings } from "./knockout";
 import type { Hono } from "hono";
 import { ApiProblem, publicCompetition, publicPlayer, publicStat, publicTeam } from "./helpers";
 import { applyStanding, FORM_LENGTH, MIN_AWARD_APPEARANCES, outcome } from "./scoring-rules";
-import type { CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
+import type { CompetitionGroupRow, CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -29,6 +30,28 @@ export function registerStatsRoutes(app: App): void {
     const competition = await c.env.DB.prepare("SELECT * FROM competitions WHERE id=?").bind(c.req.param("id")).first<CompetitionRow>();
     if (!competition) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
     if (competition.type === "friendly") return c.json([]);
+    // A knockout ranks each group on its own, so its rows carry the group they
+    // belong to and start again at one inside it.
+    if (competition.team_count !== null) {
+      const [groups, tables] = await Promise.all([
+        c.env.DB.prepare("SELECT * FROM competition_groups WHERE competition_id = ? ORDER BY position").bind(competition.id).all<CompetitionGroupRow>(),
+        groupStandings(c.env, competition.id),
+      ]);
+      const ordered = [
+        ...groups.results.map((group) => ({ group, rows: tables.get(group.id) ?? [] })),
+        // Teams entered but not yet drawn are still shown, under no group.
+        { group: null as CompetitionGroupRow | null, rows: tables.get("") ?? [] },
+      ];
+      return c.json(ordered.flatMap(({ group, rows }) => rows.map((row, index) => ({
+        rank: index + 1,
+        team: publicTeam(row.team),
+        group: group ? { id: group.id, name: group.name, position: group.position } : null,
+        form: [...row.form].reverse().slice(0, FORM_LENGTH),
+        played: row.played, won: row.won, drawn: row.drawn, lost: row.lost,
+        goals_for: row.goals_for, goals_against: row.goals_against,
+        goal_difference: row.goals_for - row.goals_against, points: row.points,
+      }))));
+    }
     // Oldest first, so the form strip accumulates in the order they were played.
     const result = await c.env.DB.prepare("SELECT * FROM matches WHERE competition_id=? AND status='finished' ORDER BY kickoff_datetime").bind(competition.id).all<MatchRow>();
     const teamIds = [...new Set(result.results.flatMap((match) => [match.home_team_id, match.away_team_id]))];

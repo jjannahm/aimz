@@ -31,6 +31,8 @@ export interface TeamRow {
   assistant_coach: string | null;
   /** Which league the team is entered in. */
   competition_id: string | null;
+  /** Which group of a knockout competition, once the draw is made. */
+  competition_group_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -40,8 +42,35 @@ export interface CompetitionRow {
   name: string;
   season: string;
   type: CompetitionType;
+  /**
+   * How many teams a knockout competition is drawn for: 8, 16 or 32.
+   *
+   * Null is the whole of the old behaviour — a league table and nothing else.
+   * The format lives here rather than in `type` because `type` carries a CHECK
+   * constraint, and SQLite cannot widen one without rebuilding the table.
+   */
+  team_count: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CompetitionGroupRow {
+  id: string;
+  competition_id: string;
+  name: string;
+  position: number;
+}
+
+export interface BracketSlotRow {
+  id: string;
+  competition_id: string;
+  /** Teams left in the round: 16, 8, 4, 2. */
+  round: number;
+  position: number;
+  home_team_id: string | null;
+  away_team_id: string | null;
+  winner_team_id: string | null;
+  match_id: string | null;
 }
 
 export interface PlayerRow {

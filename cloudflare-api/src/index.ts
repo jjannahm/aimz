@@ -4,6 +4,7 @@ import { registerAuditRoutes } from "./audit";
 import { registerAuthRoutes } from "./auth";
 import { registerDomainRoutes } from "./domain";
 import { ApiProblem, errorResponse } from "./helpers";
+import { registerKnockoutRoutes } from "./knockout";
 import { registerMatchRoutes } from "./matches";
 import { registerStatsRoutes } from "./stats";
 
@@ -28,6 +29,7 @@ registerDomainRoutes(app);
 registerMatchRoutes(app);
 registerStatsRoutes(app);
 registerAuditRoutes(app);
+registerKnockoutRoutes(app);
 
 app.post("/api/v1/media/uploads/presign", () => { throw new ApiProblem(503, "media_disabled", "Photo uploads are disabled in this staging preview."); });
 app.notFound((c) => errorResponse(c, new ApiProblem(404, "not_found", "The requested endpoint was not found.")));
