@@ -12,7 +12,7 @@ import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { LeaderMetric, Player, PlayerAward, PlayerLeaderRow } from '@/src/types/api';
+import type { AwardRank, Player, PlayerAward } from '@/src/types/api';
 
 type Section = { key: string; label: string };
 
@@ -20,18 +20,6 @@ const SECTIONS: Section[] = [
   { key: 'teams', label: copy.teams },
   { key: 'awards', label: copy.awards },
 ];
-
-// Awards that are the top of a ranking the API can already produce, so the row
-// opens to show who came second and third. The rest have no leaderboard behind
-// them and stay as plain rows.
-// 'cards' is a valid leaders metric but spans two columns, so it is not one a
-// single award row can rank on.
-type RankedMetric = Extract<LeaderMetric, 'goals' | 'assists'>;
-
-const rankedAwards: Record<string, RankedMetric> = {
-  'Top scorer': 'goals',
-  'Most assists': 'assists',
-};
 
 function Chevron() {
   const colors = useColors();
@@ -99,35 +87,36 @@ function TeamsSection() {
   </View>;
 }
 
-/** The full 1-2-3 ranking behind an award, fetched only once the row opens. */
-function LeaderList({ metric, competitionId }: { metric: RankedMetric; competitionId: string }) {
-  const styles = useThemedStyles(stylesheet);
-  const leaders = useQuery({ queryKey: ['leaders', metric, competitionId], queryFn: () => api.leaders(metric, { competitionId, limit: 25 }) });
+/** Every award unit is a regular plural, so one of anything just drops the s. */
+function amount(value: number, unit: string) {
+  return `${value} ${value === 1 ? unit.replace(/s$/, '') : unit}`;
+}
 
-  if (leaders.isLoading) return <LoadingState label={`Loading ${metric}`} />;
-  if (leaders.isError) return <ErrorState message={(leaders.error as ApiError).message} onRetry={() => leaders.refetch()} />;
-  if (!leaders.data?.length) return <EmptyState body={copy.emptyLeaders} title={`No ${metric} recorded yet`} />;
-  return <View style={styles.list}>{leaders.data.map((item: PlayerLeaderRow, index: number) => <View key={item.player.id} style={styles.leaderRow}>
+/** "5 goals in 4 appearances" reads well; "3 appearances in 3 appearances" does not. */
+function record(row: AwardRank) {
+  return row.unit === 'appearances' ? amount(row.value, row.unit) : `${amount(row.value, row.unit)} in ${amount(row.appearances, 'appearances')}`;
+}
+
+/** The full ranking behind an award, fetched only once the row opens. */
+function AwardRanking({ award, competitionId }: { award: PlayerAward; competitionId: string }) {
+  const styles = useThemedStyles(stylesheet);
+  const name = award.label.toLowerCase();
+  const ranking = useQuery({ queryKey: ['award-ranking', competitionId, award.metric], queryFn: () => api.awardRanking(competitionId, award.metric) });
+
+  if (ranking.isLoading) return <LoadingState label={`Loading the ${name} ranking`} />;
+  if (ranking.isError) return <ErrorState message={(ranking.error as ApiError).message} onRetry={() => ranking.refetch()} />;
+  if (!ranking.data?.length) return <EmptyState body={copy.emptyLeaders} title={`No ${name} ranking yet`} />;
+  return <View style={styles.list}>{ranking.data.map((item: AwardRank, index: number) => <View key={item.player.id} style={styles.leaderRow}>
     <Text accessibilityElementsHidden style={styles.rank}>{item.rank}</Text>
-    <View style={styles.leaderPlayer}><PlayerRow last={index === leaders.data.length - 1} player={item.player} subtitle={`${item.team.name}, ${item[metric]} ${metric} in ${item.appearances} ${item.appearances === 1 ? 'appearance' : 'appearances'}`} trailing={<Text accessibilityElementsHidden style={styles.tally}>{item[metric]}</Text>} /></View>
+    <View style={styles.leaderPlayer}><PlayerRow last={index === ranking.data.length - 1} player={item.player} subtitle={`${item.team.name}, ${record(item)}`} trailing={<Text accessibilityElementsHidden style={styles.tally}>{item.value}</Text>} /></View>
   </View>)}</View>;
 }
 
-/**
- * One award. Rows with a ranking behind them open to reveal it; the rest are
- * plain, so the chevron only ever appears where there is something to show.
- */
+/** One award, opening to reveal everybody it was won against. */
 function AwardRow({ award, competitionId }: { award: PlayerAward; competitionId: string }) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const [expanded, setExpanded] = useState(false);
-  const metric = rankedAwards[award.label];
-  const header = <>
-    <Ionicons accessibilityElementsHidden color={colors.leaderAccent} name="trophy" size={20} />
-    <View style={styles.copy}><Text style={styles.awardLabel}>{award.label}</Text><Text style={styles.name}>{award.player.name}</Text><Text style={styles.position}>{award.team.name}</Text></View>
-    <Text accessibilityElementsHidden style={styles.tally}>{award.value}</Text>
-  </>;
-  if (!metric) return <View style={styles.award}>{header}</View>;
   return <View style={styles.awardOpen}>
     <Pressable
       accessibilityLabel={`${expanded ? 'Hide' : 'Show'} the full ${award.label.toLowerCase()} ranking`}
@@ -136,10 +125,12 @@ function AwardRow({ award, competitionId }: { award: PlayerAward; competitionId:
       onPress={() => setExpanded((current) => !current)}
       style={({ pressed }) => [styles.award, pressed && styles.pressed]}
     >
-      {header}
+      <Ionicons accessibilityElementsHidden color={colors.leaderAccent} name="trophy" size={20} />
+      <View style={styles.copy}><Text style={styles.awardLabel}>{award.label}</Text><Text style={styles.name}>{award.player.name}</Text><Text style={styles.position}>{award.team.name}</Text></View>
+      <Text accessibilityElementsHidden style={styles.tally}>{award.value}</Text>
       <Ionicons accessibilityElementsHidden color={colors.textMuted} name={expanded ? 'chevron-up' : 'chevron-down'} size={18} />
     </Pressable>
-    {expanded ? <LeaderList competitionId={competitionId} metric={metric} /> : null}
+    {expanded ? <AwardRanking award={award} competitionId={competitionId} /> : null}
   </View>;
 }
 

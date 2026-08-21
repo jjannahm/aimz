@@ -84,7 +84,13 @@ export type HeadToHead = {
   meetings: HeadToHeadMeeting[];
 };
 
-export type PlayerAward = { label: string; player: Player; team: Team; value: number; unit: string };
+export type AwardMetric = 'motm' | 'goals' | 'assists' | 'appearances' | 'minutes' | 'discipline';
+
+/** The metric, not the label, keys the ranking behind an award. */
+export type PlayerAward = { metric: AwardMetric; label: string; player: Player; team: Team; value: number; unit: string };
+
+/** One row of the ranking behind an award; rank 1 is the award's winner. */
+export type AwardRank = { rank: number; player: Player; team: Team; value: number; unit: string; appearances: number };
 export type TeamAward = { label: string; team: Team; value: number; unit: string };
 
 export type SeasonAwards = {

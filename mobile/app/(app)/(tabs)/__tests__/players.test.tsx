@@ -4,13 +4,13 @@ import type { ReactNode } from 'react';
 
 import PlayersScreen from '@/app/(app)/(tabs)/players';
 import { api } from '@/src/lib/api';
-import type { Player, PlayerLeaderRow, Team } from '@/src/types/api';
+import type { AwardRank, Player, Team } from '@/src/types/api';
 
 // Icon fonts pull in native asset loading that jest-expo does not resolve here.
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 
 jest.mock('@/src/lib/api', () => ({
-  api: { teams: jest.fn(), players: jest.fn(), leaders: jest.fn(), competitions: jest.fn(), awards: jest.fn() },
+  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -29,16 +29,21 @@ const players = [
   player('p-1', 'Salma Nabil', 't-u9', 7),
   player('p-2', 'Mariam Adel', 't-u13', 9),
 ];
-const scorers: PlayerLeaderRow[] = [
-  { rank: 1, player: players[1]!, team: teams[1]!, goals: 5, assists: 2, yellow_cards: 1, red_cards: 0, appearances: 4 },
+const scorers: AwardRank[] = [
+  { rank: 1, player: players[1]!, team: teams[1]!, value: 5, unit: 'goals', appearances: 4 },
+];
+const ever_present: AwardRank[] = [
+  { rank: 1, player: players[1]!, team: teams[1]!, value: 3, unit: 'appearances', appearances: 3 },
+  { rank: 2, player: players[0]!, team: teams[0]!, value: 1, unit: 'appearances', appearances: 1 },
 ];
 
 const competition = { id: 'c-1', name: 'Women U11', season: '2026/27', type: 'league' as const, team_count: null, created_at: '', updated_at: '' };
 const awards = {
   competition,
   player_awards: [
-    { label: 'Most man of the match', player: players[1]!, team: teams[1]!, value: 2, unit: 'awards' },
-    { label: 'Top scorer', player: players[1]!, team: teams[1]!, value: 5, unit: 'goals' },
+    { metric: 'motm' as const, label: 'Most man of the match', player: players[1]!, team: teams[1]!, value: 2, unit: 'awards' },
+    { metric: 'goals' as const, label: 'Top scorer', player: players[1]!, team: teams[1]!, value: 5, unit: 'goals' },
+    { metric: 'appearances' as const, label: 'Most appearances', player: players[1]!, team: teams[1]!, value: 3, unit: 'appearances' },
   ],
   team_awards: [],
 };
@@ -55,7 +60,7 @@ describe('PlayersScreen', () => {
   beforeEach(() => {
     jest.mocked(api.teams).mockResolvedValue({ items: teams, total: teams.length, limit: 100, offset: 0 });
     jest.mocked(api.players).mockResolvedValue({ items: players, total: players.length, limit: 100, offset: 0 });
-    jest.mocked(api.leaders).mockResolvedValue(scorers);
+    jest.mocked(api.awardRanking).mockResolvedValue(scorers);
     jest.mocked(api.competitions).mockResolvedValue({ items: [competition], total: 1, limit: 100, offset: 0 });
     jest.mocked(api.awards).mockResolvedValue(awards);
   });
@@ -113,19 +118,44 @@ describe('PlayersScreen', () => {
     fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
     expect(await screen.findByText('Top scorer')).toBeTruthy();
     // Collapsed, the award shows only its winner; the ranking is not fetched.
-    expect(api.leaders).not.toHaveBeenCalled();
+    expect(api.awardRanking).not.toHaveBeenCalled();
 
     fireEvent.press(screen.getByLabelText('Show the full top scorer ranking'));
-    await waitFor(() => expect(api.leaders).toHaveBeenCalledWith('goals', { competitionId: 'c-1', limit: 25 }));
+    await waitFor(() => expect(api.awardRanking).toHaveBeenCalledWith('c-1', 'goals'));
     // The ranked row carries its own subtitle, which the award header does not.
     expect(await screen.findByText('AIMZ U13, 5 goals in 4 appearances')).toBeTruthy();
   });
 
-  it('leaves an award with no ranking behind it as a plain row', async () => {
+  it('opens every award, not just the two with a leaderboard behind them', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
     fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
-    expect(await screen.findByText('Most man of the match')).toBeTruthy();
-    expect(screen.queryByLabelText(/Show the full most man of the match/)).toBeNull();
+    await screen.findByText('Top scorer');
+    for (const label of ['most man of the match', 'top scorer', 'most appearances']) {
+      expect(screen.getByLabelText(`Show the full ${label} ranking`)).toBeTruthy();
+    }
+  });
+
+  it('asks for the ranking of whichever award was opened', async () => {
+    jest.mocked(api.awardRanking).mockResolvedValue(ever_present);
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await screen.findByLabelText('AIMZ U9, 1 player');
+    fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
+    fireEvent.press(await screen.findByLabelText('Show the full most appearances ranking'));
+    await waitFor(() => expect(api.awardRanking).toHaveBeenCalledWith('c-1', 'appearances'));
+    // Counting appearances in appearances would read twice; and one is singular.
+    expect(await screen.findByText('AIMZ U13, 3 appearances')).toBeTruthy();
+    expect(screen.getByText('AIMZ U9, 1 appearance')).toBeTruthy();
+  });
+
+  it('closes an opened award again', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await screen.findByLabelText('AIMZ U9, 1 player');
+    fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
+    fireEvent.press(await screen.findByLabelText('Show the full top scorer ranking'));
+    expect(await screen.findByText('AIMZ U13, 5 goals in 4 appearances')).toBeTruthy();
+
+    fireEvent.press(screen.getByLabelText('Hide the full top scorer ranking'));
+    await waitFor(() => expect(screen.queryByText('AIMZ U13, 5 goals in 4 appearances')).toBeNull());
   });
 });

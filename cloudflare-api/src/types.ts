@@ -186,6 +186,17 @@ export interface StandingAccumulator {
   points: number;
 }
 
+/** One player's season, totalled across a competition's finished matches. */
+export interface AwardTotals {
+  player_id: string;
+  motm: number;
+  goals: number;
+  assists: number;
+  minutes: number;
+  cards: number;
+  appearances: number;
+}
+
 export interface AuditRow {
   id: string;
   actor_id: string | null;
