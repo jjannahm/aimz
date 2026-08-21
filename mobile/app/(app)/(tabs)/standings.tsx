@@ -9,7 +9,21 @@ import { initialsFor, TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { Competition } from '@/src/types/api';
+import type { Competition, FormResult, StandingRow } from '@/src/types/api';
+
+// A five-match strip under the team name: the row is too tight for another column.
+function FormStrip({ form }: { form: FormResult[] }) {
+  const styles = useThemedStyles(stylesheet);
+  const colors = useColors();
+  if (!form.length) return null;
+  const tint: Record<FormResult, string> = { W: colors.live, D: colors.textMuted, L: colors.error };
+  const spoken = form.map((result) => ({ W: 'won', D: 'drew', L: 'lost' })[result]).join(', ');
+  return <View accessibilityLabel={`Recent form: ${spoken}`} style={styles.form}>
+    {form.map((result, index) => <View key={index} style={[styles.formDot, { backgroundColor: tint[result] }]}>
+      <Text accessibilityElementsHidden style={styles.formLetter}>{result}</Text>
+    </View>)}
+  </View>;
+}
 
 function CompetitionHeader({ competition }: { competition: Competition }) {
   const styles = useThemedStyles(stylesheet);
@@ -22,6 +36,29 @@ function CompetitionHeader({ competition }: { competition: Competition }) {
   </View>;
 }
 
+function HeadToHead({ teamId, opponentId, onClose }: { teamId: string; opponentId: string; onClose: () => void }) {
+  const styles = useThemedStyles(stylesheet);
+  const colors = useColors();
+  const record = useQuery({ queryKey: ['head-to-head', teamId, opponentId], queryFn: () => api.headToHead(teamId, opponentId) });
+  return <View style={styles.h2h}>
+    <View style={styles.h2hHeader}>
+      <Text style={styles.h2hTitle}>{record.data ? `${record.data.team.name} vs ${record.data.opponent.name}` : 'Head to head'}</Text>
+      <Pressable accessibilityLabel="Close head to head" accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.h2hClose, pressed && styles.pressed]}>
+        <Ionicons color={colors.textSecondary} name="close" size={18} />
+      </Pressable>
+    </View>
+    {record.isLoading ? <LoadingState label="Loading record" /> : record.isError ? <ErrorState message={(record.error as ApiError).message} onRetry={() => record.refetch()} /> : !record.data?.played ? <Text style={styles.h2hEmpty}>These two have not met in a finished match yet.</Text> : <>
+      <Text accessibilityLabel={`Won ${record.data.won}, drawn ${record.data.drawn}, lost ${record.data.lost}`} style={styles.h2hRecord}>
+        {record.data.won}W · {record.data.drawn}D · {record.data.lost}L · {record.data.goals_for}–{record.data.goals_against}
+      </Text>
+      {record.data.meetings.slice(0, 5).map((meeting) => <View key={meeting.match_id} style={styles.h2hRow}>
+        <Text numberOfLines={1} style={styles.h2hFixture}>{meeting.home_team?.name} {meeting.home_score}–{meeting.away_score} {meeting.away_team?.name}</Text>
+        <Text style={styles.h2hDate}>{new Intl.DateTimeFormat('en-EG', { dateStyle: 'medium' }).format(new Date(meeting.kickoff_datetime))}</Text>
+      </View>)}
+    </>}
+  </View>;
+}
+
 export default function StandingsScreen() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
@@ -31,6 +68,10 @@ export default function StandingsScreen() {
   const competition = eligible.find((item) => item.id === selected) ?? eligible[0];
   const competitionId = competition?.id;
   const table = useQuery({ queryKey: ['standings', competitionId], queryFn: () => api.standings(competitionId!), enabled: Boolean(competitionId) });
+  // Tapping a team picks it, then a second team compares the two.
+  const [comparing, setComparing] = useState<{ teamId: string; opponentId: string | null } | null>(null);
+  const setOpponentsFor = (teamId: string) => setComparing((current) =>
+    current === null || current.teamId === teamId ? { teamId, opponentId: null } : { teamId: current.teamId, opponentId: teamId });
 
   return <Screen eyebrow="Computed from final scores" title="Standings">
     {/* Only worth a switcher when more than one competition is running. */}
@@ -43,6 +84,9 @@ export default function StandingsScreen() {
       })}
     </ScrollView> : null}
     {competition ? <CompetitionHeader competition={competition} /> : null}
+    {comparing ? (comparing.opponentId
+      ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
+      : <View style={styles.h2h}><Text style={styles.h2hPrompt}>Pick another team to compare with {table.data?.find((row) => row.team.id === comparing.teamId)?.team.name ?? 'this team'}.</Text></View>) : null}
     {competitions.isLoading || table.isLoading ? <LoadingState label="Calculating table" /> : competitions.isError || table.isError ? <ErrorState message={(competitions.error as ApiError | null)?.message ?? (table.error as ApiError | null)?.message ?? 'Could not load standings.'} onRetry={() => { competitions.refetch(); table.refetch(); }} /> : !competitionId || !table.data?.length ? <EmptyState body="Finished league and tournament matches will create the table automatically." title="No standings yet" /> : <View style={styles.table}>
       <View style={styles.tableHeader}>
         <Text style={styles.rankHeader}>#</Text>
@@ -51,7 +95,7 @@ export default function StandingsScreen() {
         <Text style={[styles.stat, styles.headerText]}>GD</Text>
         <Text style={[styles.stat, styles.headerText]}>PTS</Text>
       </View>
-      {table.data.map((row, index) => <View key={row.team.id} style={[styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow]}>
+      {table.data.map((row: StandingRow, index: number) => <Pressable accessibilityHint="Opens head-to-head records against the other teams" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" key={row.team.id} onPress={() => setOpponentsFor(row.team.id)} style={({ pressed }) => [styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, pressed && styles.pressed]}>
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
           <TeamAvatar logoUrl={row.team.logo_url} name={row.team.name} size={34} />
@@ -61,12 +105,13 @@ export default function StandingsScreen() {
               {row.rank === 1 ? <Ionicons accessibilityLabel="First place" color={colors.leaderAccent} name="trophy" size={16} /> : null}
             </View>
             {row.team.squad_code ? <Text numberOfLines={1} style={styles.code}>{row.team.squad_code}</Text> : null}
+            <FormStrip form={row.form ?? []} />
           </View>
         </View>
         <Text style={styles.stat}>{row.played}</Text>
         <Text style={styles.stat}>{row.goal_difference > 0 ? '+' : ''}{row.goal_difference}</Text>
         <Text style={[styles.stat, styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
-      </View>)}
+      </Pressable>)}
     </View>}
   </Screen>;
 }
@@ -85,6 +130,19 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   headerName: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' },
   headerSeason: { color: colors.textMuted, fontSize: theme.type.label },
   pressed: { opacity: 0.7 },
+  form: { flexDirection: 'row', gap: 3, marginTop: 4 },
+  formDot: { alignItems: 'center', borderRadius: 3, height: 14, justifyContent: 'center', width: 14 },
+  formLetter: { color: colors.background, fontSize: 9, fontWeight: '900' },
+  h2h: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
+  h2hHeader: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
+  h2hTitle: { color: colors.textPrimary, flex: 1, fontWeight: '900' },
+  h2hClose: { alignItems: 'center', height: theme.touch.minimum, justifyContent: 'center', width: theme.touch.minimum },
+  h2hRecord: { color: colors.accentSoft, fontVariant: ['tabular-nums'], fontWeight: '900' },
+  h2hRow: { borderTopColor: colors.border, borderTopWidth: 1, paddingTop: theme.spacing.xs },
+  h2hFixture: { color: colors.textPrimary, fontSize: theme.type.label },
+  h2hDate: { color: colors.textMuted, fontSize: theme.type.caption, marginTop: 2 },
+  h2hEmpty: { color: colors.textMuted, lineHeight: 21 },
+  h2hPrompt: { color: colors.textSecondary, lineHeight: 21 },
   table: { borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, overflow: 'hidden' },
   tableHeader: { alignItems: 'center', backgroundColor: colors.surfaceRaised, flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   headerText: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 0.6 },

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import MatchDetailScreen from '@/app/(app)/match/[id]';
 import { api } from '@/src/lib/api';
-import type { LineupEntry, LiveMatchSnapshot, Match } from '@/src/types/api';
+import type { LineupEntry, LiveMatchSnapshot, Match, MatchEvent } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({
@@ -42,7 +42,7 @@ const snapshot = (over: Partial<Match> = {}, lineup: LineupEntry[] = []): LiveMa
   ({ match: match(over), events: [], lineup, revision: 1 }) as LiveMatchSnapshot;
 
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
@@ -122,5 +122,55 @@ describe('MatchDetailScreen — timeline', () => {
     const screen = await render(<MatchDetailScreen />, { wrapper });
     expect(await screen.findByText('Amina Adel')).toBeTruthy();
     expect(screen.queryByText(/^Assist:/u)).toBeNull();
+  });
+});
+
+const event = (over: Partial<MatchEvent> = {}): MatchEvent => ({
+  id: 'e-1', match_id: 'match-1', type: 'goal', minute: 10, team_id: 'home',
+  player_id: null, secondary_player_id: null, related_event_id: null, notes: null,
+  is_penalty: false, substitution_reason: null, penalty_outcome: null,
+  client_operation_id: 'op-1', created_at: '', updated_at: '',
+  ...over,
+}) as MatchEvent;
+
+describe('MatchDetailScreen — richer timeline', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  it('says which side an own goal counted for', async () => {
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot(), events: [event({ type: 'own_goal', team_id: 'home' })],
+    } as LiveMatchSnapshot);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    // Filed against the home side, so it counted for the away side.
+    expect(await screen.findByText('Own goal for Giza Lions')).toBeTruthy();
+  });
+
+  it('shows why a player came off', async () => {
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot(), events: [event({ id: 'e-2', type: 'substitution', substitution_reason: 'injury' })],
+    } as LiveMatchSnapshot);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('Reason: Injury')).toBeTruthy();
+  });
+
+  it('shows how a penalty was missed', async () => {
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot(), events: [event({ id: 'e-3', type: 'penalty_missed', penalty_outcome: 'saved' })],
+    } as LiveMatchSnapshot);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(screen.getByText('Penalty missed')).toBeTruthy();
+  });
+
+  it('leaves a plain substitution without a reason line', async () => {
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot(), events: [event({ id: 'e-4', type: 'substitution' })],
+    } as LiveMatchSnapshot);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('Substitution')).toBeTruthy();
+    expect(screen.queryByText(/^Reason:/)).toBeNull();
   });
 });

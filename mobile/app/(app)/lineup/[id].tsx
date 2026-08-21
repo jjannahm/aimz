@@ -42,6 +42,50 @@ export default function LineupScreen() {
     [playersQuery.data, squad],
   );
 
+  // The squad's most recent finished match, as a lineup to copy forward.
+  const previousQuery = useQuery({
+    // `match_status` is the name both APIs accept; plain `status` is ignored by
+    // FastAPI, which would quietly return unplayed matches too.
+    queryKey: ['matches', 'previous', squad?.id],
+    queryFn: () => api.matches(`?match_status=finished&team_id=${squad!.id}&limit=100`),
+    enabled: Boolean(squad?.id),
+  });
+  const previousMatch = useMemo(() => {
+    if (!squad) return null;
+    const played = (previousQuery.data?.items ?? [])
+      .filter((item) => item.id !== id && item.status === 'finished')
+      .sort((a, b) => Date.parse(b.kickoff_datetime) - Date.parse(a.kickoff_datetime));
+    return played[0] ?? null;
+  }, [previousQuery.data, squad, id]);
+
+  const [copying, setCopying] = useState(false);
+  const copyLast = async () => {
+    if (!previousMatch) return;
+    setCopying(true);
+    try {
+      const snapshot = await api.live(previousMatch.id);
+      // Players who have since left the squad are dropped, and the selection is
+      // trimmed to whatever format this match is being played at.
+      const eligible = snapshot.lineup
+        .filter((entry) => entry.is_starter && roster.some((player) => player.id === entry.player_id))
+        .map((entry) => entry.player_id);
+      const nextFormat = (snapshot.match.lineup_format as LineupFormat | null) ?? format;
+      if (nextFormat) setFormat(nextFormat);
+      setFormation(nextFormat === snapshot.match.lineup_format ? snapshot.match.formation : null);
+      setStarters(new Set(nextFormat ? eligible.slice(0, nextFormat) : eligible));
+      const previousCaptain = snapshot.lineup.find((entry) => entry.is_captain)?.player_id ?? null;
+      setCaptain(previousCaptain && eligible.includes(previousCaptain) ? previousCaptain : null);
+      const dropped = snapshot.lineup.filter((entry) => entry.is_starter).length - eligible.length;
+      showMessage('Lineup copied', dropped > 0
+        ? `${dropped} player${dropped === 1 ? '' : 's'} from that lineup are no longer in the squad, so they were left out.`
+        : 'Check it over, then save.');
+    } catch (error) {
+      showMessage('Could not copy that lineup', (error as ApiError).message);
+    } finally {
+      setCopying(false);
+    }
+  };
+
   // Pre-fill from whatever is already saved so an edit does not start blank.
   useEffect(() => {
     if (!matchQuery.data || format !== null) return;
@@ -109,6 +153,13 @@ export default function LineupScreen() {
       : locked ? <EmptyState body="The starting lineup is locked once the match begins. Log a substitution from live scoring instead." title="Match already started" />
       : !roster.length ? <EmptyState body="Add players to this squad before setting a lineup." title="No squad players yet" />
       : <>
+        {previousMatch ? <AppButton
+          disabled={copying}
+          icon="copy-outline"
+          label={copying ? 'Copying…' : 'Copy last lineup'}
+          onPress={copyLast}
+          variant="secondary"
+        /> : null}
         <ChoiceField label="Format" onChange={(value) => { const next = Number(value) as LineupFormat; setFormat(next); setFormation(null); setStarters((current) => new Set([...current].slice(0, next))); }} options={LINEUP_FORMATS.map((size) => ({ label: `${size}-a-side`, value: String(size) }))} placeholder="Choose a format" value={format === null ? undefined : String(format)} />
         {format === null ? <Text style={styles.hint}>Choose a format to pick the starting players.</Text> : <>
           <View style={styles.counterRow}>

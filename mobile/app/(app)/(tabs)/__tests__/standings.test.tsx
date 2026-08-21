@@ -9,7 +9,7 @@ import type { Competition, StandingRow, Team } from '@/src/types/api';
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 
 jest.mock('@/src/lib/api', () => ({
-  api: { competitions: jest.fn(), standings: jest.fn() },
+  api: { competitions: jest.fn(), standings: jest.fn(), headToHead: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -89,5 +89,28 @@ describe('StandingsScreen', () => {
     await screen.findByText('Giza Lions');
     // Rank 1 only — a second trophy would make the highlight meaningless.
     expect(screen.getAllByLabelText('First place')).toHaveLength(1);
+  });
+});
+
+describe('StandingsScreen — form guide', () => {
+  beforeEach(() => {
+    jest.mocked(api.competitions).mockResolvedValue({ items: [league], total: 1, limit: 100, offset: 0 });
+    jest.mocked(api.standings).mockResolvedValue(table);
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  it('reads the last five results newest first', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    // Both fixture rows carry W, D, L, L, so both teams get a strip.
+    expect(await screen.findAllByLabelText('Recent form: won, drew, lost, lost')).toHaveLength(table.length);
+  });
+
+  it('leaves out the strip for a team that has not played', async () => {
+    jest.mocked(api.standings).mockResolvedValue([
+      { ...row(1, team('t-3', 'Newly Entered'), 0), played: 0, won: 0, drawn: 0, lost: 0, form: [] },
+    ]);
+    const screen = await render(<StandingsScreen />, { wrapper });
+    await screen.findByText('Newly Entered');
+    expect(screen.queryByLabelText(/^Recent form/)).toBeNull();
   });
 });
