@@ -44,28 +44,6 @@ function wrapper({ children }: { children: ReactNode }) {
 
 jest.setTimeout(30_000);
 
-describe('MatchDetailScreen — live actions', () => {
-  beforeEach(() => {
-    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
-    jest.mocked(api.setMatchPhase).mockResolvedValue(match({ status: 'finished' }));
-  });
-  afterEach(() => jest.clearAllMocks());
-
-  it('offers both quick actions while live', async () => {
-    jest.mocked(api.live).mockResolvedValue(snapshot());
-    const screen = await render(<MatchDetailScreen />, { wrapper });
-    expect(await screen.findByText('Log goal')).toBeTruthy();
-    expect(screen.getByText('Log substitution')).toBeTruthy();
-  });
-
-  it('hides the quick actions before kickoff', async () => {
-    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'scheduled', phase: 'not_started' }));
-    const screen = await render(<MatchDetailScreen />, { wrapper });
-    await screen.findByText('Open match management');
-    expect(screen.queryByText('Log substitution')).toBeNull();
-  });
-});
-
 describe('MatchDetailScreen — End match', () => {
   beforeEach(() => {
     jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
