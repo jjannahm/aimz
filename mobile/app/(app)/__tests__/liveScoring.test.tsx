@@ -17,7 +17,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn() }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
 jest.mock('@/src/lib/api', () => ({
-  api: { live: jest.fn(), players: jest.fn(), setMatchPhase: jest.fn(), createEvent: jest.fn() },
+  api: { live: jest.fn(), players: jest.fn(), setMatchPhase: jest.fn(), createEvent: jest.fn(), setManOfTheMatch: jest.fn(), stats: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -25,7 +25,7 @@ const match = (over: Partial<Match> = {}): Match => ({
   id: 'match-1', competition_id: 'c-1', home_team_id: 'home', away_team_id: 'away',
   kickoff_datetime: '2026-08-20T18:30:00.000Z', venue: 'AIMZ Arena',
   status: 'live', phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z',
-  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null,
+  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null, man_of_the_match_player_id: null,
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15,
   created_at: '', updated_at: '',
@@ -39,7 +39,7 @@ const snapshot = (over: Partial<Match> = {}): LiveMatchSnapshot =>
   ({ match: match(over), events: [], lineup: [], revision: 1 }) as LiveMatchSnapshot;
 
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
@@ -160,5 +160,73 @@ describe('LiveScoringScreen — Cards', () => {
     fireEvent.press(screen.getByText('Sub'));
     expect(await screen.findByText('Add Sub')).toBeTruthy();
     expect(screen.getByText('Coming on')).toBeTruthy();
+  });
+});
+
+const scorer = {
+  id: 'p-1', name: 'Nour Adel', team_id: 'home', position: 'Defender', jersey_number: 4,
+  photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '',
+};
+
+describe('LiveScoringScreen — own goals and missed penalties', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [scorer], total: 1, limit: 100, offset: 0 });
+    jest.mocked(api.live).mockResolvedValue(snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:40:00.000Z' }));
+    jest.mocked(api.createEvent).mockResolvedValue({} as never);
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-20T18:40:00.000Z'));
+  });
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks(); });
+
+  it('offers own goal and pen miss alongside the existing buttons', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    expect(await screen.findByText('Own goal')).toBeTruthy();
+    expect(screen.getByText('Pen miss')).toBeTruthy();
+  });
+
+  it('logs an own goal in one step, with no assist to credit', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Own goal'));
+
+    expect(await screen.findByText('Add Own goal')).toBeTruthy();
+    expect(screen.getByText('Put through their own net')).toBeTruthy();
+    // An own goal has no assist, so that field stays away.
+    expect(screen.queryByText('Assisted by (optional)')).toBeNull();
+
+    fireEvent.press(screen.getByText('Add Own goal'));
+    await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
+    expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'own_goal', team_id: 'home' });
+  });
+
+  it('asks how a penalty was missed before it shows the form', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Pen miss'));
+
+    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(screen.getByText('Off target')).toBeTruthy();
+    // The rest of the form waits on the outcome, the way a card does.
+    expect(screen.queryByText('Team')).toBeNull();
+
+    fireEvent.press(screen.getByText('Saved'));
+    expect(await screen.findByText('Team')).toBeTruthy();
+    fireEvent.press(screen.getByText('Add Pen miss'));
+    await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
+    expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'penalty_missed', penalty_outcome: 'saved' });
+  });
+
+  it('sends a substitution reason only when one is chosen', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Sub'));
+    expect(await screen.findByText('Reason (optional)')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Add Sub'));
+    await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
+    // Left alone, a tactical change carries no reason.
+    expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'substitution', substitution_reason: null });
+  });
+
+  it('keeps the reason off every other event type', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    expect(await screen.findByText('Add Goal')).toBeTruthy();
+    expect(screen.queryByText('Reason (optional)')).toBeNull();
   });
 });

@@ -37,6 +37,9 @@ jobs:
       - name: Typecheck Cloudflare API
         run: npm run typecheck
         working-directory: cloudflare-api
+      - name: Test Cloudflare API
+        run: npm test
+        working-directory: cloudflare-api
       - name: Validate Cloudflare Worker bundle
         run: npm run deploy:dry-run
         working-directory: cloudflare-api

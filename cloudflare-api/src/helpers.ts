@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { CompetitionRow, JsonObject, MatchRow, PlayerRow, TeamRow, UserRow } from "./types";
+import type { CompetitionRow, JsonObject, MatchRow, PlayerRow, StatRow, TeamRow, UserRow } from "./types";
 import { verifyAccessToken } from "./security";
 
 export class ApiProblem extends Error {
@@ -120,6 +120,10 @@ export function publicTeam(team: TeamRow | null): Record<string, unknown> | null
 
 export function publicCompetition(competition: CompetitionRow | null): Record<string, unknown> | null {
   return competition ? { ...competition } : null;
+}
+
+export function publicStat(stat: StatRow): Record<string, unknown> {
+  return { ...stat, appeared: Boolean(stat.appeared) };
 }
 
 export function publicPlayer(player: PlayerRow | null): Record<string, unknown> | null {

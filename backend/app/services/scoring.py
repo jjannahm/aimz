@@ -38,17 +38,24 @@ async def recompute_match(session: AsyncSession, match: Match) -> None:
             )
         ).all()
     )
-    match.home_score = sum(
-        event.type == EventType.goal and event.team_id == match.home_team_id for event in events
-    )
-    match.away_score = sum(
-        event.type == EventType.goal and event.team_id == match.away_team_id for event in events
-    )
+
+    def scored_for(team_id: str, opponent_id: str) -> int:
+        # An own goal is filed against the team that conceded it, because that is
+        # the team the scorer plays for. It counts on the opponent's scoreline.
+        return sum(
+            (event.type == EventType.goal and event.team_id == team_id)
+            or (event.type == EventType.own_goal and event.team_id == opponent_id)
+            for event in events
+        )
+
+    match.home_score = scored_for(match.home_team_id, match.away_team_id)
+    match.away_score = scored_for(match.away_team_id, match.home_team_id)
 
     counters: dict[str, dict[EventType, int]] = {}
     for event in events:
         if event.player_id and event.type in {
             EventType.goal,
+            EventType.own_goal,
             EventType.yellow_card,
             EventType.red_card,
         }:
@@ -76,6 +83,7 @@ async def recompute_match(session: AsyncSession, match: Match) -> None:
         values = counters.get(player_id, {})
         stat.goals = values.get(EventType.goal, 0)
         stat.assists = values.get(EventType.assist, 0)
+        stat.own_goals = values.get(EventType.own_goal, 0)
         stat.yellow_cards = values.get(EventType.yellow_card, 0)
         stat.red_cards = values.get(EventType.red_card, 0)
     match.revision += 1

@@ -55,9 +55,24 @@ class MatchPhase(StrEnum):
 class EventType(StrEnum):
     goal = "goal"
     assist = "assist"
+    own_goal = "own_goal"
+    penalty_missed = "penalty_missed"
     yellow_card = "yellow_card"
     red_card = "red_card"
     substitution = "substitution"
+
+
+class SubstitutionReason(StrEnum):
+    tactical = "tactical"
+    injury = "injury"
+    concussion = "concussion"
+    disciplinary = "disciplinary"
+    other = "other"
+
+
+class PenaltyOutcome(StrEnum):
+    saved = "saved"
+    off_target = "off_target"
 
 
 class TimestampMixin:
@@ -241,6 +256,10 @@ class Match(TimestampMixin, Base):
     lineup_format: Mapped[int | None] = mapped_column(Integer)
     # Outfield shape, e.g. "4-4-2"; the digits sum to lineup_format - 1.
     formation: Mapped[str | None] = mapped_column(String(20))
+    # Picked by an admin once the match is finished, not voted for.
+    man_of_the_match_player_id: Mapped[str | None] = mapped_column(
+        ForeignKey("players.id", ondelete="SET NULL"), index=True
+    )
 
     competition: Mapped[Competition] = relationship()
     home_team: Mapped[Team] = relationship(foreign_keys=[home_team_id])
@@ -282,6 +301,15 @@ class MatchEvent(TimestampMixin, Base):
     notes: Mapped[str | None] = mapped_column(Text)
     # Goals only: whether the goal came from a penalty kick.
     is_penalty: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Substitutions only: why the player came off, so a forced change reads
+    # differently from a tactical one.
+    substitution_reason: Mapped[SubstitutionReason | None] = mapped_column(
+        Enum(SubstitutionReason, native_enum=False)
+    )
+    # Missed penalties only: whether the keeper saved it or it missed the goal.
+    penalty_outcome: Mapped[PenaltyOutcome | None] = mapped_column(
+        Enum(PenaltyOutcome, native_enum=False)
+    )
     client_operation_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
 
     match: Mapped[Match] = relationship(back_populates="events")
@@ -328,6 +356,8 @@ class PlayerMatchStat(TimestampMixin, Base):
     minutes_played: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     goals: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     assists: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Kept apart from goals so an own goal never inflates a scoring record.
+    own_goals: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     yellow_cards: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     red_cards: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
@@ -338,3 +368,30 @@ class PlayerMatchStat(TimestampMixin, Base):
         UniqueConstraint("match_id", "player_id", name="uq_stat_match_player"),
         CheckConstraint("minutes_played BETWEEN 0 AND 150", name="ck_minutes_played"),
     )
+
+
+class AuditLog(Base):
+    """Who changed what during a match, so two admins scoring at once leave a trail."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    actor_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), index=True
+    )
+    # Kept alongside the id so a removed admin's actions still read.
+    actor_name: Mapped[str] = mapped_column(String(160))
+    action: Mapped[str] = mapped_column(String(60), index=True)
+    entity_type: Mapped[str] = mapped_column(String(40))
+    entity_id: Mapped[str | None] = mapped_column(String(36))
+    match_id: Mapped[str | None] = mapped_column(
+        ForeignKey("matches.id", ondelete="CASCADE"), index=True
+    )
+    summary: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    actor: Mapped[User | None] = relationship()
+
+    __table_args__ = (Index("ix_audit_log_match_created", "match_id", "created_at"),)

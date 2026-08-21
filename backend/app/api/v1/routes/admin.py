@@ -5,9 +5,10 @@ from sqlalchemy.exc import IntegrityError
 from app.api.deps import AdminUser, SessionDep
 from app.core.errors import api_error
 from app.core.security import hash_password, secret_hash
-from app.db.models import RegistrationInvite, User
+from app.db.models import AuditLog, RegistrationInvite, User
 from app.schemas import (
     AdminUserCreate,
+    AuditLogRead,
     InviteCreate,
     InviteRead,
     Page,
@@ -15,6 +16,31 @@ from app.schemas import (
 )
 
 router = APIRouter()
+
+
+@router.get("/audit-log", response_model=Page[AuditLogRead])
+async def list_audit_log(
+    _: AdminUser,
+    session: SessionDep,
+    match_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> Page[AuditLogRead]:
+    """Newest first, optionally narrowed to one match."""
+    limit, offset = min(max(limit, 1), 100), max(offset, 0)
+    counted = select(func.count()).select_from(AuditLog)
+    query = select(AuditLog).order_by(AuditLog.created_at.desc(), AuditLog.id)
+    if match_id:
+        counted = counted.where(AuditLog.match_id == match_id)
+        query = query.where(AuditLog.match_id == match_id)
+    total = await session.scalar(counted) or 0
+    entries = list((await session.scalars(query.limit(limit).offset(offset))).all())
+    return Page(
+        items=[AuditLogRead.model_validate(entry) for entry in entries],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/users", response_model=Page[UserRead])
