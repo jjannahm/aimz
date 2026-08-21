@@ -24,7 +24,7 @@ const team = (id: string, name: string, is_aimz = false): Team => ({
 
 const row = (rank: number, t: Team, points: number): StandingRow => ({
   rank, team: t, played: 4, won: 1, drawn: 1, lost: 2, goals_for: 5, goals_against: 4,
-  goal_difference: 1, points,
+  goal_difference: 1, points, form: ['W', 'D', 'L', 'L'],
 });
 
 const league = competition('c-1', 'Women Academy League', '2026');

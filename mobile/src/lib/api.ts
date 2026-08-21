@@ -1,6 +1,7 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
 import type {
+  AuditEntry,
   Competition,
   LeaderMetric,
   LineupEntry,
@@ -8,6 +9,7 @@ import type {
   Match,
   MatchPhaseAction,
   MatchEvent,
+  HeadToHead,
   Page,
   Player,
   PlayerLeaderRow,
@@ -15,6 +17,7 @@ import type {
   PlayerSeasonSummary,
   PresignResponse,
   RegistrationInvite,
+  SeasonAwards,
   StandingRow,
   Team,
   TokenResponse,
@@ -253,6 +256,7 @@ export const api = {
   createMatch: (payload: Partial<Match>) => request<Match>('/api/v1/matches', { method: 'POST', body: payload }),
   updateMatch: (id: string, payload: Partial<Match>) => request<Match>(`/api/v1/matches/${id}`, { method: 'PATCH', body: payload }),
   setMatchPhase: (id: string, action: MatchPhaseAction) => request<Match>(`/api/v1/matches/${id}/phase`, { method: 'POST', body: { action } }),
+  setManOfTheMatch: (id: string, player_id: string | null) => request<Match>(`/api/v1/matches/${id}/man-of-the-match`, { method: 'POST', body: { player_id } }),
   deleteMatch: (id: string) => request<void>(`/api/v1/matches/${id}`, { method: 'DELETE' }),
   live: (id: string) => request<LiveMatchSnapshot>(`/api/v1/matches/${id}/live`),
   createEvent: (matchId: string, payload: Partial<MatchEvent>) => request<MatchEvent>(`/api/v1/matches/${matchId}/events`, { method: 'POST', body: payload }),
@@ -260,13 +264,17 @@ export const api = {
   lineup: (matchId: string, payload: Partial<LineupEntry>[]) => request<LineupEntry[]>(`/api/v1/matches/${matchId}/lineup`, { method: 'PUT', body: payload }),
   stats: (matchId: string, payload: Partial<PlayerMatchStat>[]) => request<PlayerMatchStat[]>(`/api/v1/matches/${matchId}/player-stats`, { method: 'PUT', body: payload }),
   standings: (competitionId: string) => request<StandingRow[]>(`/api/v1/competitions/${competitionId}/standings`),
-  leaders: (metric: LeaderMetric, options: { ageGroup?: string; season?: string; limit?: number } = {}) => {
+  leaders: (metric: LeaderMetric, options: { ageGroup?: string; season?: string; competitionId?: string; limit?: number } = {}) => {
     const params = new URLSearchParams({ metric });
     if (options.ageGroup) params.set('age_group', options.ageGroup);
     if (options.season) params.set('season', options.season);
+    if (options.competitionId) params.set('competition_id', options.competitionId);
     if (options.limit) params.set('limit', String(options.limit));
     return request<PlayerLeaderRow[]>(`/api/v1/stats/leaders?${params.toString()}`);
   },
+  headToHead: (teamId: string, opponentId: string) => request<HeadToHead>(`/api/v1/teams/${teamId}/head-to-head/${opponentId}`),
+  awards: (competitionId: string) => request<SeasonAwards>(`/api/v1/competitions/${competitionId}/awards`),
+  auditLog: (matchId?: string) => request<Page<AuditEntry>>(`/api/v1/admin/audit-log${matchId ? `?match_id=${encodeURIComponent(matchId)}` : ''}`),
   playerStats: (playerId: string, season?: string) => request<PlayerSeasonSummary>(`/api/v1/players/${playerId}/stats${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   invites: () => request<RegistrationInvite[]>('/api/v1/admin/registration-invites'),
   createInvite: (payload: { label: string; code: string; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),

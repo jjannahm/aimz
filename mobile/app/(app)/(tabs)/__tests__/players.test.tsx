@@ -30,7 +30,7 @@ const players = [
   player('p-2', 'Mariam Adel', 't-u13', 9),
 ];
 const scorers: PlayerLeaderRow[] = [
-  { rank: 1, player: players[1]!, team: teams[1]!, goals: 5, assists: 2, appearances: 4 },
+  { rank: 1, player: players[1]!, team: teams[1]!, goals: 5, assists: 2, yellow_cards: 1, red_cards: 0, appearances: 4 },
 ];
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -49,12 +49,14 @@ describe('PlayersScreen', () => {
   });
   afterEach(() => jest.clearAllMocks());
 
-  it('offers exactly three top-level tabs', async () => {
+  it('offers exactly five top-level tabs', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByRole('tab', { name: 'Teams' });
-    expect(screen.getAllByRole('tab')).toHaveLength(3);
+    expect(screen.getAllByRole('tab')).toHaveLength(5);
     expect(screen.getByRole('tab', { name: 'Top Scorers' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Top Assisters' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Discipline' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Awards' })).toBeTruthy();
   });
 
   it('lists the squads that exist, not a fixed set of age groups', async () => {

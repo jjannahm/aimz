@@ -15,11 +15,13 @@ export const cacheKeys = {
   leaders: ['leaders'] as const,
   playerStats: ['player-stats'] as const,
   invites: ['invites'] as const,
+  awards: ['awards'] as const,
+  auditLog: ['audit-log'] as const,
   liveMatch: (id: string) => ['live-match', id] as const,
   allLiveMatches: ['live-match'] as const,
 };
 
-type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite';
+type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award';
 
 /**
  * What a write touches, including everything derived from it.
@@ -33,11 +35,13 @@ type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' |
 const affects: Record<Entity, (readonly string[])[]> = {
   team: [cacheKeys.teams, cacheKeys.players, cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.allLiveMatches],
   player: [cacheKeys.players, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.allLiveMatches],
-  competition: [cacheKeys.competitions, cacheKeys.matches, cacheKeys.standings],
-  match: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.allLiveMatches],
-  event: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.allLiveMatches],
-  lineup: [cacheKeys.matches, cacheKeys.allLiveMatches],
+  competition: [cacheKeys.competitions, cacheKeys.matches, cacheKeys.standings, cacheKeys.awards],
+  match: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.allLiveMatches],
+  event: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.auditLog, cacheKeys.allLiveMatches],
+  lineup: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches],
   invite: [cacheKeys.invites],
+  // Naming a man of the match changes the match, not the table or the scorers.
+  award: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches],
 };
 
 /**
