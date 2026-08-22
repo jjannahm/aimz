@@ -27,11 +27,15 @@ const CREST_EDGE = '#C9A227';
 const CREST_WHITE = '#FFFFFF';
 const BORDER_WIDTH = 6;
 
-/** Five bars, evenly spaced, on the same 0-100 viewBox as the shield. */
-const STRIPE_X = [20, 31, 42, 53, 64];
-const STRIPE_WIDTH = 7.5;
-const STRIPE_Y = 22;
-const STRIPE_HEIGHT = 36;
+/**
+ * Six bars, evenly spaced, on the same 0-100 viewBox as the shield — sitting
+ * below the wordmark and running down toward the shield's point, so the two
+ * outer stripes get shorter where the shield itself narrows.
+ */
+const STRIPE_X = [18, 29, 40, 51, 62, 73];
+const STRIPE_WIDTH = 6.5;
+const STRIPE_Y = 34;
+const STRIPE_HEIGHT = 58;
 
 /** Below this the stripes and wordmark are mud, so the crest goes plain. */
 const DETAIL_FROM = 40;
@@ -52,9 +56,11 @@ type Props = {
  * A real vector shield now, not a layered-glyph approximation: the stripes are
  * clipped to `SHIELD_PATH` itself, so they are provably confined to the crest
  * rather than sized to probably fit inside whatever an icon font's glyph
- * happens to look like. The wordmark stays a plain RN `<Text>` overlay — SVG
- * text has more cross-platform font quirks than RN's for comparatively little
- * gain here, since the shape was the actual quality problem.
+ * happens to look like. The wordmark sits under the top edge, and the stripes
+ * fill the shield below it down toward the point. The wordmark stays a plain
+ * RN `<Text>` overlay — SVG text has more cross-platform font quirks than
+ * RN's for comparatively little gain here, since the shape was the actual
+ * quality problem.
  */
 export function TeamBadge({ isAimz = false, size = 44 }: Props) {
   const colors = useColors();
@@ -85,7 +91,7 @@ export function TeamBadge({ isAimz = false, size = 44 }: Props) {
         <Rect clipPath={`url(#${clipId})`} fill={CREST_WHITE} height={STRIPE_HEIGHT} key={x} width={STRIPE_WIDTH} x={x} y={STRIPE_Y} />
       )) : null}
     </Svg>
-    {detailed ? <Text allowFontScaling={false} style={[styles.mark, { fontSize: Math.round(size * 0.19), top: Math.round(size * 0.62) }]}>aimz</Text> : null}
+    {detailed ? <Text allowFontScaling={false} style={[styles.mark, { fontSize: Math.round(size * 0.16), top: Math.round(size * 0.16) }]}>aimz</Text> : null}
   </View>;
 }
 
