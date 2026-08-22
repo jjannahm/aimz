@@ -66,11 +66,11 @@ describe('PlayersScreen', () => {
   });
   afterEach(() => jest.clearAllMocks());
 
-  it('offers two top-level tabs, with the rankings folded into Player stats', async () => {
+  it('offers two top-level tabs, with the rankings folded into Stats', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByRole('tab', { name: 'Teams' });
     expect(screen.getAllByRole('tab')).toHaveLength(2);
-    expect(screen.getByRole('tab', { name: 'Player stats' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Stats' })).toBeTruthy();
     // These three were their own tabs and are now award rows.
     expect(screen.queryByRole('tab', { name: 'Top Scorers' })).toBeNull();
     expect(screen.queryByRole('tab', { name: 'Top Assisters' })).toBeNull();
@@ -115,7 +115,7 @@ describe('PlayersScreen', () => {
   it('opens the top scorer award to reveal the ranking behind it', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
-    fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'Stats' }));
     expect(await screen.findByText('Top scorer')).toBeTruthy();
     // Collapsed, the award shows only its winner; the ranking is not fetched.
     expect(api.awardRanking).not.toHaveBeenCalled();
@@ -129,7 +129,7 @@ describe('PlayersScreen', () => {
   it('opens every award, not just the two with a leaderboard behind them', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
-    fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'Stats' }));
     await screen.findByText('Top scorer');
     for (const label of ['most man of the match', 'top scorer', 'most appearances']) {
       expect(screen.getByLabelText(`Show the full ${label} ranking`)).toBeTruthy();
@@ -140,7 +140,7 @@ describe('PlayersScreen', () => {
     jest.mocked(api.awardRanking).mockResolvedValue(ever_present);
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
-    fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'Stats' }));
     fireEvent.press(await screen.findByLabelText('Show the full most appearances ranking'));
     await waitFor(() => expect(api.awardRanking).toHaveBeenCalledWith('c-1', 'appearances'));
     // Counting appearances in appearances would read twice; and one is singular.
@@ -151,7 +151,7 @@ describe('PlayersScreen', () => {
   it('closes an opened award again', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
-    fireEvent.press(screen.getByRole('tab', { name: 'Player stats' }));
+    fireEvent.press(screen.getByRole('tab', { name: 'Stats' }));
     fireEvent.press(await screen.findByLabelText('Show the full top scorer ranking'));
     expect(await screen.findByText('AIMZ U13, 5 goals in 4 appearances')).toBeTruthy();
 
