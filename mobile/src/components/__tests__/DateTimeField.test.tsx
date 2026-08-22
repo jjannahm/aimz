@@ -36,10 +36,27 @@ describe('DateTimeField', () => {
     expect(onChange).toHaveBeenCalledWith('2026-09-07T15:30:00.000Z');
   });
 
-  it('moves the clock without disturbing the day', async () => {
+  it('moves the clock a quarter at a time without disturbing the day', async () => {
     const { screen, onChange } = await open();
-    fireEvent.press(screen.getByLabelText('5 minutes later'));
-    expect(onChange).toHaveBeenCalledWith('2026-09-05T15:35:00.000Z');
+    fireEvent.press(screen.getByLabelText('15 minutes later'));
+    expect(onChange).toHaveBeenCalledWith('2026-09-05T15:45:00.000Z');
+  });
+
+  // Kickoffs are called on the quarter, so nothing else is reachable — and a
+  // form opening on the current time arrives off it more often than not.
+  it('pulls a time that is off the quarter onto the nearest one', async () => {
+    const onChange = jest.fn();
+    // 18:37 Egypt, which is 15:37Z.
+    await render(<DateTimeField label="Kickoff" onChange={onChange} value="2026-09-05T15:37:00.000Z" />);
+    expect(onChange).toHaveBeenCalledWith('2026-09-05T15:30:00.000Z');
+  });
+
+  it('rolls the hour when the quarters run out', async () => {
+    const onChange = jest.fn();
+    const screen = await render(<DateTimeField label="Kickoff" onChange={onChange} value="2026-09-05T15:45:00.000Z" />);
+    fireEvent.press(screen.getByLabelText('Kickoff'));
+    fireEvent.press(await screen.findByLabelText('15 minutes later'));
+    expect(onChange).toHaveBeenCalledWith('2026-09-05T16:00:00.000Z');
   });
 
   it('wraps an hour backwards across midnight rather than changing nothing', async () => {
