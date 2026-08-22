@@ -2,16 +2,12 @@ import { Image } from 'react-native';
 
 import { TeamBadge } from '@/src/components/TeamBadge';
 
-type Tone = 'accent' | 'light';
-
 type Props = {
   name: string;
   logoUrl?: string | null;
   size?: number;
   /** AIMZ squads wear the club crest; everyone else gets the opponent shield. */
   isAimz?: boolean;
-  /** Keeps home and away apart when both sides are AIMZ squads. */
-  tone?: Tone;
 };
 
 /** "AIMZ U18 Women" -> "AU", "Zamalek" -> "ZA". */
@@ -26,9 +22,9 @@ export function initialsFor(name: string): string {
  * A team's crest. An uploaded logo still wins; otherwise the badge is drawn
  * from whether the team is ours.
  */
-export function TeamAvatar({ logoUrl, size = 44, isAimz, tone }: Props) {
+export function TeamAvatar({ logoUrl, size = 44, isAimz }: Props) {
   if (logoUrl) {
     return <Image accessibilityElementsHidden source={{ uri: logoUrl }} style={{ borderRadius: size / 2, height: size, width: size }} />;
   }
-  return <TeamBadge isAimz={isAimz} size={size} tone={tone} />;
+  return <TeamBadge isAimz={isAimz} size={size} />;
 }
