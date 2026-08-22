@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { theme, type ThemeColors } from '@/src/theme';
@@ -10,8 +10,11 @@ type Props = { label: string; value: string; onChange: (iso: string) => void; er
 
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-/** Kickoffs land on the quarter hour far more often than not. */
-const MINUTE_STEP = 5;
+/** Kickoffs are called on the quarter hour, so nothing else is reachable. */
+const QUARTER = 15;
+
+/** The nearest quarter to a reading, in minutes since midnight, wrapping the day. */
+const toQuarter = (hour: number, minute: number) => (Math.round((hour * 60 + minute) / QUARTER) * QUARTER) % 1440;
 
 const daysInMonth = (year: number, month: number) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 /** Monday-first index of the 1st, which is the column the month starts in. */
@@ -45,10 +48,19 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
     return { ...current, month };
   });
   const shiftMinutes = (by: number) => {
-    const total = wall.hour * 60 + wall.minute + by;
+    // Stepping from a quarter keeps landing on one, whichever button is used.
+    const total = toQuarter(wall.hour, wall.minute) + by;
     const wrapped = ((total % 1440) + 1440) % 1440;
     commit({ hour: Math.floor(wrapped / 60), minute: wrapped % 60 });
   };
+  // A kickoff arriving off the quarter — the form opens on the current time —
+  // is pulled onto the nearest one, so the field never shows or stores a
+  // minute the picker cannot reach.
+  useEffect(() => {
+    if (wall.minute % QUARTER === 0) return;
+    const wrapped = toQuarter(wall.hour, wall.minute);
+    onChange(fromEgyptWallClock({ ...wall, hour: Math.floor(wrapped / 60), minute: wrapped % 60 }).toISOString());
+  }, [onChange, wall]);
   const total = daysInMonth(view.year, view.month);
   const cells: (number | null)[] = [
     ...Array.from({ length: startColumn(view.year, view.month) }, () => null),
@@ -112,11 +124,11 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
             <Ionicons color={colors.accentSoft} name="add" size={18} />
           </Pressable>
           <View style={styles.minuteGroup}>
-            <Pressable accessibilityLabel={`${MINUTE_STEP} minutes earlier`} accessibilityRole="button" onPress={() => shiftMinutes(-MINUTE_STEP)} style={({ pressed }) => [styles.minuteStep, pressed && styles.pressed]}>
-              <Text style={styles.minuteStepText}>−{MINUTE_STEP}</Text>
+            <Pressable accessibilityLabel={`${QUARTER} minutes earlier`} accessibilityRole="button" onPress={() => shiftMinutes(-QUARTER)} style={({ pressed }) => [styles.minuteStep, pressed && styles.pressed]}>
+              <Text style={styles.minuteStepText}>−{QUARTER}</Text>
             </Pressable>
-            <Pressable accessibilityLabel={`${MINUTE_STEP} minutes later`} accessibilityRole="button" onPress={() => shiftMinutes(MINUTE_STEP)} style={({ pressed }) => [styles.minuteStep, pressed && styles.pressed]}>
-              <Text style={styles.minuteStepText}>+{MINUTE_STEP}</Text>
+            <Pressable accessibilityLabel={`${QUARTER} minutes later`} accessibilityRole="button" onPress={() => shiftMinutes(QUARTER)} style={({ pressed }) => [styles.minuteStep, pressed && styles.pressed]}>
+              <Text style={styles.minuteStepText}>+{QUARTER}</Text>
             </Pressable>
           </View>
         </View>

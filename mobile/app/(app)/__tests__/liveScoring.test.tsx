@@ -242,3 +242,45 @@ describe('LiveScoringScreen — own goals and missed penalties', () => {
     expect(screen.queryByText('Reason (optional)')).toBeNull();
   });
 });
+
+describe('LiveScoringScreen — who can be substituted', () => {
+  const bench = { id: 'bench-1', name: 'Malak Sherif', team_id: 'home', position: 'Forward', jersey_number: 12, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' };
+  const lineup = [
+    { id: 'l1', match_id: 'match-1', player_id: 'p-1', team_id: 'home', is_starter: true, is_captain: false, position: 'Forward', jersey_number: 9 },
+    { id: 'l2', match_id: 'match-1', player_id: 'bench-1', team_id: 'home', is_starter: false, is_captain: false, position: 'Forward', jersey_number: 12 },
+  ];
+
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [scorer, bench], total: 2, limit: 100, offset: 0 });
+    jest.mocked(api.createEvent).mockResolvedValue({} as never);
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-20T18:40:00.000Z'));
+  });
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks(); });
+
+  const openSub = async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Sub'));
+    return screen;
+  };
+
+  it('offers the bench to come on and the pitch to come off', async () => {
+    jest.mocked(api.live).mockResolvedValue({ ...snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z' }), lineup } as never);
+    const screen = await openSub();
+    fireEvent.press(await screen.findByLabelText('Coming on'));
+    expect(await screen.findByText('#12 Malak Sherif')).toBeTruthy();
+    // A starter cannot come on; they are already on.
+    expect(screen.queryByText('#9 Nour Hassan')).toBeNull();
+  });
+
+  // The list has to follow the match, not just its kickoff: after one change the
+  // arriving player can be taken off and the departing one is out of both lists.
+  it('follows the pitch once a substitution has been made', async () => {
+    const sub = { id: 'e-sub', match_id: 'match-1', type: 'substitution' as const, minute: 5, team_id: 'home', player_id: 'bench-1', secondary_player_id: 'p-1', related_event_id: null, notes: null, is_penalty: false, substitution_reason: null, penalty_outcome: null, client_operation_id: 'sub', created_at: '', updated_at: '' };
+    jest.mocked(api.live).mockResolvedValue({ ...snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z' }), lineup, events: [sub] } as never);
+    const screen = await openSub();
+
+    fireEvent.press(await screen.findByLabelText('Coming off'));
+    expect(await screen.findByText('#12 Malak Sherif')).toBeTruthy();
+    expect(screen.queryByText('#9 Nour Hassan')).toBeNull();
+  });
+});
