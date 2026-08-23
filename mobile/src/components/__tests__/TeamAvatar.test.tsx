@@ -29,6 +29,15 @@ describe('TeamAvatar', () => {
     expect(screen.getByText('aimz', hidden)).toBeTruthy();
   });
 
+  // A standings row asks for 34, which is under the size the wordmark needs.
+  // The stripes are what say whose crest it is, so they stay: without them an
+  // AIMZ row wore a bare shield, which is what an opponent wears.
+  it('keeps the stripes at the size a standings row asks for', async () => {
+    const row = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={34} />);
+    expect(row.getAllByTestId('crest-stripe', hidden)).toHaveLength(6);
+    expect(row.queryByText('aimz', hidden)).toBeNull();
+  });
+
   it('gives an opponent the neutral shield, with no club wordmark', async () => {
     const screen = await render(<TeamAvatar name="Giza Lions" size={48} />);
     expect(screen.getByTestId('badge-opponent', hidden)).toBeTruthy();

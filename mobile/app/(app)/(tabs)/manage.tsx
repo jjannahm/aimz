@@ -182,6 +182,8 @@ export default function ManageScreen() {
 
   const save = form.handleSubmit(async (values) => {
     setFormError(null);
+    /** A competition whose draw is still to be made keeps the form on itself. */
+    let stayOn: Competition | null = null;
     try {
       if (resource === 'teams' || resource === 'opponents') {
         if (!values.name.trim()) throw new Error(resource === 'opponents' ? 'Enter the opposing club name.' : 'Enter a team or squad name.');
@@ -192,7 +194,12 @@ export default function ManageScreen() {
         // A knockout is a tournament with a draw size; everything else has none.
         const payload = { name: values.name.trim(), season: values.season.trim(), type: values.type as Competition['type'], team_count: values.type === 'tournament' && values.teamCount ? Number(values.teamCount) : null };
         if (values.type === 'tournament' && !values.teamCount) throw new Error('Choose how many teams the knockout is drawn for.');
-        editing ? await api.updateCompetition(editing.id, payload) : await api.createCompetition(payload);
+        const saved = editing ? await api.updateCompetition(editing.id, payload) : await api.createCompetition(payload);
+        // A knockout is only half set up when it saves: its groups exist but
+        // stand empty, and the draw is made from this very form. Clearing back
+        // to a blank one hid the section that does it, which read as the
+        // feature not being there at all.
+        if (saved.team_count) stayOn = saved;
       } else if (resource === 'players') {
         if (!values.name.trim() || !values.teamId || !values.position.trim()) throw new Error('Enter the player name, squad and position.');
         const payload = { name: values.name.trim(), team_id: values.teamId, position: values.position.trim(), jersey_number: values.jersey ? Number(values.jersey) : null, photo_key: editing && 'photo_key' in editing ? editing.photo_key : null, is_active: true };
@@ -208,7 +215,9 @@ export default function ManageScreen() {
         await api.createInvite({ label: values.label.trim(), code: values.code.trim() });
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await invalidate(); setEditing(null); form.reset(defaults);
+      await invalidate();
+      if (stayOn) { setEditing(stayOn); form.reset({ ...defaults, name: stayOn.name, season: stayOn.season, type: stayOn.type, teamCount: stayOn.team_count ? String(stayOn.team_count) : '' }); }
+      else { setEditing(null); form.reset(defaults); }
     } catch (error) { setFormError(error instanceof ApiError || error instanceof Error ? error.message : 'Could not save this item.'); }
   });
 
