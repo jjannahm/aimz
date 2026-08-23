@@ -26,7 +26,6 @@ describe('TeamAvatar', () => {
   it('gives an AIMZ squad the club crest', async () => {
     const screen = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={48} />);
     expect(screen.getByTestId('badge-aimz', hidden)).toBeTruthy();
-    expect(screen.getByText('aimz', hidden)).toBeTruthy();
   });
 
   it('gives an opponent the neutral shield, with no club wordmark', async () => {
@@ -35,13 +34,13 @@ describe('TeamAvatar', () => {
     expect(screen.queryByText('aimz', hidden)).toBeNull();
   });
 
-  it('drops the crest detail at table-row size, where it would be unreadable', async () => {
+  // The drawn crest lost its stripes and wordmark below forty points; the
+  // artwork carries its own detail and holds together at any size.
+  it('wears the same crest in a table row as in a squad list', async () => {
     const large = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={48} />);
     const small = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={34} />);
-    expect(large.getByText('aimz', hidden)).toBeTruthy();
-    // Still the crest, just without the stripes and wordmark.
+    expect(large.getByTestId('badge-aimz', hidden)).toBeTruthy();
     expect(small.getByTestId('badge-aimz', hidden)).toBeTruthy();
-    expect(small.queryByText('aimz', hidden)).toBeNull();
   });
 
   it('prefers an uploaded crest over the drawn badge', async () => {

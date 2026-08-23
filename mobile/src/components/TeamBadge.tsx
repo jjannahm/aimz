@@ -1,22 +1,16 @@
 import { Ionicons } from '@expo/vector-icons';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 /**
- * The club navy and the stripe blues, taken from the AIMZ artwork.
+ * The club's own gold, for the ring that keeps two AIMZ squads apart.
  *
- * These are fixed rather than theme roles for the same reason `cardPalette` is:
- * a club crest is the club's colours whatever the app's theme is doing, and the
- * light theme would wash the navy out.
+ * Fixed rather than a theme role for the same reason `cardPalette` is: a crest
+ * is the club's colours whatever the app's theme is doing.
  */
-const CREST_NAVY = '#1E2A5A';
 const CREST_EDGE = '#C9A227';
-const STRIPES = ['#2F6FB5', '#4E92CF', '#7FB6E3'];
-
-/** Below this the stripes and wordmark are mud, so the crest goes plain. */
-const DETAIL_FROM = 40;
 
 type Props = {
   /** AIMZ squads wear the club crest; everyone else gets the neutral shield. */
@@ -47,21 +41,20 @@ export function TeamBadge({ isAimz = false, size = 44, tone }: Props) {
     </View>;
   }
 
-  const detailed = size >= DETAIL_FROM;
-  const stripeWidth = Math.max(2, Math.round(size * 0.075));
   return <View accessibilityElementsHidden style={[styles.wrap, { height: size, width: size }]} testID="badge-aimz">
-    <Ionicons color={tone === 'light' ? CREST_EDGE : CREST_NAVY} name="shield" size={size} />
-    {detailed ? <>
-      <View style={[styles.stripes, { gap: Math.max(1, Math.round(size * 0.03)), top: Math.round(size * 0.2) }]}>
-        {STRIPES.map((stripe) => <View key={stripe} style={{ backgroundColor: stripe, borderRadius: stripeWidth / 2, height: Math.round(size * 0.3), width: stripeWidth }} />)}
-      </View>
-      <Text allowFontScaling={false} style={[styles.mark, { fontSize: Math.round(size * 0.19), top: Math.round(size * 0.53) }]}>aimz</Text>
-    </> : null}
+    <Image
+      resizeMode="cover"
+      source={require('../../assets/branding/aimz-crest.jpg')}
+      style={[
+        { borderRadius: size / 2, height: size, width: size },
+        // Two AIMZ squads meeting would wear the same crest, so one side takes
+        // the club's gold ring to tell them apart.
+        tone === 'light' ? { borderColor: CREST_EDGE, borderWidth: Math.max(1, Math.round(size * 0.06)) } : null,
+      ]}
+    />
   </View>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+const stylesheet = (unused: ThemeColors) => StyleSheet.create({
   wrap: { alignItems: 'center', justifyContent: 'center' },
-  stripes: { flexDirection: 'row', position: 'absolute' },
-  mark: { color: colors.onAccent, fontWeight: '900', letterSpacing: 0.2, position: 'absolute' },
 });
