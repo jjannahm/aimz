@@ -45,8 +45,11 @@ const STRIPE_WIDTH = 6.3;
 const STRIPE_Y = 32.8;
 const STRIPE_HEIGHT = 65;
 
-/** Below this the stripes and wordmark are mud, so the crest goes plain. */
+/** Below this the wordmark is mud, so the crest keeps its stripes and drops it. */
 const DETAIL_FROM = 40;
+
+/** The stripes survive much smaller, and they are what says whose crest it is. */
+const STRIPES_FROM = 24;
 
 type Props = {
   /** AIMZ squads wear the club crest; everyone else gets the neutral shield. */
@@ -91,12 +94,13 @@ export function TeamBadge({ isAimz = false, size = 44 }: Props) {
   }
 
   const detailed = size >= DETAIL_FROM;
+  const striped = size >= STRIPES_FROM;
   return <View accessibilityElementsHidden style={[styles.wrap, { height: size, width: size }]} testID="badge-aimz">
     <Svg height={size} viewBox="0 0 100 100" width={size}>
-      {detailed ? <Defs><ClipPath id={clipId}><Path d={SHIELD_PATH} /></ClipPath></Defs> : null}
+      {striped ? <Defs><ClipPath id={clipId}><Path d={SHIELD_PATH} /></ClipPath></Defs> : null}
       <Path d={SHIELD_PATH} fill={CREST_NAVY} stroke={CREST_EDGE} strokeLinejoin="round" strokeWidth={BORDER_WIDTH} />
-      {detailed ? STRIPE_X.map((x) => (
-        <Rect clipPath={`url(#${clipId})`} fill={CREST_WHITE} height={STRIPE_HEIGHT} key={x} width={STRIPE_WIDTH} x={x} y={STRIPE_Y} />
+      {striped ? STRIPE_X.map((x) => (
+        <Rect clipPath={`url(#${clipId})`} fill={CREST_WHITE} height={STRIPE_HEIGHT} key={x} testID="crest-stripe" width={STRIPE_WIDTH} x={x} y={STRIPE_Y} />
       )) : null}
     </Svg>
     {detailed ? <Text allowFontScaling={false} style={[styles.mark, { fontSize: Math.round(size * 0.13), top: Math.round(size * 0.13) }]}>aimz</Text> : null}
