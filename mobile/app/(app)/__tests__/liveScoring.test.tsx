@@ -104,6 +104,25 @@ describe('LiveScoringScreen — End match', () => {
   });
 });
 
+describe('LiveScoringScreen — opponent-only redirect', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  it('runs its hooks, then redirects the admin to final-score entry', async () => {
+    const base = match();
+    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+    jest.mocked(api.live).mockResolvedValue(snapshot({
+      status: 'scheduled',
+      phase: 'not_started',
+      phase_started_at: null,
+      home_team: { ...base.home_team!, is_aimz: false },
+      away_team: { ...base.away_team!, is_aimz: false },
+    }));
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    await waitFor(() => expect(screen.toJSON()).toMatchObject({ type: 'Redirect', props: { href: '/result/match-1' } }));
+    expect(api.live).toHaveBeenCalledWith('match-1');
+  });
+});
+
 describe('LiveScoringScreen — Cards', () => {
   beforeEach(() => {
     jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });

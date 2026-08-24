@@ -15,7 +15,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn() }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
 jest.mock('@/src/lib/api', () => ({
-  api: { live: jest.fn(), players: jest.fn() },
+  api: { live: jest.fn(), players: jest.fn(), matchAssignments: jest.fn().mockResolvedValue([]) },
   ApiError: class extends Error {},
 }));
 
@@ -59,6 +59,21 @@ describe('MatchDetailScreen — End match moved to live scoring', () => {
     const screen = await render(<MatchDetailScreen />, { wrapper });
     await screen.findByText('Open live scoring');
     expect(screen.queryByText('End match')).toBeNull();
+  });
+
+  it('suppresses empty timeline, pitch, and lineup for opponent-only results', async () => {
+    const base = match();
+    jest.mocked(api.live).mockResolvedValue(snapshot({
+      status: 'finished',
+      phase: 'finished',
+      home_team: { ...base.home_team!, is_aimz: false },
+      away_team: { ...base.away_team!, is_aimz: false },
+    }));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('No team sheet or timeline is recorded for matches between two opponent clubs.')).toBeTruthy();
+    expect(screen.getByText('Edit final score')).toBeTruthy();
+    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(screen.queryByText('Lineups')).toBeNull();
   });
 });
 

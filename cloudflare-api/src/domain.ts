@@ -17,6 +17,7 @@ import {
 } from "./helpers";
 import type { CompetitionRow, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
 import { MatchPhaseTransitionError, transitionLegacyStatus } from "./match-clock";
+import { isOpponentOnly } from "./scoring-rules";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -240,7 +241,7 @@ export function registerDomainRoutes(app: App): void {
   });
   app.post("/api/v1/players", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const now = nowIso();
-    const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: stringField(body, "position", { min: 1, max: 60 })!, jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, photo_key: stringField(body, "photo_key", { optional: true, nullable: true, max: 512 }) ?? null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
+    const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: stringField(body, "position", { min: 1, max: 60 })!, jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, photo_key: stringField(body, "photo_key", { optional: true, nullable: true, max: 512 }) ?? null, date_of_birth: null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
     await requireTeam(c.env, player.team_id);
     try { await c.env.DB.prepare("INSERT INTO players (id, name, team_id, position, jersey_number, photo_key, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, now, now).run(); }
     catch { throw new ApiProblem(409, "jersey_conflict", "That jersey number is already used by this team."); }
@@ -291,6 +292,12 @@ export function registerDomainRoutes(app: App): void {
     // came back "Check the highlighted fields" after saving perfectly well.
     const merged = { ...current, has_extra_time: current.has_extra_time === 1, ...body };
     const input = await matchInput(c.env, merged); const updated = nowIso();
+    // Everything else about the match stays editable; only the clock is not,
+    // because there is nobody at this one to run it. The score goes in through
+    // /result, which finishes the match itself.
+    if (input.status !== current.status && isOpponentOnly(current.home_is_aimz, current.away_is_aimz)) {
+      throw new ApiProblem(409, "opponent_only_match", "This match is between two opponent teams. Enter the final score instead.");
+    }
     let clock;
     try { clock = transitionLegacyStatus(current, input.status, updated); }
     catch (error) {

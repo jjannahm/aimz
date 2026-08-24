@@ -9,5 +9,6 @@ export const copy = {
   emptyAwards: 'Season awards appear once a competition has a finished match.',
   emptySquad: (ageGroup: string) => `Admin-added ${ageGroup} players will appear here.`,
   emptyLeaders: 'Rankings build automatically once finished matches have player stats.',
+  accountNotLinked: 'Ask an AIMZ administrator to link your account to your squad player.',
   retry: 'Try again',
 } as const;

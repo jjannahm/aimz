@@ -176,6 +176,26 @@ export interface paths {
         patch: operations["update_me_api_v1_users_me_patch"];
         trace?: never;
     };
+    "/api/v1/admin/audit-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Audit Log
+         * @description Newest first, optionally narrowed to one match.
+         */
+        get: operations["list_audit_log_api_v1_admin_audit_log_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/users": {
         parameters: {
             query?: never;
@@ -192,6 +212,30 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Link User Player
+         * @description Point an account at the roster player whose stats are its own.
+         *
+         *     Personal invitations cover accounts made from here on; this covers the ones
+         *     that already exist, and the times a link was made against the wrong player.
+         *     Passing null unlinks.
+         */
+        patch: operations["link_user_player_api_v1_admin_users__user_id__patch"];
         trace?: never;
     };
     "/api/v1/admin/registration-invites": {
@@ -391,6 +435,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/matches/{match_id}/result": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record Result
+         * @description The whole scoring surface for a match between two opponent clubs.
+         *
+         *     Everywhere else a scoreline is derived from the timeline and never written
+         *     by hand, because the timeline is the record. Here there is no timeline to
+         *     derive it from, so the score is the record, and this is the only route that
+         *     may set it. Kept off PATCH deliberately: PATCH takes a whole match, and
+         *     widening it would let a stale client roll a corrected score back.
+         *
+         *     It goes straight to finished without asking the clock, since scheduled to
+         *     finished is a transition the phase machine has no reason to allow. Calling
+         *     it again on a finished match is how a wrong score is corrected.
+         */
+        post: operations["record_result_api_v1_matches__match_id__result_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/matches/{match_id}/man-of-the-match": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Set Man Of The Match */
+        post: operations["set_man_of_the_match_api_v1_matches__match_id__man_of_the_match_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/matches/{match_id}/events": {
         parameters: {
             query?: never;
@@ -497,6 +588,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/teams/{team_id}/head-to-head/{opponent_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Head To Head
+         * @description Every finished meeting between two teams, from the first team's side.
+         */
+        get: operations["head_to_head_api_v1_teams__team_id__head_to_head__opponent_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/players/{player_id}/stats": {
         parameters: {
             query?: never;
@@ -523,9 +634,29 @@ export interface paths {
         };
         /**
          * Stat Leaders
-         * @description Rank players by goals or assists across finished matches.
+         * @description Rank players by goals, assists, or cards collected, across finished matches.
          */
         get: operations["stat_leaders_api_v1_stats_leaders_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/competitions/{competition_id}/awards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Season Awards
+         * @description Season honours, drawn from finished matches in one competition.
+         */
+        get: operations["season_awards_api_v1_competitions__competition_id__awards_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -555,6 +686,28 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdminAccountRead */
+        AdminAccountRead: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            role: components["schemas"]["UserRole"];
+            /** Player Id */
+            player_id: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            player?: components["schemas"]["PlayerRead"] | null;
+            team?: components["schemas"]["TeamRead"] | null;
+        };
         /** AdminUserCreate */
         AdminUserCreate: {
             /** Name */
@@ -573,6 +726,35 @@ export interface components {
             invite_code: string;
             /** @default admin */
             role: components["schemas"]["UserRole"];
+        };
+        /** AdminUserUpdate */
+        AdminUserUpdate: {
+            /** Player Id */
+            player_id?: string | null;
+        };
+        /** AuditLogRead */
+        AuditLogRead: {
+            /** Id */
+            id: string;
+            /** Actor Id */
+            actor_id: string | null;
+            /** Actor Name */
+            actor_name: string;
+            /** Action */
+            action: string;
+            /** Entity Type */
+            entity_type: string;
+            /** Entity Id */
+            entity_id: string | null;
+            /** Match Id */
+            match_id: string | null;
+            /** Summary */
+            summary: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
         };
         /** CompetitionInput */
         CompetitionInput: {
@@ -611,11 +793,49 @@ export interface components {
          * EventType
          * @enum {string}
          */
-        EventType: "goal" | "assist" | "yellow_card" | "red_card" | "substitution";
+        EventType: "goal" | "assist" | "own_goal" | "penalty_missed" | "yellow_card" | "red_card" | "substitution";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** HeadToHead */
+        HeadToHead: {
+            team: components["schemas"]["TeamRead"];
+            opponent: components["schemas"]["TeamRead"];
+            /** Played */
+            played: number;
+            /** Won */
+            won: number;
+            /** Drawn */
+            drawn: number;
+            /** Lost */
+            lost: number;
+            /** Goals For */
+            goals_for: number;
+            /** Goals Against */
+            goals_against: number;
+            /** Meetings */
+            meetings: components["schemas"]["HeadToHeadMeeting"][];
+        };
+        /** HeadToHeadMeeting */
+        HeadToHeadMeeting: {
+            /** Match Id */
+            match_id: string;
+            /**
+             * Kickoff Datetime
+             * Format: date-time
+             */
+            kickoff_datetime: string;
+            competition?: components["schemas"]["CompetitionRead"] | null;
+            home_team?: components["schemas"]["TeamRead"] | null;
+            away_team?: components["schemas"]["TeamRead"] | null;
+            /** Home Score */
+            home_score: number;
+            /** Away Score */
+            away_score: number;
+            /** Result */
+            result: string;
         };
         /** HealthResponse */
         HealthResponse: {
@@ -644,6 +864,8 @@ export interface components {
             label: string;
             /** Code */
             code: string;
+            /** Player Id */
+            player_id?: string | null;
             /** Expires At */
             expires_at?: string | null;
             /** Max Uses */
@@ -655,6 +877,8 @@ export interface components {
             id: string;
             /** Label */
             label: string;
+            /** Player Id */
+            player_id: string | null;
             /** Expires At */
             expires_at: string | null;
             /** Max Uses */
@@ -680,6 +904,11 @@ export interface components {
              * @default false
              */
             is_starter: boolean;
+            /**
+             * Is Captain
+             * @default false
+             */
+            is_captain: boolean;
             /** Position */
             position?: string | null;
             /** Jersey Number */
@@ -696,6 +925,11 @@ export interface components {
              * @default false
              */
             is_starter: boolean;
+            /**
+             * Is Captain
+             * @default false
+             */
+            is_captain: boolean;
             /** Position */
             position?: string | null;
             /** Jersey Number */
@@ -725,6 +959,11 @@ export interface components {
             /** Password */
             password: string;
         };
+        /** ManOfTheMatchInput */
+        ManOfTheMatchInput: {
+            /** Player Id */
+            player_id?: string | null;
+        };
         /** MatchEventInput */
         MatchEventInput: {
             type: components["schemas"]["EventType"];
@@ -745,6 +984,8 @@ export interface components {
              * @default false
              */
             is_penalty: boolean;
+            substitution_reason?: components["schemas"]["SubstitutionReason"] | null;
+            penalty_outcome?: components["schemas"]["PenaltyOutcome"] | null;
             /** Client Operation Id */
             client_operation_id: string;
         };
@@ -768,6 +1009,8 @@ export interface components {
              * @default false
              */
             is_penalty: boolean;
+            substitution_reason?: components["schemas"]["SubstitutionReason"] | null;
+            penalty_outcome?: components["schemas"]["PenaltyOutcome"] | null;
             /** Client Operation Id */
             client_operation_id: string;
             /** Id */
@@ -800,6 +1043,8 @@ export interface components {
             notes?: string | null;
             /** Is Penalty */
             is_penalty?: boolean | null;
+            substitution_reason?: components["schemas"]["SubstitutionReason"] | null;
+            penalty_outcome?: components["schemas"]["PenaltyOutcome"] | null;
         };
         /** MatchInput */
         MatchInput: {
@@ -843,6 +1088,10 @@ export interface components {
              * @default 15
              */
             extra_time_half_length_minutes: number;
+            /** Lineup Format */
+            lineup_format?: number | null;
+            /** Formation */
+            formation?: string | null;
         };
         /**
          * MatchPhase
@@ -899,9 +1148,15 @@ export interface components {
              * @default 15
              */
             extra_time_half_length_minutes: number;
+            /** Lineup Format */
+            lineup_format?: number | null;
+            /** Formation */
+            formation?: string | null;
             /** Id */
             id: string;
             phase: components["schemas"]["MatchPhase"];
+            /** Man Of The Match Player Id */
+            man_of_the_match_player_id?: string | null;
             /** Phase Started At */
             phase_started_at: string | null;
             /** Home Score */
@@ -925,6 +1180,16 @@ export interface components {
             competition?: components["schemas"]["CompetitionRead"] | null;
         };
         /**
+         * MatchResultInput
+         * @description The final score of a match nobody from AIMZ was at to score live.
+         */
+        MatchResultInput: {
+            /** Home Score */
+            home_score: number;
+            /** Away Score */
+            away_score: number;
+        };
+        /**
          * MatchStatus
          * @enum {string}
          */
@@ -933,6 +1198,28 @@ export interface components {
         MessageResponse: {
             /** Message */
             message: string;
+        };
+        /** Page[AdminAccountRead] */
+        Page_AdminAccountRead_: {
+            /** Items */
+            items: components["schemas"]["AdminAccountRead"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** Page[AuditLogRead] */
+        Page_AuditLogRead_: {
+            /** Items */
+            items: components["schemas"]["AuditLogRead"][];
+            /** Total */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** Page[CompetitionRead] */
         Page_CompetitionRead_: {
@@ -978,17 +1265,6 @@ export interface components {
             /** Offset */
             offset: number;
         };
-        /** Page[UserRead] */
-        Page_UserRead_: {
-            /** Items */
-            items: components["schemas"]["UserRead"][];
-            /** Total */
-            total: number;
-            /** Limit */
-            limit: number;
-            /** Offset */
-            offset: number;
-        };
         /** PasswordChange */
         PasswordChange: {
             /** Current Password */
@@ -1015,6 +1291,22 @@ export interface components {
              * Format: email
              */
             email: string;
+        };
+        /**
+         * PenaltyOutcome
+         * @enum {string}
+         */
+        PenaltyOutcome: "saved" | "off_target";
+        /** PlayerAward */
+        PlayerAward: {
+            /** Label */
+            label: string;
+            player: components["schemas"]["PlayerRead"];
+            team: components["schemas"]["TeamRead"];
+            /** Value */
+            value: number;
+            /** Unit */
+            unit: string;
         };
         /** PlayerInput */
         PlayerInput: {
@@ -1044,6 +1336,10 @@ export interface components {
             goals: number;
             /** Assists */
             assists: number;
+            /** Yellow Cards */
+            yellow_cards: number;
+            /** Red Cards */
+            red_cards: number;
             /** Appearances */
             appearances: number;
         };
@@ -1063,6 +1359,8 @@ export interface components {
             goals: number;
             /** Assists */
             assists: number;
+            /** Own Goals */
+            own_goals: number;
             /** Yellow Cards */
             yellow_cards: number;
             /** Red Cards */
@@ -1113,6 +1411,8 @@ export interface components {
             goals: number;
             /** Assists */
             assists: number;
+            /** Own Goals */
+            own_goals: number;
             /** Yellow Cards */
             yellow_cards: number;
             /** Red Cards */
@@ -1189,11 +1489,21 @@ export interface components {
             /** Invite Code */
             invite_code: string;
         };
+        /** SeasonAwards */
+        SeasonAwards: {
+            competition: components["schemas"]["CompetitionRead"];
+            /** Player Awards */
+            player_awards?: components["schemas"]["PlayerAward"][];
+            /** Team Awards */
+            team_awards?: components["schemas"]["TeamAward"][];
+        };
         /** StandingRow */
         StandingRow: {
             /** Rank */
             rank: number;
             team: components["schemas"]["TeamRead"];
+            /** Form */
+            form?: string[];
             /** Played */
             played: number;
             /** Won */
@@ -1210,6 +1520,21 @@ export interface components {
             goal_difference: number;
             /** Points */
             points: number;
+        };
+        /**
+         * SubstitutionReason
+         * @enum {string}
+         */
+        SubstitutionReason: "tactical" | "injury" | "concussion" | "disciplinary" | "other";
+        /** TeamAward */
+        TeamAward: {
+            /** Label */
+            label: string;
+            team: components["schemas"]["TeamRead"];
+            /** Value */
+            value: number;
+            /** Unit */
+            unit: string;
         };
         /** TeamInput */
         TeamInput: {
@@ -1233,6 +1558,12 @@ export interface components {
             is_active: boolean;
             /** Logo Key */
             logo_key?: string | null;
+            /** Coach */
+            coach?: string | null;
+            /** Assistant Coach */
+            assistant_coach?: string | null;
+            /** Competition Id */
+            competition_id?: string | null;
         };
         /** TeamRead */
         TeamRead: {
@@ -1256,6 +1587,12 @@ export interface components {
             is_active: boolean;
             /** Logo Key */
             logo_key?: string | null;
+            /** Coach */
+            coach?: string | null;
+            /** Assistant Coach */
+            assistant_coach?: string | null;
+            /** Competition Id */
+            competition_id?: string | null;
             /** Id */
             id: string;
             /**
@@ -1681,6 +2018,39 @@ export interface operations {
             };
         };
     };
+    list_audit_log_api_v1_admin_audit_log_get: {
+        parameters: {
+            query?: {
+                match_id?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AuditLogRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_users_api_v1_admin_users_get: {
         parameters: {
             query?: {
@@ -1699,7 +2069,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page_UserRead_"];
+                    "application/json": components["schemas"]["Page_AdminAccountRead_"];
                 };
             };
             /** @description Validation Error */
@@ -1728,6 +2098,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    link_user_player_api_v1_admin_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2422,6 +2827,76 @@ export interface operations {
             };
         };
     };
+    record_result_api_v1_matches__match_id__result_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MatchResultInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_man_of_the_match_api_v1_matches__match_id__man_of_the_match_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                match_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ManOfTheMatchInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MatchRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_events_api_v1_matches__match_id__events_get: {
         parameters: {
             query?: never;
@@ -2750,6 +3225,38 @@ export interface operations {
             };
         };
     };
+    head_to_head_api_v1_teams__team_id__head_to_head__opponent_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+                opponent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HeadToHead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     player_stats_api_v1_players__player_id__stats_get: {
         parameters: {
             query?: {
@@ -2786,9 +3293,10 @@ export interface operations {
     stat_leaders_api_v1_stats_leaders_get: {
         parameters: {
             query?: {
-                metric?: "goals" | "assists";
+                metric?: "goals" | "assists" | "cards";
                 age_group?: string | null;
                 season?: string | null;
+                competition_id?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -2804,6 +3312,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlayerLeaderRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    season_awards_api_v1_competitions__competition_id__awards_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                competition_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SeasonAwards"];
                 };
             };
             /** @description Validation Error */

@@ -204,7 +204,7 @@ async def test_operator_controlled_match_clock_phases(
     client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
     home = await client.post(
-        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Clock Test"}
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Clock Test", "is_aimz": True}
     )
     away = await client.post(
         "/api/v1/teams", headers=admin_headers, json={"name": "Clock Opponent"}
@@ -262,7 +262,7 @@ async def test_match_clock_rejects_skipped_phases(
     client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
     home = await client.post(
-        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Phase Test"}
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Phase Test", "is_aimz": True}
     )
     away = await client.post(
         "/api/v1/teams", headers=admin_headers, json={"name": "Phase Opponent"}
@@ -483,7 +483,9 @@ async def test_stat_leaders_rank_by_metric_and_age_group(
 async def test_match_stores_period_structure(
     client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
-    home = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Timing"})
+    home = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Timing", "is_aimz": True}
+    )
     away = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "Nile Rovers"})
     competition = await client.post(
         "/api/v1/competitions",
@@ -549,7 +551,7 @@ async def test_goal_can_be_flagged_as_a_penalty(
     client: AsyncClient, admin_headers: dict[str, str]
 ) -> None:
     home = await client.post(
-        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Spot Kicks"}
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Spot Kicks", "is_aimz": True}
     )
     away = await client.post("/api/v1/teams", headers=admin_headers, json={"name": "Luxor United"})
     competition = await client.post(
@@ -606,6 +608,201 @@ async def test_goal_can_be_flagged_as_a_penalty(
     assert live.json()["match"]["home_score"] == 2
     flags = {event["minute"]: event["is_penalty"] for event in live.json()["events"]}
     assert flags == {12: True, 30: False}
+
+
+@pytest.mark.asyncio
+async def test_opponent_result_correction_guards_and_standings(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    home = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "Cairo Comets", "is_aimz": False}
+    )
+    away = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "Nile Stars", "is_aimz": False}
+    )
+    competition = await client.post(
+        "/api/v1/competitions",
+        headers=admin_headers,
+        json={"name": "Opponent League", "season": "2026/27", "type": "league"},
+    )
+    payload = {
+        "competition_id": competition.json()["id"],
+        "home_team_id": home.json()["id"],
+        "away_team_id": away.json()["id"],
+        "kickoff_datetime": datetime.now(UTC).isoformat(),
+        "venue": "Cairo Stadium",
+        "status": "scheduled",
+    }
+    match = await client.post("/api/v1/matches", headers=admin_headers, json=payload)
+    assert match.status_code == 201, match.text
+    match_id = match.json()["id"]
+
+    blocked_before_result = await client.post(
+        f"/api/v1/matches/{match_id}/events",
+        headers=admin_headers,
+        json={
+            "type": "goal",
+            "minute": 1,
+            "team_id": home.json()["id"],
+            "client_operation_id": "opponent-before-result",
+        },
+    )
+    assert blocked_before_result.status_code == 409
+    assert blocked_before_result.json()["detail"]["code"] == "opponent_only_match"
+
+    first = await client.post(
+        f"/api/v1/matches/{match_id}/result",
+        headers=admin_headers,
+        json={"home_score": 2, "away_score": 1},
+    )
+    assert first.status_code == 200, first.text
+    assert (first.json()["status"], first.json()["phase"], first.json()["revision"]) == (
+        "finished",
+        "finished",
+        1,
+    )
+    assert first.json()["home_team"]["name"] == "Cairo Comets"
+
+    corrected = await client.post(
+        f"/api/v1/matches/{match_id}/result",
+        headers=admin_headers,
+        json={"home_score": 1, "away_score": 3},
+    )
+    assert corrected.status_code == 200
+    assert (corrected.json()["home_score"], corrected.json()["away_score"]) == (1, 3)
+    assert corrected.json()["revision"] == 2
+    assert (
+        await client.post(
+            f"/api/v1/matches/{match_id}/result",
+            headers=admin_headers,
+            json={"home_score": 100, "away_score": 0},
+        )
+    ).status_code == 422
+
+    guarded_writes = [
+        await client.post(
+            f"/api/v1/matches/{match_id}/events",
+            headers=admin_headers,
+            json={
+                "type": "goal",
+                "minute": 1,
+                "team_id": home.json()["id"],
+                "client_operation_id": "opponent-guard-event",
+            },
+        ),
+        await client.put(f"/api/v1/matches/{match_id}/lineup", headers=admin_headers, json=[]),
+        await client.put(
+            f"/api/v1/matches/{match_id}/player-stats", headers=admin_headers, json=[]
+        ),
+        await client.post(
+            f"/api/v1/matches/{match_id}/phase",
+            headers=admin_headers,
+            json={"action": "start_match"},
+        ),
+        await client.post(
+            f"/api/v1/matches/{match_id}/man-of-the-match",
+            headers=admin_headers,
+            json={"player_id": None},
+        ),
+    ]
+    assert all(response.status_code == 409 for response in guarded_writes)
+    assert {response.json()["detail"]["code"] for response in guarded_writes} == {
+        "opponent_only_match"
+    }
+
+    metadata = await client.patch(
+        f"/api/v1/matches/{match_id}",
+        headers=admin_headers,
+        json={**payload, "venue": "New Cairo Stadium", "status": "finished"},
+    )
+    assert metadata.status_code == 200, metadata.text
+    transitioned = await client.patch(
+        f"/api/v1/matches/{match_id}",
+        headers=admin_headers,
+        json={**payload, "status": "live"},
+    )
+    assert transitioned.status_code == 409
+    assert transitioned.json()["detail"]["code"] == "opponent_only_match"
+
+    table = await client.get(
+        f"/api/v1/competitions/{competition.json()['id']}/standings", headers=admin_headers
+    )
+    winner = next(row for row in table.json() if row["team"]["id"] == away.json()["id"])
+    assert (winner["points"], winner["goals_for"], winner["goals_against"]) == (3, 3, 1)
+    audit = await client.get(
+        f"/api/v1/admin/audit-log?match_id={match_id}", headers=admin_headers
+    )
+    assert [entry["action"] for entry in audit.json()["items"]].count("result_entered") == 2
+
+
+@pytest.mark.asyncio
+async def test_personal_invite_account_linking_and_conflicts(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    squad = await client.post(
+        "/api/v1/teams", headers=admin_headers, json={"name": "AIMZ Linked", "is_aimz": True}
+    )
+    player = await client.post(
+        "/api/v1/players",
+        headers=admin_headers,
+        json={"name": "Linked Player", "team_id": squad.json()["id"], "position": "Keeper"},
+    )
+    invite = await client.post(
+        "/api/v1/admin/registration-invites",
+        headers=admin_headers,
+        json={
+            "label": "Linked Player",
+            "code": "PERSONAL-LINK",
+            "player_id": player.json()["id"],
+            "max_uses": 50,
+        },
+    )
+    assert invite.status_code == 201, invite.text
+    assert invite.json()["player_id"] == player.json()["id"]
+    assert invite.json()["max_uses"] == 1
+    registered = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "name": "Linked Login",
+            "email": "linked@aimz.example.com",
+            "password": "long-secure-password",
+            "invite_code": "PERSONAL-LINK",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    linked_user = registered.json()["user"]
+    assert linked_user["player_id"] == player.json()["id"]
+
+    accounts = await client.get("/api/v1/admin/users?limit=100", headers=admin_headers)
+    assert accounts.status_code == 200, accounts.text
+    account = next(item for item in accounts.json()["items"] if item["id"] == linked_user["id"])
+    assert account["player"]["name"] == "Linked Player"
+    assert account["team"]["name"] == "AIMZ Linked"
+
+    admin_id = next(
+        item["id"] for item in accounts.json()["items"] if item["email"] == "admin@aimz.example.com"
+    )
+    conflict = await client.patch(
+        f"/api/v1/admin/users/{admin_id}",
+        headers=admin_headers,
+        json={"player_id": player.json()["id"]},
+    )
+    assert conflict.status_code == 409
+    assert conflict.json()["detail"]["code"] == "player_already_linked"
+    missing = await client.patch(
+        f"/api/v1/admin/users/{admin_id}",
+        headers=admin_headers,
+        json={"player_id": "00000000-0000-0000-0000-000000000000"},
+    )
+    assert missing.status_code == 422
+    assert missing.json()["detail"]["code"] == "player_not_found"
+    unlinked = await client.patch(
+        f"/api/v1/admin/users/{linked_user['id']}",
+        headers=admin_headers,
+        json={"player_id": None},
+    )
+    assert unlinked.status_code == 200
+    assert unlinked.json()["player_id"] is None
 
 
 @pytest.mark.asyncio

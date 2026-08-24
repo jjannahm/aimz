@@ -66,12 +66,13 @@ export function stringField(
 export function numberField(
   body: JsonObject,
   field: string,
-  options: { min?: number; max?: number; optional?: boolean; nullable?: boolean } = {},
+  options: { min?: number; max?: number; optional?: boolean; nullable?: boolean; integer?: boolean } = {},
 ): number | null | undefined {
   const value = body[field];
   if (value === undefined && options.optional) return undefined;
   if (value === null && options.nullable) return null;
   if (typeof value !== "number" || !Number.isFinite(value)) throw validation(field, "Must be a number.");
+  if (options.integer && !Number.isInteger(value)) throw validation(field, "Must be a whole number.");
   if (options.min !== undefined && value < options.min) throw validation(field, `Must be at least ${options.min}.`);
   if (options.max !== undefined && value > options.max) throw validation(field, `Must be at most ${options.max}.`);
   return value;
@@ -128,7 +129,18 @@ export function publicStat(stat: StatRow): Record<string, unknown> {
 
 export function publicPlayer(player: PlayerRow | null): Record<string, unknown> | null {
   if (!player) return null;
-  return { ...player, is_active: Boolean(player.is_active), photo_url: null };
+  return {
+    id: player.id,
+    name: player.name,
+    team_id: player.team_id,
+    position: player.position,
+    jersey_number: player.jersey_number,
+    photo_key: player.photo_key,
+    is_active: Boolean(player.is_active),
+    created_at: player.created_at,
+    updated_at: player.updated_at,
+    photo_url: null,
+  };
 }
 
 export function publicMatch(

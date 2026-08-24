@@ -74,4 +74,14 @@ describe('DateTimeField', () => {
     expect(await screen.findByText('October 2026')).toBeTruthy();
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it('acts as a date-only calendar without exposing time controls', async () => {
+    const onChange = jest.fn();
+    const screen = await render(<DateTimeField dateOnly label="Date of birth" onChange={onChange} value="2012-05-09" />);
+    expect(screen.getByText('May 9, 2012')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Date of birth'));
+    expect(screen.queryByText(/AM|PM/u)).toBeNull();
+    fireEvent.press(await screen.findByLabelText('12 May 2012'));
+    expect(onChange).toHaveBeenCalledWith('2012-05-12');
+  });
 });

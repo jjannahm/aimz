@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyStanding, AWARDS, MIN_AWARD_APPEARANCES, outcome, type AwardDefinition } from "./scoring-rules.ts";
+import { applyStanding, AWARDS, isOpponentOnly, MIN_AWARD_APPEARANCES, outcome, type AwardDefinition } from "./scoring-rules.ts";
 import type { AwardTotals, StandingAccumulator } from "./types.ts";
 
 const totals = (player_id: string, fields: Partial<AwardTotals> = {}): AwardTotals =>
@@ -82,4 +82,19 @@ test("an untested nil does not win best discipline", () => {
 test("two equally clean records rank the busier season first", () => {
   const rows = [totals("squad", { cards: 0, appearances: 4 }), totals("starter", { cards: 0, appearances: 14 })];
   assert.deepEqual(rank("discipline", rows), ["starter", "squad"]);
+});
+
+test("a match between two opponent clubs has nobody there to score it", () => {
+  assert.equal(isOpponentOnly(0, 0), true);
+});
+
+test("one AIMZ squad on either side is scored from the sideline as before", () => {
+  assert.equal(isOpponentOnly(1, 0), false);
+  assert.equal(isOpponentOnly(0, 1), false);
+  assert.equal(isOpponentOnly(1, 1), false);
+});
+
+test("reads the flag whether D1 hands it back as an integer or a boolean", () => {
+  assert.equal(isOpponentOnly(false, false), true);
+  assert.equal(isOpponentOnly(true, false), false);
 });
