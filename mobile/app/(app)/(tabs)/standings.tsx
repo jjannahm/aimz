@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -71,7 +72,11 @@ export default function StandingsScreen() {
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
   const eligible = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
   const [selected, setSelected] = useState<string | null>(null);
-  const competition = eligible.find((item) => item.id === selected) ?? eligible[0];
+  // Arriving from Manage names the competition to open, so the admin lands on
+  // the table they were just setting up rather than on whichever is first.
+  const { competition: requested } = useLocalSearchParams<{ competition?: string }>();
+  useEffect(() => { if (requested) setSelected(requested); }, [requested]);
+  const competition = eligible.find((item) => item.id === (selected ?? requested)) ?? eligible[0];
   const competitionId = competition?.id;
   const knockout = isKnockout(competition);
   const table = useQuery({ queryKey: ['standings', competitionId], queryFn: () => api.standings(competitionId!), enabled: Boolean(competitionId) });
