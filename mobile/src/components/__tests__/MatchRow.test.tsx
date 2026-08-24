@@ -10,7 +10,7 @@ const base: Match = {
   has_extra_time: true, extra_time_half_length_minutes: 15, created_at: '', updated_at: '',
   home_team: { id: 'home', name: 'AIMZ Women', squad_code: null, age_group: null, season: null, is_aimz: true, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, logo_url: null, created_at: '', updated_at: '' },
   away_team: { id: 'away', name: 'Cairo Stars', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, logo_url: null, created_at: '', updated_at: '' },
-  competition: { id: 'competition', name: 'Academy League', season: '2026/27', type: 'league', team_count: null, created_at: '', updated_at: '' },
+  competition: { id: 'competition', name: 'Academy League', season: '2026/27', type: 'league', team_count: null, group_size: null, created_at: '', updated_at: '' },
 };
 
 describe('MatchRow', () => {

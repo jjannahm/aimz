@@ -16,8 +16,28 @@ export type RegistrationInvite = Schema['InviteRead'];
 export type PresignResponse = Schema['PresignResponse'];
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 /** 8, 16 or 32 for a knockout; null for a competition that is only a table. */
-export type Competition = Schema['CompetitionRead'] & { team_count: number | null };
+export type Competition = Schema['CompetitionRead'] & { team_count: number | null; group_size: number | null };
 export const KNOCKOUT_TEAM_COUNTS = [8, 16, 32] as const;
+/** Two from each group go through, which is what settles the bracket's size. */
+export const ADVANCE_PER_GROUP = 2;
+const isPowerOfTwo = (value: number) => Number.isInteger(value) && value >= 1 && (value & (value - 1)) === 0;
+
+/**
+ * What is wrong with a custom draw, or null when nothing is.
+ *
+ * The same rules the API enforces, checked here so the admin reads them while
+ * typing rather than after saving. A bracket halves or it does not exist, so
+ * the number of groups has to be a power of two: six groups send twelve teams
+ * through, and twelve teams have no bracket without byes.
+ */
+export function describeCustomDraw(groupCount: number, groupSize: number): string | null {
+  if (!Number.isInteger(groupCount) || groupCount < 2) return 'Enter at least 2 groups.';
+  if (!Number.isInteger(groupSize) || groupSize < 2) return 'A group holds at least 2 teams.';
+  if (!isPowerOfTwo(groupCount)) {
+    return `${groupCount} groups send ${groupCount * ADVANCE_PER_GROUP} teams through, which is not a bracket. Use 2, 4, 8 or 16 groups.`;
+  }
+  return null;
+}
 /** Every group is a four, which is where the 8/16/32 sizes come from. */
 export const GROUP_SIZE = 4;
 export type KnockoutTeamCount = (typeof KNOCKOUT_TEAM_COUNTS)[number];

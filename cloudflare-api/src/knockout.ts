@@ -1,44 +1,27 @@
 import type { Hono } from "hono";
 import { adminUser, ApiProblem, jsonArray, jsonObject, nowIso, publicTeam, stringField } from "./helpers";
 import { outcome } from "./scoring-rules";
+import { ADVANCE_PER_GROUP, GROUP_SIZE, groupCountFor, resolveShape, roundLabel, roundsFor, TEAM_COUNTS } from "./knockout-shape";
+import type { Shape } from "./knockout-shape";
 import type { BracketSlotRow, CompetitionGroupRow, CompetitionRow, MatchRow, TeamRow } from "./types";
 
-/** The sizes a knockout can be drawn for. Groups are always fours. */
-export const TEAM_COUNTS = [8, 16, 32] as const;
-export const GROUP_SIZE = 4;
+export { ADVANCE_PER_GROUP, GROUP_SIZE, groupCountFor, roundLabel, roundsFor, TEAM_COUNTS };
 
 /** "Group A", "Group B"… */
 const groupName = (position: number) => `Group ${String.fromCodePoint(65 + position)}`;
 
-export const groupCountFor = (teamCount: number) => teamCount / GROUP_SIZE;
-
-/**
- * Rounds a knockout runs, biggest first, named by how many teams are left.
- *
- * Two teams advance from each group, so the first round holds half the entry —
- * 32 teams becomes a round of 16.
- */
-export function roundsFor(teamCount: number): number[] {
-  const rounds: number[] = [];
-  for (let round = teamCount / 2; round >= 2; round /= 2) rounds.push(round);
-  return rounds;
-}
-
-export function roundLabel(round: number): string {
-  if (round === 2) return "Final";
-  if (round === 4) return "Semi Finals";
-  if (round === 8) return "Quarter Finals";
-  return `Round of ${round}`;
-}
+/** A competition drawn before custom shapes existed was drawn in fours. */
+export const groupSizeOf = (competition: Pick<CompetitionRow, "group_size">) => competition.group_size ?? GROUP_SIZE;
 
 /** Every group and bracket row a new knockout starts life with. */
-export function generationStatements(env: Env, competitionId: string, teamCount: number): D1PreparedStatement[] {
+export function generationStatements(env: Env, competitionId: string, teamCount: number, groupSize: number = GROUP_SIZE): D1PreparedStatement[] {
+  const groupCount = groupCountFor(teamCount, groupSize);
   const statements: D1PreparedStatement[] = [];
-  for (let position = 0; position < groupCountFor(teamCount); position += 1) {
+  for (let position = 0; position < groupCount; position += 1) {
     statements.push(env.DB.prepare("INSERT INTO competition_groups (id, competition_id, name, position) VALUES (?, ?, ?, ?)")
       .bind(crypto.randomUUID(), competitionId, groupName(position), position));
   }
-  for (const round of roundsFor(teamCount)) {
+  for (const round of roundsFor(groupCount)) {
     for (let position = 0; position < round / 2; position += 1) {
       statements.push(env.DB.prepare("INSERT INTO bracket_slots (id, competition_id, round, position) VALUES (?, ?, ?, ?)")
         .bind(crypto.randomUUID(), competitionId, round, position));
@@ -47,17 +30,13 @@ export function generationStatements(env: Env, competitionId: string, teamCount:
   return statements;
 }
 
-/** 8, 16 or 32, or null for a competition that is just a table. */
-export function teamCountField(body: Record<string, unknown>, fallback: number | null): number | null {
-  if (body.team_count === undefined) return fallback;
-  if (body.team_count === null) return null;
-  const value = body.team_count;
-  if (typeof value !== "number" || !TEAM_COUNTS.includes(value as (typeof TEAM_COUNTS)[number])) {
-    throw new ApiProblem(422, "validation_error", "Check the highlighted fields.", [
-      { field: "team_count", message: `Must be one of: ${TEAM_COUNTS.join(", ")}.` },
-    ]);
-  }
-  return value;
+/** Refuses a shape in the form the API answers with. */
+export function knockoutShape(body: Record<string, unknown>, fallback: Shape): Shape {
+  const teamCount = body.team_count === undefined ? fallback.team_count : body.team_count;
+  const groupSize = body.group_size === undefined ? fallback.group_size : body.group_size;
+  const result = resolveShape(teamCount, groupSize);
+  if (result.ok) return result.shape;
+  throw new ApiProblem(422, "validation_error", "Check the highlighted fields.", [{ field: result.field, message: result.message }]);
 }
 
 async function competitionOr404(env: Env, id: string): Promise<CompetitionRow> {
@@ -81,7 +60,7 @@ async function readBracket(env: Env, competition: CompetitionRow): Promise<Recor
     ? await env.DB.prepare(`SELECT * FROM teams WHERE id IN (${teamIds.map(() => "?").join(",")})`).bind(...teamIds).all<TeamRow>()
     : { results: [] as TeamRow[] };
   const teamMap = new Map(teams.results.map((team) => [team.id, team]));
-  const rounds = roundsFor(competition.team_count).map((round) => ({
+  const rounds = roundsFor(groupCountFor(competition.team_count, groupSizeOf(competition))).map((round) => ({
     round, label: roundLabel(round),
     slots: slots.results.filter((slot) => slot.round === round).map((slot) => publicSlot(slot, teamMap)),
   }));
@@ -154,7 +133,8 @@ export function registerKnockoutRoutes(app: Hono<{ Bindings: Env }>): void {
     if (!group) throw new ApiProblem(404, "group_not_found", "Group not found.");
     const body = await jsonArray(c);
     const teamIds = body.map((item) => stringField(item, "team_id", { min: 1, max: 36 })!);
-    if (teamIds.length > GROUP_SIZE) throw new ApiProblem(422, "validation_error", "Check the highlighted fields.", [{ field: "teams", message: `A group holds at most ${GROUP_SIZE} teams.` }]);
+    const capacity = groupSizeOf(competition);
+    if (teamIds.length > capacity) throw new ApiProblem(422, "validation_error", "Check the highlighted fields.", [{ field: "teams", message: `A group holds at most ${capacity} teams.` }]);
     const now = nowIso();
     const statements: D1PreparedStatement[] = [
       // Everyone drawn out of this group loses their place in it.
@@ -179,14 +159,15 @@ export function registerKnockoutRoutes(app: Hono<{ Bindings: Env }>): void {
     if (competition.team_count === null) throw new ApiProblem(409, "not_a_knockout", "This competition has no knockout stage.");
     const body = await jsonObject(c);
     const round = typeof body.round === "number" ? body.round : null;
-    if (round === null || !roundsFor(competition.team_count).includes(round)) {
+    const groupCount = groupCountFor(competition.team_count, groupSizeOf(competition));
+    if (round === null || !roundsFor(groupCount).includes(round)) {
       throw new ApiProblem(422, "validation_error", "Check the highlighted fields.", [{ field: "round", message: "Choose a round of this competition." }]);
     }
     const target = await c.env.DB.prepare("SELECT * FROM bracket_slots WHERE competition_id = ? AND round = ? ORDER BY position").bind(competition.id, round).all<BracketSlotRow>();
     if (target.results.some((slot) => slot.winner_team_id)) throw new ApiProblem(409, "round_locked", "This round already has a result. Clear it before drawing it again.");
 
     const pairs: [string | null, string | null][] = [];
-    if (round === competition.team_count / 2) {
+    if (round === groupCount * ADVANCE_PER_GROUP) {
       const groups = await c.env.DB.prepare("SELECT * FROM competition_groups WHERE competition_id = ? ORDER BY position").bind(competition.id).all<CompetitionGroupRow>();
       const tables = await groupStandings(c.env, competition.id);
       const winners: (string | null)[] = []; const runnersUp: (string | null)[] = [];
