@@ -92,13 +92,22 @@ class AdminUserCreate(RegisterRequest):
 class InviteCreate(BaseModel):
     label: str = Field(min_length=2, max_length=120)
     code: str = Field(min_length=4, max_length=128)
+    # Cutting an invitation for one named player links the account it creates to
+    # that roster record, which is how a player sees their own stats.
+    player_id: str | None = Field(default=None, max_length=36)
     expires_at: datetime | None = None
     max_uses: int | None = Field(default=None, ge=1)
+
+
+class AdminUserUpdate(BaseModel):
+    # Null unlinks. Anything else must be a roster player nobody else holds.
+    player_id: str | None = Field(default=None, max_length=36)
 
 
 class InviteRead(ORMModel):
     id: str
     label: str
+    player_id: str | None
     expires_at: datetime | None
     max_uses: int | None
     use_count: int
@@ -162,6 +171,11 @@ class PlayerRead(PlayerInput, ORMModel):
     def resolve_photo(self) -> PlayerRead:
         self.photo_url = create_signed_read_url(self.photo_key)
         return self
+
+
+class AdminAccountRead(UserRead):
+    player: PlayerRead | None = None
+    team: TeamRead | None = None
 
 
 EXTRA_TIME_PERIODS = 2
@@ -394,6 +408,13 @@ class PlayerSeasonSummary(BaseModel):
     yellow_cards: int
     red_cards: int
     matches: list[PlayerMatchStatRead]
+
+
+class MatchResultInput(BaseModel):
+    """The final score of a match nobody from AIMZ was at to score live."""
+
+    home_score: int = Field(ge=0, le=99)
+    away_score: int = Field(ge=0, le=99)
 
 
 class ManOfTheMatchInput(BaseModel):

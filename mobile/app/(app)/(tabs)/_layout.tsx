@@ -17,6 +17,7 @@ export default function TabsLayout() {
     <Tabs.Screen name="index" options={{ title: 'Matches', tabBarIcon: ({ color, size }) => <TabIcon color={color} name="matches" size={size} /> }} />
     <Tabs.Screen name="standings" options={{ title: 'Standings', tabBarIcon: ({ color, size }) => <TabIcon color={color} name="standings" size={size} /> }} />
     <Tabs.Screen name="players" options={{ title: 'Players', tabBarIcon: ({ color, size }) => <TabIcon color={color} name="players" size={size} /> }} />
+    <Tabs.Screen name="my-team" options={{ title: 'My Team', href: user?.role === 'admin' ? null : undefined, tabBarIcon: ({ color, size }) => <TabIcon color={color} name="myTeam" size={size} /> }} />
     <Tabs.Screen name="manage" options={{ title: 'Manage', href: user?.role === 'admin' ? undefined : null, tabBarIcon: ({ color, size }) => <TabIcon color={color} name="manage" size={size} /> }} />
     <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <TabIcon color={color} name="settings" size={size} /> }} />
   </Tabs>;

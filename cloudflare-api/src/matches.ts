@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { ApiProblem, adminUser, booleanField, enumField, jsonArray, jsonObject, nowIso, numberField, publicPlayer, publicStat, publicTeam, stringField } from "./helpers";
 import { recordAudit } from "./audit";
-import { describeEvent, eventCounter, LOGGABLE_EVENTS, PENALTY_OUTCOMES, SUBSTITUTION_REASONS } from "./scoring-rules";
+import { describeEvent, eventCounter, isOpponentOnly, LOGGABLE_EVENTS, PENALTY_OUTCOMES, SUBSTITUTION_REASONS } from "./scoring-rules";
 import { getJoinedMatch, joinedMatch } from "./domain";
 import { MatchPhaseTransitionError, transitionMatchPhase } from "./match-clock";
 import type { CompetitionRow, EventRow, LineupRow, MatchRow, PlayerRow, StatRow, TeamRow } from "./types";
@@ -16,10 +16,25 @@ function publicLineup(entry: LineupRow): Record<string, unknown> {
   return { ...entry, is_starter: Boolean(entry.is_starter), is_captain: Boolean(entry.is_captain) };
 }
 
+/**
+ * Refuses the sideline surface on a match nobody from AIMZ attends.
+ *
+ * Hiding the buttons is not the boundary: a match between two opponent clubs
+ * has no timeline, no team sheet and no clock to run, so every write that
+ * assumes someone is watching is turned away here rather than left to write a
+ * half-recorded match. The final score goes in through /result instead.
+ */
+function requireScorable(match: { home_is_aimz: number; away_is_aimz: number }): void {
+  if (isOpponentOnly(match.home_is_aimz, match.away_is_aimz)) {
+    throw new ApiProblem(409, "opponent_only_match", "This match is between two opponent teams. Enter the final score instead.");
+  }
+}
+
 export function registerMatchRoutes(app: App): void {
   app.post("/api/v1/matches/:id/phase", async (c) => {
     const admin = await adminUser(c);
     const match = await getJoinedMatch(c.env, c.req.param("id"));
+    requireScorable(match);
     const body = await jsonObject(c);
     const action = enumField(body, "action", ["start_match", "halftime", "start_second_half", "start_extra_time", "finish_match"] as const);
     const updated = nowIso();
@@ -36,9 +51,41 @@ export function registerMatchRoutes(app: App): void {
     return c.json(joinedMatch(await getJoinedMatch(c.env, match.id)));
   });
 
+  /**
+   * The whole scoring surface for a match between two opponent clubs.
+   *
+   * Everywhere else a scoreline is derived from the timeline and never written
+   * by hand, because the timeline is the record. Here there is no timeline to
+   * derive it from, so the score is the record, and this is the only route that
+   * may set it. Kept off PATCH deliberately: PATCH is what the lineup screen
+   * uses to save a formation, and widening it would let a score be typed over
+   * an AIMZ match that events had already counted.
+   *
+   * It goes straight to finished without asking the clock, since scheduled to
+   * finished is a transition the phase machine has no reason to allow. Calling
+   * it again on a finished match is how a wrong score is corrected.
+   */
+  app.post("/api/v1/matches/:id/result", async (c) => {
+    const admin = await adminUser(c);
+    const match = await getJoinedMatch(c.env, c.req.param("id"));
+    if (!isOpponentOnly(match.home_is_aimz, match.away_is_aimz)) {
+      throw new ApiProblem(409, "not_opponent_only", "This match has an AIMZ squad in it. Score it from live scoring.");
+    }
+    const body = await jsonObject(c);
+    const homeScore = numberField(body, "home_score", { min: 0, max: 99, integer: true })!;
+    const awayScore = numberField(body, "away_score", { min: 0, max: 99, integer: true })!;
+    const updated = nowIso();
+    await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE matches SET home_score=?, away_score=?, status='finished', phase='finished', phase_started_at=NULL, revision=revision+1, updated_at=? WHERE id=?").bind(homeScore, awayScore, updated, match.id),
+      recordAudit(c.env, admin, { action: "result_entered", entityType: "match", entityId: match.id, matchId: match.id, summary: `${match.status === "finished" ? "Corrected the final score to" : "Recorded a final score of"} ${homeScore}-${awayScore}.` }),
+    ]);
+    return c.json(joinedMatch(await getJoinedMatch(c.env, match.id)));
+  });
+
   app.post("/api/v1/matches/:id/man-of-the-match", async (c) => {
     const admin = await adminUser(c);
     const match = await getJoinedMatch(c.env, c.req.param("id"));
+    requireScorable(match);
     if (match.status !== "finished") throw new ApiProblem(409, "match_not_finished", "Pick man of the match once the match has finished.");
     const body = await jsonObject(c);
     const playerId = stringField(body, "player_id", { optional: true, nullable: true, max: 36 }) ?? null;
@@ -87,6 +134,7 @@ export function registerMatchRoutes(app: App): void {
   app.post("/api/v1/matches/:id/events", async (c) => {
     const admin = await adminUser(c);
     const match = await getJoinedMatch(c.env, c.req.param("id"));
+    requireScorable(match);
     const body = await jsonObject(c);
     const operationId = stringField(body, "client_operation_id", { min: 8, max: 64 })!;
     const duplicate = await c.env.DB.prepare("SELECT * FROM match_events WHERE client_operation_id = ?").bind(operationId).first<EventRow>();
@@ -145,6 +193,7 @@ export function registerMatchRoutes(app: App): void {
   app.patch("/api/v1/matches/:matchId/events/:eventId", async (c) => {
     const admin = await adminUser(c);
     const match = await getJoinedMatch(c.env, c.req.param("matchId"));
+    requireScorable(match);
     const current = await c.env.DB.prepare("SELECT * FROM match_events WHERE id = ? AND match_id = ?").bind(c.req.param("eventId"), match.id).first<EventRow>();
     if (!current) throw new ApiProblem(404, "event_not_found", "Match event not found.");
     const body = await jsonObject(c);
@@ -174,6 +223,7 @@ export function registerMatchRoutes(app: App): void {
   app.delete("/api/v1/matches/:matchId/events/:eventId", async (c) => {
     const admin = await adminUser(c);
     const match = await getJoinedMatch(c.env, c.req.param("matchId"));
+    requireScorable(match);
     const exists = await c.env.DB.prepare("SELECT id FROM match_events WHERE id = ? AND match_id = ?").bind(c.req.param("eventId"), match.id).first();
     if (!exists) throw new ApiProblem(404, "event_not_found", "Match event not found.");
     const now = nowIso();
@@ -188,6 +238,7 @@ export function registerMatchRoutes(app: App): void {
 
   app.put("/api/v1/matches/:id/lineup", async (c) => {
     const admin = await adminUser(c); const match = await getJoinedMatch(c.env, c.req.param("id"));
+    requireScorable(match);
     // Once under way, who is on the pitch changes through substitutions.
     if (match.status !== "scheduled") throw new ApiProblem(409, "lineup_locked", "The lineup is locked once the match starts. Log a substitution instead."); const body = await jsonArray(c); const statements = [c.env.DB.prepare("DELETE FROM match_lineup_entries WHERE match_id = ?").bind(match.id)]; const output: LineupRow[] = [];
     for (const item of body) {
@@ -203,7 +254,7 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.put("/api/v1/matches/:id/player-stats", async (c) => {
-    const admin = await adminUser(c); const match = await getJoinedMatch(c.env, c.req.param("id")); const body = await jsonArray(c); const now = nowIso(); const statements = []; const playerIds: string[] = [];
+    const admin = await adminUser(c); const match = await getJoinedMatch(c.env, c.req.param("id")); requireScorable(match); const body = await jsonArray(c); const now = nowIso(); const statements = []; const playerIds: string[] = [];
     for (const item of body) {
       const playerId = stringField(item, "player_id", { min: 1, max: 36 })!; playerIds.push(playerId);
       const appeared = booleanField(item, "appeared") ? 1 : 0; const minutes = numberField(item, "minutes_played", { min: 0, max: 150 })!;
@@ -240,4 +291,3 @@ async function requirePlayerOnTeam(env: Env, playerId: string, teamId: string): 
 }
 
 function optionalNullableText(body: Record<string, unknown>, field: string, current: string | null, max: number): string | null { if (!(field in body)) return current; return stringField(body, field, { nullable: true, max }) ?? null; }
-

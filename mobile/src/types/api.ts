@@ -12,7 +12,7 @@ export type CompetitionType = Schema['CompetitionType'];
 export type EventType = Schema['EventType'] | ExtraEventType;
 export type User = Schema['UserRead'];
 export type TokenResponse = Schema['TokenResponse'];
-export type RegistrationInvite = Schema['InviteRead'];
+export type RegistrationInvite = Schema['InviteRead'] & { player_id: string | null };
 export type PresignResponse = Schema['PresignResponse'];
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 /** 8, 16 or 32 for a knockout; null for a competition that is only a table. */
@@ -65,6 +65,70 @@ export type PlayerMatchStat = Schema['PlayerMatchStatRead'];
 export type PlayerSeasonSummary = Schema['PlayerSeasonSummary'];
 
 export type Page<T> = { items: T[]; total: number; limit: number; offset: number };
+
+export type AdminAccount = User & { player: Player | null; team: Team | null };
+
+export type TrainingSession = {
+  id: string;
+  team_id: string;
+  team: Team;
+  starts_at: string;
+  duration_minutes: number;
+  venue: string;
+  notes: string | null;
+  series_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Announcement = {
+  id: string;
+  team_id: string | null;
+  team: Team | null;
+  title: string;
+  body: string;
+  author_id: string | null;
+  author_name: string | null;
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AvailabilityStatus = 'going' | 'maybe' | 'not_going';
+export type TrainingAvailability = {
+  id: string;
+  training_session_id: string;
+  player_id: string;
+  player: Player;
+  status: AvailabilityStatus;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type EventAssignment = {
+  id: string;
+  match_id: string | null;
+  training_session_id: string | null;
+  title: string;
+  assigned_player_id: string | null;
+  assigned_player: Player | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlayerContact = {
+  id: string;
+  player_id: string;
+  name: string;
+  relationship: string | null;
+  email: string | null;
+  phone: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PlayerRosterDetails = { player_id: string; date_of_birth: string | null; contacts: PlayerContact[] };
 
 // Mirrors backend PlayerLeaderRow; move to the generated schema after the next `npm run api:types`.
 export type PlayerLeaderRow = {

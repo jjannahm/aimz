@@ -86,7 +86,62 @@ export interface PlayerRow {
   position: string;
   jersey_number: number | null;
   photo_key: string | null;
+  date_of_birth: string | null;
   is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrainingRow {
+  id: string;
+  team_id: string;
+  starts_at: string;
+  duration_minutes: number;
+  venue: string;
+  notes: string | null;
+  series_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AvailabilityRow {
+  id: string;
+  training_session_id: string;
+  player_id: string;
+  status: "going" | "maybe" | "not_going";
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssignmentRow {
+  id: string;
+  match_id: string | null;
+  training_session_id: string | null;
+  title: string;
+  assigned_player_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnnouncementRow {
+  id: string;
+  team_id: string | null;
+  title: string;
+  body: string;
+  author_id: string | null;
+  pinned: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlayerContactRow {
+  id: string;
+  player_id: string;
+  name: string;
+  relationship: string | null;
+  email: string | null;
+  phone: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -174,6 +229,8 @@ export interface InviteRow {
   id: string;
   label: string;
   code_hash: string;
+  /** The roster player this invitation is for; null for a shared intake code. */
+  player_id: string | null;
   expires_at: string | null;
   max_uses: number | null;
   use_count: number;

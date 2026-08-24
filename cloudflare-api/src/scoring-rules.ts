@@ -31,6 +31,18 @@ export function describeEvent(event: Pick<EventRow, "type" | "minute">): string 
   return `${event.type.replace(/_/gu, " ")} at ${minute}`;
 }
 
+/**
+ * Neither side is an AIMZ squad, so nobody from the academy is at the ground.
+ *
+ * A match like this is followed for the table it feeds, not scored from the
+ * sideline: there is no one there to log a goal, a card or a substitution as it
+ * happens. The admin enters the final score afterwards instead, and the whole
+ * live scoring surface is refused for it.
+ */
+export function isOpponentOnly(homeIsAimz: number | boolean, awayIsAimz: number | boolean): boolean {
+  return !homeIsAimz && !awayIsAimz;
+}
+
 export function outcome(scored: number, conceded: number): "W" | "D" | "L" {
   if (scored > conceded) return "W";
   return scored === conceded ? "D" : "L";

@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import api_error
-from app.db.models import EventType, Match, MatchEvent, Player, PlayerMatchStat
+from app.db.models import EventType, Match, MatchEvent, Player, PlayerMatchStat, Team
 from app.schemas import MatchEventInput, MatchEventUpdate
 
 
@@ -12,6 +12,54 @@ async def locked_match(session: AsyncSession, match_id: str) -> Match:
     if match is None:
         raise api_error(404, "match_not_found", "Match not found.")
     return match
+
+
+def is_opponent_only(home_is_aimz: bool, away_is_aimz: bool) -> bool:
+    """Neither side is an AIMZ squad, so nobody from the academy is at the ground.
+
+    A match like this is followed for the table it feeds, not scored from the
+    sideline: there is no one there to log a goal, a card or a substitution as
+    it happens. The admin enters the final score afterwards instead, and the
+    whole live scoring surface is refused for it.
+    """
+    return not home_is_aimz and not away_is_aimz
+
+
+async def opponent_only_match(session: AsyncSession, match: Match) -> bool:
+    """Whether this match is between two opponent clubs.
+
+    Reads the two flags with one query rather than through ``match.home_team``:
+    the relationship is lazily loaded, and touching it here would raise
+    ``MissingGreenlet`` under asyncio instead of answering the question.
+    """
+    flags = dict(
+        (
+            await session.execute(
+                select(Team.id, Team.is_aimz).where(
+                    Team.id.in_([match.home_team_id, match.away_team_id])
+                )
+            )
+        ).all()
+    )
+    return is_opponent_only(
+        bool(flags.get(match.home_team_id)), bool(flags.get(match.away_team_id))
+    )
+
+
+async def require_scorable(session: AsyncSession, match: Match) -> None:
+    """Refuse the sideline surface on a match nobody from AIMZ attends.
+
+    Hiding the buttons is not the boundary: a match between two opponent clubs
+    has no timeline, no team sheet and no clock to run, so every write that
+    assumes someone is watching is turned away here rather than left to write a
+    half-recorded match. The final score goes in through /result instead.
+    """
+    if await opponent_only_match(session, match):
+        raise api_error(
+            409,
+            "opponent_only_match",
+            "This match is between two opponent teams. Enter the final score instead.",
+        )
 
 
 async def validate_event_people(
@@ -99,6 +147,7 @@ async def add_event(session: AsyncSession, match_id: str, payload: MatchEventInp
             raise api_error(409, "operation_conflict", "That operation ID is already in use.")
         return existing
     match = await locked_match(session, match_id)
+    await require_scorable(session, match)
     await validate_event_people(
         session, match, payload.team_id, [payload.player_id, payload.secondary_player_id]
     )
@@ -113,6 +162,7 @@ async def update_event(
     session: AsyncSession, match_id: str, event_id: str, payload: MatchEventUpdate
 ) -> MatchEvent:
     match = await locked_match(session, match_id)
+    await require_scorable(session, match)
     event = await session.scalar(
         select(MatchEvent).where(MatchEvent.id == event_id, MatchEvent.match_id == match_id)
     )
@@ -131,6 +181,7 @@ async def update_event(
 
 async def remove_event(session: AsyncSession, match_id: str, event_id: str) -> None:
     match = await locked_match(session, match_id)
+    await require_scorable(session, match)
     event = await session.scalar(
         select(MatchEvent).where(MatchEvent.id == event_id, MatchEvent.match_id == match_id)
     )

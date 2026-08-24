@@ -6,7 +6,7 @@ import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { formatEgyptDateTime, fromEgyptWallClock, toEgyptWallClock, type WallClock } from '@/src/lib/egyptTime';
 
-type Props = { label: string; value: string; onChange: (iso: string) => void; error?: string };
+type Props = { label: string; value: string; onChange: (isoOrDate: string) => void; error?: string; dateOnly?: boolean };
 
 const WEEKDAYS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -32,7 +32,7 @@ const startColumn = (year: number, month: number) => (new Date(Date.UTC(year, mo
  * The admin sees Egypt local time throughout; what leaves the field is the UTC
  * instant that reading names.
  */
-export function DateTimeField({ label, value, onChange, error }: Props) {
+export function DateTimeField({ label, value, onChange, error, dateOnly = false }: Props) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const [open, setOpen] = useState(false);
@@ -40,7 +40,12 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
   const wall = toEgyptWallClock(Number.isNaN(parsed.getTime()) ? new Date() : parsed);
   const [view, setView] = useState({ year: wall.year, month: wall.month });
 
-  const commit = (next: Partial<WallClock>) => onChange(fromEgyptWallClock({ ...wall, ...next }).toISOString());
+  const commit = (next: Partial<WallClock>) => {
+    const reading = { ...wall, ...next };
+    onChange(dateOnly
+      ? `${reading.year}-${String(reading.month).padStart(2, '0')}-${String(reading.day).padStart(2, '0')}`
+      : fromEgyptWallClock(reading).toISOString());
+  };
   const shiftMonth = (by: number) => setView((current) => {
     const month = current.month + by;
     if (month < 1) return { year: current.year - 1, month: 12 };
@@ -57,10 +62,10 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
   // is pulled onto the nearest one, so the field never shows or stores a
   // minute the picker cannot reach.
   useEffect(() => {
-    if (wall.minute % QUARTER === 0) return;
+    if (dateOnly || wall.minute % QUARTER === 0) return;
     const wrapped = toQuarter(wall.hour, wall.minute);
     onChange(fromEgyptWallClock({ ...wall, hour: Math.floor(wrapped / 60), minute: wrapped % 60 }).toISOString());
-  }, [onChange, wall]);
+  }, [dateOnly, onChange, wall]);
   const total = daysInMonth(view.year, view.month);
   const cells: (number | null)[] = [
     ...Array.from({ length: startColumn(view.year, view.month) }, () => null),
@@ -84,7 +89,7 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
         onPress={() => setOpen((current) => !current)}
         style={({ pressed }) => [styles.shell, open && styles.shellOpen, error && styles.shellError, pressed && styles.pressed]}
       >
-        <Text style={styles.value}>{formatEgyptDateTime(value)}</Text>
+        <Text style={styles.value}>{dateOnly ? (value ? `${MONTHS[wall.month - 1]} ${wall.day}, ${wall.year}` : 'Not set') : formatEgyptDateTime(value)}</Text>
         <Ionicons accessibilityElementsHidden color={colors.textSecondary} name={open ? 'chevron-up' : 'calendar-outline'} size={20} />
       </Pressable>
 
@@ -115,7 +120,7 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
           </Pressable>;
         })}</View>
 
-        <View style={styles.timeRow}>
+        {!dateOnly ? <View style={styles.timeRow}>
           <Pressable accessibilityLabel="Earlier hour" accessibilityRole="button" onPress={() => shiftMinutes(-60)} style={({ pressed }) => [styles.step, pressed && styles.pressed]}>
             <Ionicons color={colors.accentSoft} name="remove" size={18} />
           </Pressable>
@@ -131,7 +136,7 @@ export function DateTimeField({ label, value, onChange, error }: Props) {
               <Text style={styles.minuteStepText}>+{QUARTER}</Text>
             </Pressable>
           </View>
-        </View>
+        </View> : null}
 
         <Pressable accessibilityLabel="Done choosing the date and time" accessibilityRole="button" onPress={() => setOpen(false)} style={({ pressed }) => [styles.done, pressed && styles.pressed]}>
           <Text style={styles.doneText}>Done</Text>

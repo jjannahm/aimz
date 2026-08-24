@@ -319,6 +319,15 @@ async def update_match(
         raise api_error(404, "match_not_found", "Match not found.")
     await validate_match_refs(session, payload)
     next_status = payload.status
+    if next_status != row.status:
+        from app.services.scoring import opponent_only_match
+
+        if await opponent_only_match(session, row):
+            raise api_error(
+                409,
+                "opponent_only_match",
+                "This match is between two opponent teams. Enter the final score instead.",
+            )
     for field, value in payload.model_dump(exclude={"status"}).items():
         setattr(row, field, value)
     apply_legacy_status_change(row, next_status)

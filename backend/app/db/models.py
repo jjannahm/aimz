@@ -136,6 +136,10 @@ class RegistrationInvite(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     label: Mapped[str] = mapped_column(String(120))
     code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # The roster player this invitation is for; null for a shared intake code.
+    player_id: Mapped[str | None] = mapped_column(
+        ForeignKey("players.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     max_uses: Mapped[int | None] = mapped_column(Integer)
     use_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")

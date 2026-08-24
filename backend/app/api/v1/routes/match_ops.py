@@ -7,6 +7,7 @@ from app.db.models import (
     Match,
     MatchEvent,
     MatchLineupEntry,
+    MatchPhase,
     MatchStatus,
     Player,
     PlayerMatchStat,
@@ -21,12 +22,20 @@ from app.schemas import (
     MatchEventUpdate,
     MatchPhaseUpdate,
     MatchRead,
+    MatchResultInput,
     PlayerMatchStatRead,
     PlayerStatInput,
 )
 from app.services.audit import record_audit
 from app.services.match_clock import apply_phase_action
-from app.services.scoring import add_event, load_match_detail, remove_event, update_event
+from app.services.scoring import (
+    add_event,
+    load_match_detail,
+    opponent_only_match,
+    remove_event,
+    require_scorable,
+    update_event,
+)
 
 router = APIRouter()
 
@@ -51,6 +60,7 @@ async def update_match_phase(
     session: SessionDep,
 ) -> Match:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     apply_phase_action(match, payload.action)
     match.revision += 1
     record_audit(
@@ -69,6 +79,56 @@ async def update_match_phase(
     return refreshed
 
 
+@router.post("/{match_id}/result", response_model=MatchRead)
+async def record_result(
+    match_id: str,
+    payload: MatchResultInput,
+    actor: AdminUser,
+    session: SessionDep,
+) -> Match:
+    """The whole scoring surface for a match between two opponent clubs.
+
+    Everywhere else a scoreline is derived from the timeline and never written
+    by hand, because the timeline is the record. Here there is no timeline to
+    derive it from, so the score is the record, and this is the only route that
+    may set it. Kept off PATCH deliberately: PATCH takes a whole match, and
+    widening it would let a stale client roll a corrected score back.
+
+    It goes straight to finished without asking the clock, since scheduled to
+    finished is a transition the phase machine has no reason to allow. Calling
+    it again on a finished match is how a wrong score is corrected.
+    """
+    match = await require_match(session, match_id)
+    if not await opponent_only_match(session, match):
+        raise api_error(
+            409,
+            "not_opponent_only",
+            "This match has an AIMZ squad in it. Score it from live scoring.",
+        )
+    correction = match.status == MatchStatus.finished
+    match.home_score = payload.home_score
+    match.away_score = payload.away_score
+    match.status = MatchStatus.finished
+    match.phase = MatchPhase.finished
+    match.phase_started_at = None
+    match.revision += 1
+    verb = "Corrected the final score to" if correction else "Recorded a final score of"
+    record_audit(
+        session,
+        actor,
+        action="result_entered",
+        entity_type="match",
+        entity_id=match_id,
+        match_id=match_id,
+        summary=f"{verb} {payload.home_score}-{payload.away_score}.",
+    )
+    await session.commit()
+    refreshed = await load_match_detail(session, match_id)
+    if refreshed is None:
+        raise api_error(404, "match_not_found", "Match not found.")
+    return refreshed
+
+
 @router.post("/{match_id}/man-of-the-match", response_model=MatchRead)
 async def set_man_of_the_match(
     match_id: str,
@@ -77,6 +137,7 @@ async def set_man_of_the_match(
     session: SessionDep,
 ) -> Match:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     if match.status != MatchStatus.finished:
         raise api_error(
             409, "match_not_finished", "Pick man of the match once the match has finished."
@@ -140,6 +201,7 @@ async def create_event(
     match_id: str, payload: MatchEventInput, actor: AdminUser, session: SessionDep
 ) -> MatchEvent:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     if match.status == MatchStatus.scheduled:
         raise api_error(409, "match_not_started", "Start the match before adding events.")
     event = await add_event(session, match_id, payload)
@@ -220,6 +282,7 @@ async def replace_lineup(
     session: SessionDep,
 ) -> list[MatchLineupEntry]:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     # Once the match is under way, who is on the pitch changes through
     # substitutions rather than by rewriting who started.
     if match.status != MatchStatus.scheduled:
@@ -283,6 +346,7 @@ async def update_player_stats(
     session: SessionDep,
 ) -> list[PlayerMatchStat]:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     rows: list[PlayerMatchStat] = []
     for item in payload:
         player = await session.get(Player, item.player_id)

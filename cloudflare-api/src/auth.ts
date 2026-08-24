@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { ApiProblem, adminUser, currentUser, jsonObject, nowIso, stringField } from "./helpers";
+import { ApiProblem, adminUser, currentUser, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
 import {
   createAccessToken,
   hashPassword,
@@ -95,23 +95,36 @@ export function registerAuthRoutes(app: App): void {
       email,
       password_hash: await hashPassword(password),
       role: "player",
-      player_id: null,
+      // A personal invitation carries the roster player it was cut for, so the
+      // account knows whose stats are its own the moment it is created.
+      player_id: invite.player_id,
       is_active: 1,
       created_at: now,
       updated_at: now,
     };
     const claimId = crypto.randomUUID();
-    const results = await c.env.DB.batch([
-      c.env.DB.prepare(
-        "INSERT INTO invite_claims (id, invite_id, user_id, created_at) SELECT ?, id, ?, ? FROM registration_invites WHERE id = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > ?) AND (max_uses IS NULL OR use_count < max_uses)",
-      ).bind(claimId, user.id, now, invite.id, now),
-      c.env.DB.prepare(
-        "INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
-      ).bind(user.id, user.name, user.email, user.password_hash, user.role, user.player_id, now, now, claimId, user.id),
-      c.env.DB.prepare(
-        "UPDATE registration_invites SET use_count = use_count + 1 WHERE id = ? AND EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
-      ).bind(invite.id, claimId, user.id),
-    ]);
+    let results;
+    try {
+      results = await c.env.DB.batch([
+        c.env.DB.prepare(
+          "INSERT INTO invite_claims (id, invite_id, user_id, created_at) SELECT ?, id, ?, ? FROM registration_invites WHERE id = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > ?) AND (max_uses IS NULL OR use_count < max_uses)",
+        ).bind(claimId, user.id, now, invite.id, now),
+        c.env.DB.prepare(
+          "INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
+        ).bind(user.id, user.name, user.email, user.password_hash, user.role, user.player_id, now, now, claimId, user.id),
+        c.env.DB.prepare(
+          "UPDATE registration_invites SET use_count = use_count + 1 WHERE id = ? AND EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
+        ).bind(invite.id, claimId, user.id),
+      ]);
+    } catch (error) {
+      // users.player_id is unique, so two people racing one personal invitation
+      // fail here rather than quietly sharing a roster record.
+      const taken = invite.player_id
+        ? await c.env.DB.prepare("SELECT id FROM users WHERE player_id = ?").bind(invite.player_id).first()
+        : null;
+      if (taken) throw new ApiProblem(409, "player_already_linked", "That player already has an account. Ask an AIMZ administrator for a new invitation.");
+      throw error;
+    }
     if ((results[1].meta.changes ?? 0) !== 1) throw new ApiProblem(409, "invalid_invite", "This invitation code is no longer available.");
     return c.json(await issueTokens(c.env, user), 201);
   });
@@ -176,8 +189,23 @@ export function registerAuthRoutes(app: App): void {
 
   app.get("/api/v1/admin/users", async (c) => {
     await adminUser(c);
-    const result = await c.env.DB.prepare("SELECT * FROM users ORDER BY created_at DESC").all<UserRow>();
-    return c.json(result.results.map(publicUser));
+    const url = new URL(c.req.url);
+    const { limit, offset } = parsePagination(url);
+    const [count, rows] = await Promise.all([
+      c.env.DB.prepare("SELECT COUNT(*) total FROM users").first<{ total: number }>(),
+      c.env.DB.prepare(`SELECT u.*, p.name player_name, p.team_id player_team_id,
+        p.position player_position, p.jersey_number player_jersey_number,
+        p.photo_key player_photo_key, p.is_active player_is_active,
+        p.created_at player_created_at, p.updated_at player_updated_at,
+        t.name team_name, t.squad_code team_squad_code, t.age_group team_age_group,
+        t.season team_season, t.is_aimz team_is_aimz, t.is_active team_is_active,
+        t.logo_key team_logo_key, t.coach team_coach, t.assistant_coach team_assistant_coach,
+        t.competition_id team_competition_id, t.competition_group_id team_competition_group_id,
+        t.created_at team_created_at, t.updated_at team_updated_at
+        FROM users u LEFT JOIN players p ON p.id=u.player_id LEFT JOIN teams t ON t.id=p.team_id
+        ORDER BY u.name LIMIT ? OFFSET ?`).bind(limit, offset).all<AdminAccountRow>(),
+    ]);
+    return c.json({ items: rows.results.map(publicAdminAccount), total: count?.total ?? 0, limit, offset });
   });
   app.post("/api/v1/admin/users", async (c) => {
     await adminUser(c);
@@ -196,6 +224,29 @@ export function registerAuthRoutes(app: App): void {
     return c.json(publicUser(user), 201);
   });
 
+  /**
+   * Points an account at the roster player whose stats are its own.
+   *
+   * Personal invitations cover accounts made from here on; this covers the ones
+   * that already exist, and the times a link was made against the wrong player.
+   * Passing null unlinks.
+   */
+  app.patch("/api/v1/admin/users/:id", async (c) => {
+    await adminUser(c);
+    const target = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(c.req.param("id")).first<UserRow>();
+    if (!target) throw new ApiProblem(404, "user_not_found", "Account not found.");
+    const body = await jsonObject(c);
+    if (!("player_id" in body)) return c.json(publicUser(target));
+    const playerId = await claimablePlayer(c.env, stringField(body, "player_id", { nullable: true, max: 36 }) ?? null, target.id);
+    const updated = nowIso();
+    try {
+      await c.env.DB.prepare("UPDATE users SET player_id = ?, updated_at = ? WHERE id = ?").bind(playerId, updated, target.id).run();
+    } catch {
+      throw new ApiProblem(409, "player_already_linked", "Another account is already linked to that player.");
+    }
+    return c.json(publicUser({ ...target, player_id: playerId, updated_at: updated }));
+  });
+
   app.get("/api/v1/admin/registration-invites", async (c) => {
     await adminUser(c);
     const result = await c.env.DB.prepare("SELECT * FROM registration_invites ORDER BY created_at DESC").all<InviteRow>();
@@ -207,10 +258,14 @@ export function registerAuthRoutes(app: App): void {
     const label = stringField(body, "label", { min: 2, max: 120 });
     const code = stringField(body, "code", { min: 4, max: 128 });
     const expiresAt = typeof body.expires_at === "string" ? body.expires_at : null;
-    const maxUses = typeof body.max_uses === "number" && body.max_uses >= 1 ? Math.floor(body.max_uses) : null;
-    const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: await hashSecret(code!), expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
+    const playerId = await claimablePlayer(c.env, stringField(body, "player_id", { optional: true, nullable: true, max: 36 }) ?? null);
+    // An invitation cut for one named player is for that one person, whatever
+    // the caller asks for: a second claim would find the roster record taken.
+    const requestedUses = typeof body.max_uses === "number" && body.max_uses >= 1 ? Math.floor(body.max_uses) : null;
+    const maxUses = playerId ? 1 : requestedUses;
+    const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: await hashSecret(code!), player_id: playerId, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
     try {
-      await c.env.DB.prepare("INSERT INTO registration_invites (id, label, code_hash, expires_at, max_uses, use_count, is_active, created_by_id, created_at) VALUES (?, ?, ?, ?, ?, 0, 1, ?, ?)").bind(invite.id, invite.label, invite.code_hash, invite.expires_at, invite.max_uses, admin.id, invite.created_at).run();
+      await c.env.DB.prepare("INSERT INTO registration_invites (id, label, code_hash, player_id, expires_at, max_uses, use_count, is_active, created_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?)").bind(invite.id, invite.label, invite.code_hash, invite.player_id, invite.expires_at, invite.max_uses, admin.id, invite.created_at).run();
     } catch {
       throw new ApiProblem(409, "invite_exists", "That invitation code already exists.");
     }
@@ -224,14 +279,65 @@ export function registerAuthRoutes(app: App): void {
   });
 }
 
+/**
+ * The roster player an account may be pointed at, or null for no link.
+ *
+ * users.player_id is unique, so a player who already has an account cannot be
+ * given a second one. Refusing here says which player is taken; leaving it to
+ * the constraint would surface as a bare failed write.
+ */
+async function claimablePlayer(env: Env, playerId: string | null, exceptUserId?: string): Promise<string | null> {
+  if (!playerId) return null;
+  const player = await env.DB.prepare("SELECT id FROM players WHERE id = ?").bind(playerId).first();
+  if (!player) throw new ApiProblem(422, "player_not_found", "Choose a player from the roster.");
+  const holder = await env.DB.prepare("SELECT id FROM users WHERE player_id = ?").bind(playerId).first<{ id: string }>();
+  if (holder && holder.id !== exceptUserId) throw new ApiProblem(409, "player_already_linked", "Another account is already linked to that player.");
+  return playerId;
+}
+
 function publicInvite(invite: InviteRow): Record<string, unknown> {
   return {
     id: invite.id,
     label: invite.label,
+    player_id: invite.player_id,
     expires_at: invite.expires_at,
     max_uses: invite.max_uses,
     use_count: invite.use_count,
     is_active: Boolean(invite.is_active),
     created_at: invite.created_at,
   };
+}
+
+interface AdminAccountRow extends UserRow {
+  player_name: string | null;
+  player_team_id: string | null;
+  player_position: string | null;
+  player_jersey_number: number | null;
+  player_photo_key: string | null;
+  player_is_active: number | null;
+  player_created_at: string | null;
+  player_updated_at: string | null;
+  team_name: string | null;
+  team_squad_code: string | null;
+  team_age_group: string | null;
+  team_season: string | null;
+  team_is_aimz: number | null;
+  team_is_active: number | null;
+  team_logo_key: string | null;
+  team_coach: string | null;
+  team_assistant_coach: string | null;
+  team_competition_id: string | null;
+  team_competition_group_id: string | null;
+  team_created_at: string | null;
+  team_updated_at: string | null;
+}
+
+function publicAdminAccount(row: AdminAccountRow): Record<string, unknown> {
+  const player = row.player_name && row.player_team_id && row.player_position && row.player_created_at && row.player_updated_at
+    ? { id: row.player_id, name: row.player_name, team_id: row.player_team_id, position: row.player_position, jersey_number: row.player_jersey_number, photo_key: row.player_photo_key, photo_url: null, is_active: Boolean(row.player_is_active), created_at: row.player_created_at, updated_at: row.player_updated_at }
+    : null;
+  const team = row.player_team_id && row.team_name && row.team_created_at && row.team_updated_at
+    ? { id: row.player_team_id, name: row.team_name, squad_code: row.team_squad_code, age_group: row.team_age_group, season: row.team_season, is_aimz: Boolean(row.team_is_aimz), is_active: Boolean(row.team_is_active), logo_key: row.team_logo_key, logo_url: null, coach: row.team_coach, assistant_coach: row.team_assistant_coach, competition_id: row.team_competition_id, competition_group_id: row.team_competition_group_id, created_at: row.team_created_at, updated_at: row.team_updated_at }
+    : null;
+  return { ...publicUser(row), player, team };
 }
