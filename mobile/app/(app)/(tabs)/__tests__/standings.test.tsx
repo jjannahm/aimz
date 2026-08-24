@@ -2,12 +2,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
+import { useLocalSearchParams } from 'expo-router';
+
 import StandingsScreen from '@/app/(app)/(tabs)/standings';
 import { api } from '@/src/lib/api';
 import type { Competition, StandingRow, Team } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'player' } }) }));
+// Reached from the tab bar here, so no competition is named in the route.
+jest.mock('expo-router', () => ({ router: { push: jest.fn() }, useLocalSearchParams: jest.fn(() => ({})) }));
 
 jest.mock('@/src/lib/api', () => ({
   api: { competitions: jest.fn(), standings: jest.fn(), headToHead: jest.fn() },
@@ -114,5 +118,28 @@ describe('StandingsScreen — form guide', () => {
     const screen = await render(<StandingsScreen />, { wrapper });
     await screen.findByText('Newly Entered');
     expect(screen.queryByLabelText(/^Recent form/)).toBeNull();
+  });
+});
+
+// Arriving from Manage after setting a competition up: the admin should land on
+// that table, not on whichever competition happens to sort first.
+describe('StandingsScreen — arriving from Manage', () => {
+  beforeEach(() => {
+    jest.mocked(api.competitions).mockResolvedValue({ items: [league, cup], total: 2, limit: 100, offset: 0 });
+    jest.mocked(api.standings).mockResolvedValue(table);
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  it('opens the competition the route names', async () => {
+    jest.mocked(useLocalSearchParams).mockReturnValue({ competition: 'c-2' });
+    const screen = await render(<StandingsScreen />, { wrapper });
+    await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-2'));
+    expect(screen.getByLabelText('Delta Cup, season 2026')).toBeTruthy();
+  });
+
+  it('falls back to the first competition when the route names none', async () => {
+    jest.mocked(useLocalSearchParams).mockReturnValue({});
+    await render(<StandingsScreen />, { wrapper });
+    await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-1'));
   });
 });

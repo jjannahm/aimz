@@ -21,7 +21,7 @@ import { appConfig } from '@/src/config';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
-import { confirmAction, showMessage } from '@/src/lib/platformAlert';
+import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 import { EXTRA_TIME_PERIODS, GROUP_SIZE, isKnockout, KNOCKOUT_TEAM_COUNTS, totalMatchMinutes } from '@/src/types/api';
@@ -162,6 +162,8 @@ export default function ManageScreen() {
   const [resource, setResource] = React.useState<Resource>('teams');
   const [editing, setEditing] = React.useState<Entity | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
+  /** Knockouts created in this sitting, whose next save completes their setup. */
+  const [drawnUp, setDrawnUp] = React.useState<string[]>([]);
   const pageRef = React.useRef<ScrollView | null>(null);
   const teams = useQuery({ queryKey: ['teams', 'admin'], queryFn: () => api.teams('?limit=100') });
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
@@ -184,6 +186,8 @@ export default function ManageScreen() {
     setFormError(null);
     /** A competition whose draw is still to be made keeps the form on itself. */
     let stayOn: Competition | null = null;
+    /** A competition whose draw is done sends the admin to its standings. */
+    let finished: Competition | null = null;
     try {
       if (resource === 'teams' || resource === 'opponents') {
         if (!values.name.trim()) throw new Error(resource === 'opponents' ? 'Enter the opposing club name.' : 'Enter a team or squad name.');
@@ -199,7 +203,10 @@ export default function ManageScreen() {
         // stand empty, and the draw is made from this very form. Clearing back
         // to a blank one hid the section that does it, which read as the
         // feature not being there at all.
-        if (saved.team_count) stayOn = saved;
+        if (saved.team_count && !editing) { stayOn = saved; setDrawnUp((current) => [...current, saved.id]); }
+        // Saving it again is the admin saying the draw is done, so they are
+        // taken to the table it produces.
+        else if (saved.team_count) finished = saved;
       } else if (resource === 'players') {
         if (!values.name.trim() || !values.teamId || !values.position.trim()) throw new Error('Enter the player name, squad and position.');
         const payload = { name: values.name.trim(), team_id: values.teamId, position: values.position.trim(), jersey_number: values.jersey ? Number(values.jersey) : null, photo_key: editing && 'photo_key' in editing ? editing.photo_key : null, is_active: true };
@@ -216,8 +223,18 @@ export default function ManageScreen() {
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       await invalidate();
-      if (stayOn) { setEditing(stayOn); form.reset({ ...defaults, name: stayOn.name, season: stayOn.season, type: stayOn.type, teamCount: stayOn.team_count ? String(stayOn.team_count) : '' }); }
-      else { setEditing(null); form.reset(defaults); }
+      if (stayOn) {
+        setEditing(stayOn);
+        form.reset({ ...defaults, name: stayOn.name, season: stayOn.season, type: stayOn.type, teamCount: stayOn.team_count ? String(stayOn.team_count) : '' });
+        showToast('Groups drawn up — add teams below');
+        return;
+      }
+      setEditing(null); form.reset(defaults);
+      if (finished) {
+        showToast(drawnUp.includes(finished.id) ? 'Knockout competition created' : 'Groups updated');
+        setDrawnUp((current) => current.filter((id) => id !== finished!.id));
+        router.push({ pathname: '/(app)/(tabs)/standings', params: { competition: finished.id } });
+      }
     } catch (error) { setFormError(error instanceof ApiError || error instanceof Error ? error.message : 'Could not save this item.'); }
   });
 

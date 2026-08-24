@@ -8,6 +8,7 @@ import { Platform, View } from 'react-native';
 
 import { AuthProvider } from '@/src/auth/AuthProvider';
 import { DialogHost } from '@/src/components/DialogHost';
+import { ToastHost } from '@/src/components/ToastHost';
 import { ThemeProvider, useAppTheme } from '@/src/theme/ThemeProvider';
 
 // Nothing registered the icon font on web, so every Ionicons glyph fell back to a
@@ -42,6 +43,7 @@ function ThemedRoot() {
         <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
         <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerShown: false, animation: 'fade' }} />
         <DialogHost />
+        <ToastHost />
       </AuthProvider>
     </QueryClientProvider>
   );
