@@ -10,7 +10,7 @@ function match(id: string, kickoff: string, competitionId: string, competitionNa
     half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15, has_extra_time: false,
     extra_time_half_length_minutes: 15, created_at: kickoff, updated_at: kickoff,
     home_team: null, away_team: null,
-    competition: { id: competitionId, name: competitionName, season: '2026/27', type: 'league', team_count: null, created_at: kickoff, updated_at: kickoff },
+    competition: { id: competitionId, name: competitionName, season: '2026/27', type: 'league', team_count: null, group_size: null, created_at: kickoff, updated_at: kickoff },
   };
 }
 

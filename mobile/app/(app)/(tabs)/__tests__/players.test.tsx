@@ -37,7 +37,7 @@ const ever_present: AwardRank[] = [
   { rank: 2, player: players[0]!, team: teams[0]!, value: 1, unit: 'appearances', appearances: 1 },
 ];
 
-const competition = { id: 'c-1', name: 'Women U11', season: '2026/27', type: 'league' as const, team_count: null, created_at: '', updated_at: '' };
+const competition = { id: 'c-1', name: 'Women U11', season: '2026/27', type: 'league' as const, team_count: null, group_size: null, created_at: '', updated_at: '' };
 const awards = {
   competition,
   player_awards: [

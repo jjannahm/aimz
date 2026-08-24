@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { generationStatements, teamCountField } from "./knockout";
+import { generationStatements, groupSizeOf, knockoutShape } from "./knockout";
 import {
   ApiProblem,
   adminUser,
@@ -47,6 +47,7 @@ interface JoinedMatchRow extends MatchRow {
   competition_season: string;
   competition_type: "league" | "tournament" | "friendly";
   competition_team_count: number | null;
+  competition_group_size: number | null;
   competition_created_at: string;
   competition_updated_at: string;
 }
@@ -62,7 +63,7 @@ const matchSelect = `
     a.logo_key away_logo_key, a.coach away_coach, a.assistant_coach away_assistant_coach,
     a.created_at away_created_at, a.updated_at away_updated_at,
     c.name competition_name, c.season competition_season, c.type competition_type,
-    c.team_count competition_team_count,
+    c.team_count competition_team_count, c.group_size competition_group_size,
     c.created_at competition_created_at, c.updated_at competition_updated_at
   FROM matches m
   JOIN teams h ON h.id = m.home_team_id
@@ -86,7 +87,7 @@ export function joinedMatch(row: JoinedMatchRow): Record<string, unknown> {
   };
   const competition: CompetitionRow = {
     id: row.competition_id, name: row.competition_name, season: row.competition_season,
-    type: row.competition_type, team_count: row.competition_team_count, created_at: row.competition_created_at,
+    type: row.competition_type, team_count: row.competition_team_count, group_size: row.competition_group_size, created_at: row.competition_created_at,
     updated_at: row.competition_updated_at,
   };
   return publicMatch(row, home, away, competition);
@@ -190,12 +191,13 @@ export function registerDomainRoutes(app: App): void {
   });
   app.post("/api/v1/competitions", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const now = nowIso();
-    const competition: CompetitionRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, season: stringField(body, "season", { min: 2, max: 40 })!, type: enumField(body, "type", ["league", "tournament", "friendly"] as const), team_count: teamCountField(body, null), created_at: now, updated_at: now };
+    const shape = knockoutShape(body, { team_count: null, group_size: null });
+    const competition: CompetitionRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, season: stringField(body, "season", { min: 2, max: 40 })!, type: enumField(body, "type", ["league", "tournament", "friendly"] as const), ...shape, created_at: now, updated_at: now };
     // Groups and an empty bracket are written with the competition itself, so a
     // failure cannot leave a knockout half drawn.
     const statements = [
-      c.env.DB.prepare("INSERT INTO competitions (id, name, season, type, team_count, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(competition.id, competition.name, competition.season, competition.type, competition.team_count, now, now),
-      ...(competition.team_count === null ? [] : generationStatements(c.env, competition.id, competition.team_count)),
+      c.env.DB.prepare("INSERT INTO competitions (id, name, season, type, team_count, group_size, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(competition.id, competition.name, competition.season, competition.type, competition.team_count, competition.group_size, now, now),
+      ...(competition.team_count === null ? [] : generationStatements(c.env, competition.id, competition.team_count, groupSizeOf(competition))),
     ];
     try { await c.env.DB.batch(statements); }
     catch { throw new ApiProblem(409, "competition_exists", "A competition with that name and season already exists."); }
@@ -205,19 +207,19 @@ export function registerDomainRoutes(app: App): void {
     await adminUser(c); const body = await jsonObject(c);
     const current = await c.env.DB.prepare("SELECT * FROM competitions WHERE id = ?").bind(c.req.param("id")).first<CompetitionRow>();
     if (!current) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
-    const item: CompetitionRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, season: stringField(body, "season", { optional: true, min: 2, max: 40 }) ?? current.season, type: body.type === undefined ? current.type : enumField(body, "type", ["league", "tournament", "friendly"] as const), team_count: teamCountField(body, current.team_count), updated_at: nowIso() };
+    const item: CompetitionRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, season: stringField(body, "season", { optional: true, min: 2, max: 40 }) ?? current.season, type: body.type === undefined ? current.type : enumField(body, "type", ["league", "tournament", "friendly"] as const), ...knockoutShape(body, { team_count: current.team_count, group_size: current.group_size }), updated_at: nowIso() };
     // Redrawing the groups would orphan every team already placed in one, so the
     // size is settled while the competition is still empty and not after.
-    if (item.team_count !== current.team_count) {
+    if (item.team_count !== current.team_count || item.group_size !== current.group_size) {
       const drawn = await c.env.DB.prepare("SELECT id FROM teams WHERE competition_id = ? LIMIT 1").bind(current.id).first();
       if (drawn) throw new ApiProblem(409, "team_count_locked", "Remove the teams from this competition before changing its size.");
       await c.env.DB.batch([
         c.env.DB.prepare("DELETE FROM competition_groups WHERE competition_id = ?").bind(current.id),
         c.env.DB.prepare("DELETE FROM bracket_slots WHERE competition_id = ?").bind(current.id),
-        ...(item.team_count === null ? [] : generationStatements(c.env, current.id, item.team_count)),
+        ...(item.team_count === null ? [] : generationStatements(c.env, current.id, item.team_count, groupSizeOf(item))),
       ]);
     }
-    try { await c.env.DB.prepare("UPDATE competitions SET name=?, season=?, type=?, team_count=?, updated_at=? WHERE id=?").bind(item.name, item.season, item.type, item.team_count, item.updated_at, item.id).run(); }
+    try { await c.env.DB.prepare("UPDATE competitions SET name=?, season=?, type=?, team_count=?, group_size=?, updated_at=? WHERE id=?").bind(item.name, item.season, item.type, item.team_count, item.group_size, item.updated_at, item.id).run(); }
     catch { throw new ApiProblem(409, "competition_exists", "A competition with that name and season already exists."); }
     return c.json(publicCompetition(item));
   });

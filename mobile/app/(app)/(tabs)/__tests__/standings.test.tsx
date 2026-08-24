@@ -19,7 +19,7 @@ jest.mock('@/src/lib/api', () => ({
 }));
 
 const competition = (id: string, name: string, season: string): Competition => ({
-  id, name, season, type: 'league', team_count: null, created_at: '', updated_at: '',
+  id, name, season, type: 'league', team_count: null, group_size: null, created_at: '', updated_at: '',
 });
 
 const team = (id: string, name: string, is_aimz = false): Team => ({

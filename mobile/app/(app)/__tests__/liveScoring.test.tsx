@@ -31,7 +31,7 @@ const match = (over: Partial<Match> = {}): Match => ({
   created_at: '', updated_at: '',
   home_team: { id: 'home', name: 'AIMZ U18', squad_code: null, age_group: 'U18', season: '2026', is_aimz: true, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, logo_url: null, created_at: '', updated_at: '' },
   away_team: { id: 'away', name: 'Giza Lions', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, logo_url: null, created_at: '', updated_at: '' },
-  competition: { id: 'c-1', name: 'Women Academy League', season: '2026', type: 'league', team_count: null, created_at: '', updated_at: '' },
+  competition: { id: 'c-1', name: 'Women Academy League', season: '2026', type: 'league', team_count: null, group_size: null, created_at: '', updated_at: '' },
   ...over,
 });
 

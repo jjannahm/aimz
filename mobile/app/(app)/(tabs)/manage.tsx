@@ -24,15 +24,15 @@ import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
-import { EXTRA_TIME_PERIODS, GROUP_SIZE, isKnockout, KNOCKOUT_TEAM_COUNTS, totalMatchMinutes } from '@/src/types/api';
+import { ADVANCE_PER_GROUP, describeCustomDraw, EXTRA_TIME_PERIODS, GROUP_SIZE, isKnockout, KNOCKOUT_TEAM_COUNTS, totalMatchMinutes } from '@/src/types/api';
 import type { Competition, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
 
 type Resource = 'teams' | 'competitions' | 'opponents' | 'players' | 'matches' | 'invites';
 type Entity = Team | Competition | Player | Match | RegistrationInvite;
 const resources: { label: string; value: Resource }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Opponents', value: 'opponents' }, { label: 'Players', value: 'players' }, { label: 'Matches', value: 'matches' }, { label: 'Invites', value: 'invites' }];
-const schema = z.object({ name: z.string(), code: z.string(), ageGroup: z.string(), season: z.string(), type: z.string(), teamId: z.string(), position: z.string(), jersey: z.string(), competitionId: z.string(), homeTeamId: z.string(), awayTeamId: z.string(), kickoff: z.string(), venue: z.string(), status: z.string(), halfLength: z.string(), numHalves: z.string(), halfTimeBreak: z.string(), coach: z.string(), assistantCoach: z.string(), teamCompetitionId: z.string(), hasExtraTime: z.string(), extraTimeLength: z.string(), label: z.string(), teamCount: z.string(), teamGroupId: z.string() });
+const schema = z.object({ name: z.string(), code: z.string(), ageGroup: z.string(), season: z.string(), type: z.string(), teamId: z.string(), position: z.string(), jersey: z.string(), competitionId: z.string(), homeTeamId: z.string(), awayTeamId: z.string(), kickoff: z.string(), venue: z.string(), status: z.string(), halfLength: z.string(), numHalves: z.string(), halfTimeBreak: z.string(), coach: z.string(), assistantCoach: z.string(), teamCompetitionId: z.string(), hasExtraTime: z.string(), extraTimeLength: z.string(), label: z.string(), teamCount: z.string(), teamGroupId: z.string(), groupCount: z.string(), groupSize: z.string() });
 type Values = z.infer<typeof schema>;
-const defaults: Values = { name: '', code: '', ageGroup: '', season: '', type: 'league', teamId: '', position: '', jersey: '', competitionId: '', homeTeamId: '', awayTeamId: '', kickoff: new Date().toISOString(), venue: '', status: 'scheduled', halfLength: '45', numHalves: '2', halfTimeBreak: '15', coach: '', assistantCoach: '', teamCompetitionId: '', hasExtraTime: 'false', extraTimeLength: '15', label: '', teamCount: '', teamGroupId: '' };
+const defaults: Values = { name: '', code: '', ageGroup: '', season: '', type: 'league', teamId: '', position: '', jersey: '', competitionId: '', homeTeamId: '', awayTeamId: '', kickoff: new Date().toISOString(), venue: '', status: 'scheduled', halfLength: '45', numHalves: '2', halfTimeBreak: '15', coach: '', assistantCoach: '', teamCompetitionId: '', hasExtraTime: 'false', extraTimeLength: '15', label: '', teamCount: '', teamGroupId: '', groupCount: '4', groupSize: '4' };
 
 /** Parses the three period inputs, or null when any is not a whole number in range. */
 function readTimeStructure(values: Pick<Values, 'halfLength' | 'numHalves' | 'halfTimeBreak' | 'hasExtraTime' | 'extraTimeLength'>): MatchTimeStructure | null {
@@ -60,19 +60,21 @@ function ExtraTimeLength({ control }: { control: Control<Values> }) {
 function KnockoutSize({ control, competitionId, teams }: { control: Control<Values>; competitionId: string | null; teams: Team[] }) {
   const styles = useThemedStyles(stylesheet);
   const type = useWatch({ control, name: 'type' });
-  const teamCount = useWatch({ control, name: 'teamCount' });
+  const [teamCount, groupCount, groupSize] = useWatch({ control, name: ['teamCount', 'groupCount', 'groupSize'] });
   const groups = useQuery({ queryKey: ['competition-groups', competitionId], queryFn: () => api.groups(competitionId!), enabled: Boolean(competitionId) });
   if (type !== 'tournament') return null;
   // Redrawing the groups would orphan everyone already placed in one, so the
   // size stops being a choice the moment the first team is entered.
   const drawn = groups.data?.some((group) => group.teams.length > 0) ?? false;
+  const custom = teamCount === CUSTOM_DRAW;
   return <>
     {drawn
       ? <View style={styles.lockedField}>
         <Text style={styles.lockedLabel}>Number of teams</Text>
-        <Text style={styles.lockedValue}>{teamCount || '—'} teams · {Number(teamCount || 0) / 4} groups of 4</Text>
+        <Text style={styles.lockedValue}>{describeDraw(groups.data?.length ?? 0, Number(groupSize) || 0)}</Text>
       </View>
-      : <Controller control={control} name="teamCount" render={({ field }) => <ChoiceField label="Number of teams" onChange={field.onChange} options={KNOCKOUT_TEAM_COUNTS.map((count) => ({ label: `${count} teams · ${count / 4} groups of 4`, value: String(count) }))} placeholder="Choose a size" value={field.value} />} />}
+      : <Controller control={control} name="teamCount" render={({ field }) => <ChoiceField label="Number of teams" onChange={field.onChange} options={[...KNOCKOUT_TEAM_COUNTS.map((count) => ({ label: describeDraw(count / 4, 4), value: String(count) })), { label: 'Custom…', value: CUSTOM_DRAW }]} placeholder="Choose a size" value={field.value} />} />}
+    {custom && !drawn ? <CustomDraw control={control} groupCount={groupCount} groupSize={groupSize} /> : null}
     <Text style={styles.pickerNote}>{drawn
       ? 'The size is fixed because teams have been entered. Empty every group to change it.'
       : competitionId
@@ -131,6 +133,47 @@ function KnockoutGroups({ competitionId, teams }: { competitionId: string; teams
       </View>;
     })}
   </View>;
+}
+
+/**
+ * The form values a saved knockout reopens on.
+ *
+ * A shape that matches one of the presets shows as that preset; anything else
+ * is a custom draw, and its two numbers are filled in.
+ */
+function knockoutFormValues(item: Competition): Pick<Values, 'teamCount' | 'groupCount' | 'groupSize'> {
+  if (!item.team_count) return { teamCount: '', groupCount: '4', groupSize: '4' };
+  const size = item.group_size ?? GROUP_SIZE;
+  const count = item.team_count / size;
+  const preset = size === GROUP_SIZE && (KNOCKOUT_TEAM_COUNTS as readonly number[]).includes(item.team_count);
+  return { teamCount: preset ? String(item.team_count) : CUSTOM_DRAW, groupCount: String(count), groupSize: String(size) };
+}
+
+/** The sentinel the size picker uses for a draw the admin shapes themselves. */
+const CUSTOM_DRAW = 'custom';
+
+/** "24 teams · 6 groups of 4", the phrasing the presets already read in. */
+const describeDraw = (groupCount: number, groupSize: number) => `${groupCount * groupSize} teams · ${groupCount} groups of ${groupSize}`;
+
+/**
+ * A draw the admin shapes themselves.
+ *
+ * The total is shown as it is typed, and a shape that would not make a bracket
+ * says so here rather than being refused on save.
+ */
+function CustomDraw({ control, groupCount, groupSize }: { control: Control<Values>; groupCount: string; groupSize: string }) {
+  const styles = useThemedStyles(stylesheet);
+  const counts = { groups: Number(groupCount), size: Number(groupSize) };
+  const problem = describeCustomDraw(counts.groups, counts.size);
+  return <>
+    <View style={styles.two}>
+      <Controller control={control} name="groupCount" render={({ field }) => <FormField inputMode="numeric" keyboardType="number-pad" label="Number of groups" onChangeText={field.onChange} style={styles.flexButton} value={field.value} />} />
+      <Controller control={control} name="groupSize" render={({ field }) => <FormField inputMode="numeric" keyboardType="number-pad" label="Teams per group" onChangeText={field.onChange} style={styles.flexButton} value={field.value} />} />
+    </View>
+    {problem
+      ? <Text accessibilityLiveRegion="polite" style={styles.error}>{problem}</Text>
+      : <Text accessibilityLiveRegion="polite" style={styles.summary}>{describeDraw(counts.groups, counts.size)} · {counts.groups * ADVANCE_PER_GROUP} through to the bracket</Text>}
+  </>;
 }
 
 /** Which group of a knockout the team is drawn into. */
@@ -195,9 +238,16 @@ export default function ManageScreen() {
         editing ? await api.updateTeam(editing.id, payload) : await api.createTeam(payload);
       } else if (resource === 'competitions') {
         if (!values.name.trim() || !values.season.trim()) throw new Error('Enter a competition name and season.');
-        // A knockout is a tournament with a draw size; everything else has none.
-        const payload = { name: values.name.trim(), season: values.season.trim(), type: values.type as Competition['type'], team_count: values.type === 'tournament' && values.teamCount ? Number(values.teamCount) : null };
+        // A knockout is a tournament with a draw shape; everything else has none.
         if (values.type === 'tournament' && !values.teamCount) throw new Error('Choose how many teams the knockout is drawn for.');
+        const custom = values.teamCount === CUSTOM_DRAW;
+        const groupCount = custom ? Number(values.groupCount) : Number(values.teamCount) / GROUP_SIZE;
+        const groupSize = custom ? Number(values.groupSize) : GROUP_SIZE;
+        const wrong = values.type === 'tournament' ? describeCustomDraw(groupCount, groupSize) : null;
+        if (wrong) throw new Error(wrong);
+        const payload = values.type === 'tournament'
+          ? { name: values.name.trim(), season: values.season.trim(), type: values.type as Competition['type'], team_count: groupCount * groupSize, group_size: groupSize }
+          : { name: values.name.trim(), season: values.season.trim(), type: values.type as Competition['type'], team_count: null, group_size: null };
         const saved = editing ? await api.updateCompetition(editing.id, payload) : await api.createCompetition(payload);
         // A knockout is only half set up when it saves: its groups exist but
         // stand empty, and the draw is made from this very form. Clearing back
@@ -225,7 +275,7 @@ export default function ManageScreen() {
       await invalidate();
       if (stayOn) {
         setEditing(stayOn);
-        form.reset({ ...defaults, name: stayOn.name, season: stayOn.season, type: stayOn.type, teamCount: stayOn.team_count ? String(stayOn.team_count) : '' });
+        form.reset({ ...defaults, name: stayOn.name, season: stayOn.season, type: stayOn.type, ...knockoutFormValues(stayOn) });
         showToast('Groups drawn up — add teams below');
         return;
       }
@@ -242,7 +292,7 @@ export default function ManageScreen() {
     setEditing(item); setFormError(null);
     pageRef.current?.scrollTo({ y: 0, animated: true });
     if ((resource === 'teams' || resource === 'opponents') && 'is_aimz' in item) form.reset({ ...defaults, name: item.name, code: item.squad_code ?? '', ageGroup: item.age_group ?? '', season: item.season ?? '', coach: item.coach ?? '', assistantCoach: item.assistant_coach ?? '', teamCompetitionId: item.competition_id ?? '', teamGroupId: item.competition_group_id ?? '' });
-    if (resource === 'competitions' && 'type' in item && !('status' in item)) form.reset({ ...defaults, name: item.name, season: item.season, type: item.type, teamCount: item.team_count ? String(item.team_count) : '' });
+    if (resource === 'competitions' && 'type' in item && !('status' in item)) form.reset({ ...defaults, name: item.name, season: item.season, type: item.type, ...knockoutFormValues(item) });
     if (resource === 'players' && 'position' in item) form.reset({ ...defaults, name: item.name, teamId: item.team_id, position: item.position, jersey: item.jersey_number?.toString() ?? '' });
     if (resource === 'matches' && 'status' in item) form.reset({ ...defaults, competitionId: item.competition_id, homeTeamId: item.home_team_id, awayTeamId: item.away_team_id, kickoff: item.kickoff_datetime, venue: item.venue, status: item.status, halfLength: String(item.half_length_minutes ?? 45), numHalves: String(item.num_halves ?? 2), halfTimeBreak: String(item.half_time_break_minutes ?? 15), hasExtraTime: item.has_extra_time ? 'true' : 'false', extraTimeLength: String(item.extra_time_half_length_minutes ?? 15) });
   };

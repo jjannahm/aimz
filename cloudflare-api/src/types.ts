@@ -50,6 +50,12 @@ export interface CompetitionRow {
    * constraint, and SQLite cannot widen one without rebuilding the table.
    */
   team_count: number | null;
+  /**
+   * How many teams share a group.
+   *
+   * Null on everything drawn before custom shapes, which were always fours.
+   */
+  group_size: number | null;
   created_at: string;
   updated_at: string;
 }
