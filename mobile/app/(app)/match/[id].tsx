@@ -74,7 +74,7 @@ export default function MatchDetailScreen() {
         <Ionicons color={colors.leaderAccent} name="trophy" size={18} />
         <View style={styles.eventCopy}><Text style={styles.awardLabel}>Man of the match</Text><Text style={styles.awardName}>{playerNames.get(query.data.match.man_of_the_match_player_id) ?? 'Player'}</Text></View>
       </View> : null}
-      {user?.role === 'admin' ? <View style={styles.adminActions}><AppButton label={opponentOnly ? query.data.match.status === 'finished' ? 'Edit final score' : 'Enter final score' : query.data.match.status === 'scheduled' ? 'Open match management' : 'Open live scoring'} onPress={() => router.push(opponentOnly ? `/result/${id}` : `/live/${id}`)} /></View> : null}
+      {user?.role === 'admin' ? <View style={styles.adminActions}><AppButton label={opponentOnly ? query.data.match.status === 'finished' ? 'Edit final score' : 'Enter final score' : query.data.match.status === 'scheduled' ? 'Open match management' : 'Open live scoring'} onPress={() => router.push({ pathname: opponentOnly ? '/result/[id]' : '/live/[id]', params: { id } })} /></View> : null}
       </View>
       {(() => {
         if (opponentOnly && !query.data.lineup.length) return null;
