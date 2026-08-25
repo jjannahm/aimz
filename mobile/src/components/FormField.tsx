@@ -1,20 +1,24 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View, type StyleProp, type TextInputProps, type ViewStyle } from 'react-native';
 
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
-type Props = TextInputProps & { label: string; error?: string; hint?: string };
+/**
+ * `style` reaches the text input itself; `containerStyle` reaches the group
+ * around it, which is what a row lays out. See the note on `group` below.
+ */
+type Props = TextInputProps & { label: string; error?: string; hint?: string; containerStyle?: StyleProp<ViewStyle> };
 
-export function FormField({ label, error, hint, secureTextEntry, style, ...props }: Props) {
+export function FormField({ label, error, hint, secureTextEntry, style, containerStyle, ...props }: Props) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const [revealed, setRevealed] = useState(false);
   return (
-    <View style={styles.group}>
+    <View style={[styles.group, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.inputShell, error && styles.inputError]}>
+      <View style={[styles.inputShell, props.multiline && styles.multilineShell, error && styles.inputError]}>
         <TextInput
           accessibilityLabel={label}
           accessibilityHint={hint}
@@ -46,9 +50,16 @@ export function FormField({ label, error, hint, secureTextEntry, style, ...props
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  group: { flex: 1, gap: theme.spacing.xs },
+  // Deliberately not flexible. A flexible group takes a flex basis of zero, so
+  // in a column it is handed an equal share of the free space rather than the
+  // height its own contents need — which starves a tall field, and the overflow
+  // then paints over whatever follows it. A row that wants two fields to share
+  // its width passes `containerStyle` instead.
+  group: { gap: theme.spacing.xs },
   label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
   inputShell: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', minHeight: 52 },
+  // A single-line input is centred in the shell; a taller one fills it.
+  multilineShell: { alignItems: 'stretch' },
   input: { color: colors.textPrimary, flex: 1, fontSize: theme.type.body, minHeight: 50, paddingHorizontal: theme.spacing.md },
   multiline: { minHeight: 96, paddingTop: theme.spacing.md, textAlignVertical: 'top' },
   inputError: { borderColor: colors.error },

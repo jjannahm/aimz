@@ -4,8 +4,10 @@ import { router } from 'expo-router';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
+import { useAuth } from '@/src/auth/AuthProvider';
 import { Screen } from '@/src/components/Screen';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
+import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { copy } from '@/src/i18n/en';
@@ -20,6 +22,10 @@ const SECTIONS: Section[] = [
   { key: 'teams', label: copy.teams },
   { key: 'awards', label: copy.awards },
 ];
+
+/** The academy-wide sections, plus the signed-in player's own stats. */
+const sectionsFor = (playerId: string | null | undefined): Section[] =>
+  playerId ? [...SECTIONS, { key: 'mine', label: copy.myStats }] : SECTIONS;
 
 function Chevron() {
   const colors = useColors();
@@ -158,19 +164,23 @@ function AwardsSection() {
 
 export default function PlayersScreen() {
   const styles = useThemedStyles(stylesheet);
+  const { user } = useAuth();
   const [selected, setSelected] = useState<string>('teams');
-  const section = SECTIONS.find((item) => item.key === selected) ?? SECTIONS[0]!;
+  // An account with no roster record behind it has no stats of its own to show,
+  // which is every administrator and any player not linked yet.
+  const sections = useMemo(() => sectionsFor(user?.player_id), [user?.player_id]);
+  const section = sections.find((item) => item.key === selected) ?? sections[0]!;
 
   return <Screen title="Players">
     <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
-      {SECTIONS.map((item) => {
+      {sections.map((item) => {
         const active = item.key === section.key;
         return <Pressable accessibilityLabel={item.label} accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.key} onPress={() => setSelected(item.key)} style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}>
           <Text style={[styles.chipText, active && styles.chipTextActive]}>{item.label}</Text>
         </Pressable>;
       })}
     </ScrollView>
-    {section.key === 'awards' ? <AwardsSection /> : <TeamsSection />}
+    {section.key === 'mine' && user?.player_id ? <PlayerStatsPanel playerId={user.player_id} /> : section.key === 'awards' ? <AwardsSection /> : <TeamsSection />}
   </Screen>;
 }
 
