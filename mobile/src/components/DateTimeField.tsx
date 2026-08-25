@@ -149,7 +149,9 @@ export function DateTimeField({ label, value, onChange, error, dateOnly = false 
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  group: { flex: 1, gap: theme.spacing.xs },
+  // Not flexible, for the reason given on FormField's `group`: the open panel
+  // is tall, and an equal share of the free space is less than it needs.
+  group: { gap: theme.spacing.xs },
   groupOpen: { elevation: 8, zIndex: 10 },
   label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
   shell: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 52, paddingHorizontal: theme.spacing.md },

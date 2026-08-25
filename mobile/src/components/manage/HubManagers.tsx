@@ -35,7 +35,7 @@ export function AccountsManager({ players }: { players: Player[] }) {
   if (accounts.isLoading) return <LoadingState label="Loading accounts" />;
   if (accounts.isError) return <ErrorState message={(accounts.error as ApiError).message} onRetry={() => accounts.refetch()} />;
   return <View style={styles.stack}>
-    <Text style={styles.explainer}>Connect each player login to one roster record. Unlinking removes My Team access without deleting either account.</Text>
+    <Text style={styles.explainer}>Connect each player login to one roster record. Unlinking removes Hub access without deleting either account.</Text>
     {accounts.data?.items.map((account: AdminAccount) => <View key={account.id} style={styles.card}>
       <View style={styles.copy}>
         <Text style={styles.title}>{account.name}</Text>
@@ -119,7 +119,7 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
       {!editing ? <ChoiceField label="Repeat" onChange={(recurrence) => setDraft((current) => ({ ...current, recurrence: recurrence as ScheduleDraft['recurrence'] }))} options={[{ label: 'One-off', value: 'once' }, { label: 'Weekly', value: 'weekly' }]} value={draft.recurrence} /> : null}
       {!editing && draft.recurrence === 'weekly' ? <>
         <Text style={styles.label}>Weekdays</Text>
-        <View accessibilityRole="radiogroup" style={styles.dayRow}>{weekdays.map((label, day) => <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: draft.weekdays.includes(day) }} key={label} onPress={() => toggleWeekday(day)} style={[styles.day, draft.weekdays.includes(day) && styles.dayActive]}><Text style={[styles.dayText, draft.weekdays.includes(day) && styles.dayTextActive]}>{label}</Text></Pressable>)}</View>
+        <View accessibilityRole="radiogroup" style={styles.dayRow}>{weekdays.map((label, day) => <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: draft.weekdays.includes(day) }} hitSlop={{ left: 4, right: 4 }} key={label} onPress={() => toggleWeekday(day)} style={[styles.day, draft.weekdays.includes(day) && styles.dayActive]}><Text numberOfLines={1} style={[styles.dayText, draft.weekdays.includes(day) && styles.dayTextActive]}>{label}</Text></Pressable>)}</View>
         <DateTimeField dateOnly label="End date (optional; blank schedules 26 weeks)" onChange={(endsOn) => setDraft((current) => ({ ...current, endsOn }))} value={draft.endsOn} />
       </> : null}
       <FormField inputMode="numeric" keyboardType="number-pad" label="Duration (minutes)" onChangeText={(duration) => setDraft((current) => ({ ...current, duration }))} value={draft.duration} />
@@ -174,9 +174,12 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   body: { color: colors.textSecondary, lineHeight: 21, marginTop: theme.spacing.sm },
   card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.md },
   copy: { flex: 1 },
-  day: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, minWidth: theme.touch.minimum, paddingHorizontal: theme.spacing.sm },
+  // Seven across, the way the date picker's calendar lays out its own week.
+  // A gap would push the last day onto a second row, so the separation sits
+  // inside each chip and the columns line up.
+  day: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flex: 1, justifyContent: 'center', marginHorizontal: 2, minHeight: theme.touch.minimum },
   dayActive: { backgroundColor: colors.accent, borderColor: colors.accent },
-  dayRow: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs },
+  dayRow: { flexDirection: 'row' },
   dayText: { color: colors.textSecondary, fontWeight: '800' },
   dayTextActive: { color: colors.onAccent },
   explainer: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, color: colors.textSecondary, lineHeight: 22, padding: theme.spacing.md },
