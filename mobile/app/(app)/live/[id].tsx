@@ -181,7 +181,7 @@ export default function LiveScoringScreen() {
           : clock.phase === 'extra_time'
             ? <AppButton label="End match" loading={phaseMutation.isPending} onPress={() => confirmPhase('End this match now?', 'Standings will update from this final score.', 'finish_match', 'End match', true)} variant="danger" />
             : <Text style={styles.finished}>Finished matches remain open for corrections.</Text>;
-  if (match && isOpponentOnly(match)) return <Redirect href={`/result/${id}`} />;
+  if (match && isOpponentOnly(match)) return <Redirect href={{ pathname: '/result/[id]', params: { id } }} />;
   return <Screen action={<CloseButton />} title="Live scoring">
     {matchQuery.isLoading ? <LoadingState /> : matchQuery.isError || !match ? <ErrorState message={(matchQuery.error as ApiError)?.message ?? 'Match not found.'} onRetry={() => matchQuery.refetch()} /> : <>
       <View style={styles.scoreCard}><View style={styles.statusRow}><MatchStatusIndicator clock={clock} muted={match.status !== 'live'} /><Text style={styles.sync}>Revision {matchQuery.data?.revision}</Text></View><View style={styles.scoreRow}><Text style={styles.team}>{match.home_team?.name}</Text><ScoreLine away={match.away_score} home={match.home_score} /><Text style={[styles.team, styles.away]}>{match.away_team?.name}</Text></View>{match.status === 'live' ? <MatchProgressRail clock={clock} /> : null}{phaseControls}</View>

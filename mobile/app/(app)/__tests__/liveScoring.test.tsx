@@ -118,7 +118,7 @@ describe('LiveScoringScreen — opponent-only redirect', () => {
       away_team: { ...base.away_team!, is_aimz: false },
     }));
     const screen = await render(<LiveScoringScreen />, { wrapper });
-    await waitFor(() => expect(screen.toJSON()).toMatchObject({ type: 'Redirect', props: { href: '/result/match-1' } }));
+    await waitFor(() => expect(screen.toJSON()).toMatchObject({ type: 'Redirect', props: { href: { pathname: '/result/[id]', params: { id: 'match-1' } } } }));
     expect(api.live).toHaveBeenCalledWith('match-1');
   });
 });
