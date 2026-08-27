@@ -20,12 +20,15 @@ export function SettingsButton() {
       onPress={() => router.push('/settings')}
       style={({ pressed }) => [styles.button, pressed && styles.pressed]}
     >
-      <Ionicons color={colors.textPrimary} name="settings-outline" size={22} />
+      <Ionicons color={colors.textPrimary} name="settings-outline" size={22} style={styles.icon} />
     </Pressable>
   );
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   button: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: 22, height: 44, justifyContent: 'center', width: 44 },
+  // Ionicons' gear is optically top-heavy, so centre the glyph without moving
+  // the button's 44-point hit area out of alignment with the header.
+  icon: { transform: [{ translateY: 1 }] },
   pressed: { opacity: 0.7 },
 });
