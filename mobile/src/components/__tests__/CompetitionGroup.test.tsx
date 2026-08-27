@@ -12,9 +12,9 @@ const match: Match = {
 };
 
 describe('CompetitionGroup', () => {
-  it('shows the competition initials fallback and its matches', async () => {
+  it('shows the competition name without an initials badge and its matches', async () => {
     const screen = await render(<CompetitionGroup group={{ competitionId: 'competition', competitionName: 'Women Academy League', matches: [match] }} />);
-    expect(JSON.stringify(screen.toJSON())).toContain('WA');
+    expect(JSON.stringify(screen.toJSON())).not.toContain('WA');
     expect(screen.getByText('Women Academy League')).toBeTruthy();
     expect(screen.getByText('Home')).toBeTruthy();
     expect(screen.getByText('Away')).toBeTruthy();

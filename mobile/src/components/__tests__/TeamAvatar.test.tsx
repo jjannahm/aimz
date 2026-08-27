@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react-native';
 
 import { initialsFor, TeamAvatar } from '@/src/components/TeamAvatar';
+import { opponentBadgeColors } from '@/src/components/TeamBadge';
 
 describe('initialsFor', () => {
   it('takes one letter from each of the first two words', () => {
@@ -26,31 +27,26 @@ describe('TeamAvatar', () => {
   it('gives an AIMZ squad the club crest', async () => {
     const screen = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={48} />);
     expect(screen.getByTestId('badge-aimz', hidden)).toBeTruthy();
-    expect(screen.getByText('aimz', hidden)).toBeTruthy();
+    expect(screen.getByTestId('aimz-shield', hidden)).toBeTruthy();
+    expect(screen.getByTestId('crest-wordmark', hidden)).toBeTruthy();
   });
 
-  // A standings row asks for 34, which is under the size the wordmark needs.
-  // The stripes are what say whose crest it is, so they stay: without them an
-  // AIMZ row wore a bare shield, which is what an opponent wears.
-  it('keeps the stripes at the size a standings row asks for', async () => {
+  it('keeps the complete crest at the size a standings row asks for', async () => {
     const row = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={34} />);
     expect(row.getAllByTestId('crest-stripe', hidden)).toHaveLength(6);
-    expect(row.queryByText('aimz', hidden)).toBeNull();
+    expect(row.getByTestId('crest-wordmark', hidden)).toBeTruthy();
   });
 
-  it('gives an opponent the neutral shield, with no club wordmark', async () => {
+  it('gives an opponent a named monogram shield, with no club wordmark', async () => {
     const screen = await render(<TeamAvatar name="Giza Lions" size={48} />);
     expect(screen.getByTestId('badge-opponent', hidden)).toBeTruthy();
-    expect(screen.queryByText('aimz', hidden)).toBeNull();
+    expect(screen.getByText('GL', hidden)).toBeTruthy();
+    expect(screen.queryByTestId('crest-wordmark', hidden)).toBeNull();
   });
 
-  it('drops the crest detail at table-row size, where it would be unreadable', async () => {
-    const large = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={48} />);
-    const small = await render(<TeamAvatar isAimz name="AIMZ U18 Women" size={34} />);
-    expect(large.getByText('aimz', hidden)).toBeTruthy();
-    // Still the crest, just without the stripes and wordmark.
-    expect(small.getByTestId('badge-aimz', hidden)).toBeTruthy();
-    expect(small.queryByText('aimz', hidden)).toBeNull();
+  it('keeps opponent colours deterministic and distinguishes different names', () => {
+    expect(opponentBadgeColors('Giza Lions')).toEqual(opponentBadgeColors('  GIZA LIONS  '));
+    expect(opponentBadgeColors('Giza Lions')).not.toEqual(opponentBadgeColors('Cairo Stars'));
   });
 
   it('prefers an uploaded crest over the drawn badge', async () => {

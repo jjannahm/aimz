@@ -69,7 +69,9 @@ describe('team hub authorization and roster privacy', () => {
     const team = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U14', is_aimz: true }, admin.token))).json<{ id: string }>();
     const otherTeam = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U16', is_aimz: true }, admin.token))).json<{ id: string }>();
     const player = await (await request('/api/v1/players', json('POST', { name: 'Mariam', team_id: team.id, position: 'Forward' }, admin.token))).json<{ id: string }>();
+    const otherPlayer = await (await request('/api/v1/players', json('POST', { name: 'Nadine', team_id: otherTeam.id, position: 'Keeper' }, admin.token))).json<{ id: string }>();
     const playerUser = await seedUser('player', player.id);
+    const otherPlayerUser = await seedUser('player', otherPlayer.id);
 
     const created = await request('/api/v1/training-sessions', json('POST', { team_id: team.id, venue: 'AIMZ Ground', notes: null, duration_minutes: 90, occurrences: ['2026-08-25T15:00:00.000Z', '2026-08-27T15:00:00.000Z'] }, admin.token));
     expect(created.status).toBe(201);
@@ -92,11 +94,17 @@ describe('team hub authorization and roster privacy', () => {
     expect(await release.json()).toMatchObject({ assigned_player_id: null });
 
     await request('/api/v1/announcements', json('POST', { team_id: null, title: 'Academy update', body: 'For everyone', pinned: false }, admin.token));
-    await request('/api/v1/announcements', json('POST', { team_id: team.id, title: 'U14 priority', body: 'Meet early', pinned: true }, admin.token));
+    const targeted = await request('/api/v1/announcements', json('POST', { team_id: team.id, title: 'U14 priority', body: 'Meet early', pinned: true }, admin.token));
+    expect(await targeted.json()).toMatchObject({ team_id: team.id, team: { id: team.id } });
     await request('/api/v1/announcements', json('POST', { team_id: otherTeam.id, title: 'U16 only', body: 'Different squad', pinned: true }, admin.token));
     const visible = await (await request('/api/v1/announcements?limit=100', json('GET', undefined, playerUser.token))).json<{ items: { title: string; pinned: boolean; author_name: string }[] }>();
     expect(visible.items.map((announcement) => announcement.title)).toEqual(['U14 priority', 'Academy update']);
     expect(visible.items[0]).toMatchObject({ pinned: true, author_name: 'Test Admin' });
+    const visibleToOtherTeam = await (await request('/api/v1/announcements?limit=100', json('GET', undefined, otherPlayerUser.token))).json<{ items: { title: string }[] }>();
+    expect(visibleToOtherTeam.items.map((announcement) => announcement.title)).toEqual(['U16 only', 'Academy update']);
+    const crossTeamFeed = await request(`/api/v1/announcements?team_id=${team.id}&limit=100`, json('GET', undefined, otherPlayerUser.token));
+    expect(crossTeamFeed.status).toBe(403);
+    expect(await crossTeamFeed.json()).toMatchObject({ detail: { code: 'team_access_denied' } });
 
     const accounts = await (await request('/api/v1/admin/users?limit=100', json('GET', undefined, admin.token))).json<{ items: { id: string; player: { id: string } | null; team: { id: string } | null }[] }>();
     expect(accounts.items.find((account) => account.id === playerUser.id)).toMatchObject({ player: { id: player.id }, team: { id: team.id } });

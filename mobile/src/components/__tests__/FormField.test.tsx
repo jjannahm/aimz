@@ -1,7 +1,8 @@
-import { render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet, type ViewStyle } from 'react-native';
 
 import { FormField } from '@/src/components/FormField';
+import { darkColors } from '@/src/theme';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 
@@ -29,5 +30,27 @@ describe('FormField', () => {
   it('keeps a single-line input centred in its shell', async () => {
     const screen = await render(<FormField label="Venue" value="" />);
     expect(flatten(screen.getByLabelText('Venue').parent).alignItems).toBe('center');
+  });
+
+  it('moves focus styling to the contained shell and preserves callbacks', async () => {
+    const onFocus = jest.fn();
+    const onBlur = jest.fn();
+    const screen = await render(<FormField label="Number" onBlur={onBlur} onFocus={onFocus} value="" />);
+    const input = screen.getByLabelText('Number');
+
+    expect(StyleSheet.flatten(input.props.style)).toMatchObject({ minWidth: 0, outlineWidth: 0 });
+    fireEvent(input, 'focus', { nativeEvent: {} });
+    expect(onFocus).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(StyleSheet.flatten(screen.getByTestId('form-field-shell').props.style)).toMatchObject({ borderColor: darkColors.accent, borderWidth: 2, overflow: 'hidden' }));
+
+    fireEvent(input, 'blur', { nativeEvent: {} });
+    expect(onBlur).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(StyleSheet.flatten(screen.getByTestId('form-field-shell').props.style)).toMatchObject({ borderColor: darkColors.border, borderWidth: 1 }));
+  });
+
+  it('keeps the error ring visible while focused', async () => {
+    const screen = await render(<FormField error="Enter a number" label="Number" value="" />);
+    fireEvent(screen.getByLabelText('Number'), 'focus', { nativeEvent: {} });
+    await waitFor(() => expect(StyleSheet.flatten(screen.getByTestId('form-field-shell').props.style)).toMatchObject({ borderColor: darkColors.error, borderWidth: 2 }));
   });
 });

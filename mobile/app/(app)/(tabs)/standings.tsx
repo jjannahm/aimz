@@ -8,7 +8,7 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
-import { initialsFor, TeamAvatar } from '@/src/components/TeamAvatar';
+import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -33,7 +33,6 @@ function FormStrip({ form }: { form: FormResult[] }) {
 function CompetitionHeader({ competition }: { competition: Competition }) {
   const styles = useThemedStyles(stylesheet);
   return <View accessibilityLabel={`${competition.name}, season ${competition.season}`} style={styles.headerCard}>
-    <View accessibilityElementsHidden style={styles.crest}><Text style={styles.crestText}>{initialsFor(competition.name)}</Text></View>
     <View style={styles.headerCopy}>
       <Text numberOfLines={1} style={styles.headerName}>{competition.name}</Text>
       <Text numberOfLines={1} style={styles.headerSeason}>{competition.season}</Text>
@@ -173,8 +172,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   tabLabel: { color: colors.textSecondary, fontWeight: '800' },
   activeLabel: { color: colors.onAccent, fontWeight: '900' },
   headerCard: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 80, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  crest: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderColor: colors.accent, borderRadius: 24, borderWidth: 1, height: 48, justifyContent: 'center', width: 48 },
-  crestText: { color: colors.accentSoft, fontSize: theme.type.body, fontWeight: '900', letterSpacing: 0.3 },
   headerCopy: { flex: 1, gap: 2 },
   headerName: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' },
   headerSeason: { color: colors.textMuted, fontSize: theme.type.label },
