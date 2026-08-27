@@ -2,7 +2,14 @@ import type { components } from '@/src/types/generated';
 
 type Schema = components['schemas'];
 
-export type UserRole = Schema['UserRole'];
+// The generated union comes from an API without parent accounts; catches up on
+// the next `npm run api:types`.
+export type UserRole = Schema['UserRole'] | 'parent';
+export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole };
+/** What redeeming an invitation creates: one player, or a parent of several. */
+export type InviteKind = 'player' | 'parent';
+/** A roster player an account speaks for: itself for a player, a child for a parent. */
+export type LinkedChild = { id: string; name: string; team_id: string; team_name: string | null };
 export type MatchStatus = Schema['MatchStatus'];
 export type MatchPhase = Schema['MatchPhase'];
 export type MatchPhaseAction = Schema['MatchPhaseUpdate']['action'];
@@ -10,9 +17,8 @@ export type CompetitionType = Schema['CompetitionType'];
 // The generated union predates own goals and missed penalties; catches up on
 // the next `npm run api:types`.
 export type EventType = Schema['EventType'] | ExtraEventType;
-export type User = Schema['UserRead'];
 export type TokenResponse = Schema['TokenResponse'];
-export type RegistrationInvite = Schema['InviteRead'] & { player_id: string | null };
+export type RegistrationInvite = Schema['InviteRead'] & { player_id: string | null; kind: InviteKind; players?: { id: string; name: string }[] };
 export type PresignResponse = Schema['PresignResponse'];
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 /** 8, 16 or 32 for a knockout; null for a competition that is only a table. */

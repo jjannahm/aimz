@@ -10,7 +10,7 @@ import type { AwardRank, Player, Team } from '@/src/types/api';
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 
 jest.mock('@/src/lib/api', () => ({
-  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), matches: jest.fn() },
+  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), matches: jest.fn(), myChildren: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -83,6 +83,26 @@ describe('PlayersScreen', () => {
     expect(screen.getByText('Appearances')).toBeTruthy();
     expect(screen.getByText('Match breakdown')).toBeTruthy();
     expect(api.playerStats).toHaveBeenCalledWith('p-1');
+  });
+
+  // A parent reads each child on their own, rather than one merged view.
+  it('lets a parent pick which child to read', async () => {
+    mockUser = { role: 'parent', player_id: null };
+    jest.mocked(api.myChildren).mockResolvedValue({ items: [
+      { id: 'p-1', name: 'Salma Nabil', team_id: 't-u9', team_name: 'AIMZ U9' },
+      { id: 'p-2', name: 'Mariam Adel', team_id: 't-u13', team_name: 'AIMZ U13' },
+    ] });
+    jest.mocked(api.playerStats).mockResolvedValue({
+      player: players[1]!, season: '2026/27', appearances: 4, minutes_played: 300,
+      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, matches: [],
+    });
+    jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+    const screen = await render(<PlayersScreen />, { wrapper });
+    fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    // The first child is read without choosing, and the other is offered.
+    await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-1'));
+    fireEvent.press(await screen.findByRole('tab', { name: 'Mariam Adel' }));
+    await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-2'));
   });
 
   // An administrator has no roster record behind their login, so there are no

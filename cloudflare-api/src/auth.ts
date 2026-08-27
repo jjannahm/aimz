@@ -8,6 +8,7 @@ import {
   publicUser,
   verifyPassword,
 } from "./security";
+import { linkedPlayerIds } from "./team-access";
 import type { InviteKind, InviteRow, UserRole, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -185,6 +186,17 @@ export function registerAuthRoutes(app: App): void {
   app.post("/api/v1/auth/password-reset/confirm", () => { throw new ApiProblem(503, "password_reset_disabled", "Password reset is disabled in staging. Contact an AIMZ administrator."); });
 
   app.get("/api/v1/users/me", async (c) => c.json(publicUser(await currentUser(c))));
+  // The roster players a parent speaks for. A player account answers with the
+  // one player it is, so the caller has a single shape either way.
+  app.get("/api/v1/users/me/children", async (c) => {
+    const user = await currentUser(c);
+    if (user.role === "admin") return c.json({ items: [] });
+    const playerIds = await linkedPlayerIds(c.env, user);
+    const result = await c.env.DB.prepare(
+      `SELECT p.id, p.name, p.team_id, t.name team_name FROM players p LEFT JOIN teams t ON t.id=p.team_id WHERE p.id IN (${playerIds.map(() => "?").join(",")}) ORDER BY p.name`,
+    ).bind(...playerIds).all<{ id: string; name: string; team_id: string; team_name: string | null }>();
+    return c.json({ items: result.results });
+  });
   app.patch("/api/v1/users/me", async (c) => {
     const user = await currentUser(c);
     const body = await jsonObject(c);

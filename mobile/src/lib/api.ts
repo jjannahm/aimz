@@ -1,38 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type {
-  AuditEntry,
-  AwardMetric,
-  AwardRank,
-  Competition,
-  LeaderMetric,
-  LineupEntry,
-  LiveMatchSnapshot,
-  Match,
-  Bracket,
-  CompetitionGroup,
-  MatchPhaseAction,
-  MatchEvent,
-  HeadToHead,
-  Page,
-  Player,
-  PlayerLeaderRow,
-  PlayerMatchStat,
-  PlayerSeasonSummary,
-  PlayerRosterDetails,
-  AdminAccount,
-  Announcement,
-  EventAssignment,
-  PresignResponse,
-  RegistrationInvite,
-  TrainingAvailability,
-  TrainingSession,
-  SeasonAwards,
-  StandingRow,
-  Team,
-  TokenResponse,
-  User,
-} from '@/src/types/api';
+import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -296,8 +264,9 @@ export const api = {
   auditLog: (matchId?: string) => request<Page<AuditEntry>>(`/api/v1/admin/audit-log${matchId ? `?match_id=${encodeURIComponent(matchId)}` : ''}`),
   playerStats: (playerId: string, season?: string) => request<PlayerSeasonSummary>(`/api/v1/players/${playerId}/stats${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   invites: () => request<RegistrationInvite[]>('/api/v1/admin/registration-invites'),
-  createInvite: (payload: { label: string; code: string; expires_at?: string | null; max_uses?: number | null; player_id?: string | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
+  createInvite: (payload: { label: string; code: string; kind: InviteKind; player_ids: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
   revokeInvite: (id: string) => request<void>(`/api/v1/admin/registration-invites/${id}`, { method: 'DELETE' }),
+  myChildren: () => request<{ items: LinkedChild[] }>('/api/v1/users/me/children'),
   adminUsers: (query = '?limit=100') => request<Page<AdminAccount>>(`/api/v1/admin/users${query}`),
   linkUserPlayer: (id: string, player_id: string | null) => request<User>(`/api/v1/admin/users/${id}`, { method: 'PATCH', body: { player_id } }),
   trainingSessions: (query = '') => request<Page<TrainingSession>>(`/api/v1/training-sessions${query}`),
