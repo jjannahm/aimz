@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
+import { StyleSheet, type ViewStyle } from 'react-native';
 
 import { useLocalSearchParams } from 'expo-router';
 
@@ -61,6 +62,23 @@ describe('StandingsScreen', () => {
     expect(screen.queryByText('WA')).toBeNull();
     // The old header ran the two together inside one pill.
     expect(screen.queryByText('Women Academy League · 2026')).toBeNull();
+  });
+
+  // The gold edge used to be a left border, which is part of the box: it inset
+  // the leader's cells and left them sitting right of every row beneath.
+  it('lays the leading row out on the same columns as the rest', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    await screen.findByText('Giza Lions');
+    const rows = screen.getAllByRole('button').filter((node) => String(node.props.accessibilityLabel ?? '').includes('points'));
+    expect(rows).toHaveLength(table.length);
+    const boxes = rows.map((node) => StyleSheet.flatten(node.props.style) as ViewStyle);
+    const leader = boxes[0]!;
+    for (const other of boxes.slice(1)) {
+      expect(leader.borderLeftWidth ?? 0).toBe(other.borderLeftWidth ?? 0);
+      expect(leader.paddingHorizontal).toBe(other.paddingHorizontal);
+      expect(leader.paddingVertical).toBe(other.paddingVertical);
+      expect(leader.gap).toBe(other.gap);
+    }
   });
 
   it('hides the switcher when only one competition is running', async () => {
