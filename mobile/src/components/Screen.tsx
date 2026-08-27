@@ -61,7 +61,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   safe: { backgroundColor: colors.background, flex: 1 },
   scroller: { flex: 1, minHeight: 0 },
   scroll: { flexGrow: 1 },
-  content: { alignSelf: 'center', gap: theme.spacing.lg, maxWidth: 760, padding: theme.spacing.lg, paddingBottom: theme.spacing.xxxl, width: '100%' },
+  // The tab bar floats over the page rather than taking a strip below it, so
+  // the last of the content has to clear where it sits.
+  content: { alignSelf: 'center', gap: theme.spacing.lg, maxWidth: 760, padding: theme.spacing.lg, paddingBottom: theme.spacing.xxxl + theme.spacing.xl, width: '100%' },
   growing: { flexGrow: 1 },
   filling: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing.md },
