@@ -1,4 +1,6 @@
-export type UserRole = "player" | "admin";
+export type UserRole = "player" | "admin" | "parent";
+/** What an invitation creates when it is redeemed. */
+export type InviteKind = "player" | "parent";
 export type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
 export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";
@@ -231,7 +233,9 @@ export interface InviteRow {
   id: string;
   label: string;
   code_hash: string;
-  /** The roster player this invitation is for; null for a shared intake code. */
+  /** What redeeming this creates: one player, or a parent of several. */
+  kind: InviteKind;
+  /** Kept for invitations written before `invite_players`; read that instead. */
   player_id: string | null;
   expires_at: string | null;
   max_uses: number | null;

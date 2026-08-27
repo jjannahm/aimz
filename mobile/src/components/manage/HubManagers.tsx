@@ -15,41 +15,13 @@ import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
 import { expandWeekly } from '@/src/lib/trainingSchedule';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { AdminAccount, Announcement, Player, Team, TrainingSession } from '@/src/types/api';
+import type { Announcement, Team, TrainingSession } from '@/src/types/api';
 
 const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const positiveInteger = (value: string, fallback: number) => {
   const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 };
-
-export function AccountsManager({ players }: { players: Player[] }) {
-  const styles = useThemedStyles(stylesheet);
-  const client = useQueryClient();
-  const accounts = useQuery({ queryKey: ['accounts'], queryFn: () => api.adminUsers('?limit=100') });
-  const link = useMutation({
-    mutationFn: ({ id, playerId }: { id: string; playerId: string | null }) => api.linkUserPlayer(id, playerId),
-    onError: (error) => showMessage('Account not updated', (error as ApiError).message),
-    onSuccess: async () => { await invalidateAfterWrite(client, 'account'); showToast('Account link updated'); },
-  });
-  if (accounts.isLoading) return <LoadingState label="Loading accounts" />;
-  if (accounts.isError) return <ErrorState message={(accounts.error as ApiError).message} onRetry={() => accounts.refetch()} />;
-  return <View style={styles.stack}>
-    <Text style={styles.explainer}>Connect each player login to one roster record. Unlinking removes Hub access without deleting either account.</Text>
-    {accounts.data?.items.map((account: AdminAccount) => <View key={account.id} style={styles.card}>
-      <View style={styles.copy}>
-        <Text style={styles.title}>{account.name}</Text>
-        <Text style={styles.meta}>{account.email} · {account.role}</Text>
-      </View>
-      <ChoiceField
-        label="Linked player"
-        onChange={(playerId) => link.mutate({ id: account.id, playerId: playerId || null })}
-        options={[{ label: 'No linked player', value: '' }, ...players.map((player) => ({ label: player.name, value: player.id }))]}
-        value={account.player?.id ?? ''}
-      />
-    </View>)}
-  </View>;
-}
 
 type ScheduleDraft = {
   teamId: string;

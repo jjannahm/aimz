@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { useMyTeam } from '@/src/auth/useMyTeam';
+import { useAuth } from '@/src/auth/AuthProvider';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
@@ -12,11 +12,13 @@ import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 export function AnnouncementsSection() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
-  const mine = useMyTeam();
-  const query = useQuery({ queryKey: ['announcements', mine.teamId], queryFn: () => api.announcements(`?team_id=${encodeURIComponent(mine.teamId!)}&limit=100`), enabled: Boolean(mine.teamId) });
-  if (!mine.playerId) return <EmptyState body="Ask an AIMZ administrator to link your account to your squad player." title="Account not linked" />;
-  if (mine.isLoading) return <LoadingState label="Loading your squad" />;
-  if (mine.isError) return <ErrorState message="Your linked squad could not be loaded." onRetry={mine.refetch} />;
+  const { user } = useAuth();
+  // A parent has children rather than a player record of their own.
+  const linked = user?.role === 'parent' || Boolean(user?.player_id);
+  // No team is named: the server answers with the squad this account is on, or
+  // with every squad a parent's children are on.
+  const query = useQuery({ queryKey: ['announcements', 'mine'], queryFn: () => api.announcements('?limit=100'), enabled: linked });
+  if (!linked) return <EmptyState body="Ask an AIMZ administrator to link your account to your squad player." title="Account not linked" />;
   if (query.isLoading) return <LoadingState label="Loading announcements" />;
   if (query.isError) return <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} />;
   if (!query.data?.items.length) return <EmptyState body="Coach announcements will appear here." title="No announcements" />;

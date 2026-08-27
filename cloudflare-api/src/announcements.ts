@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import { ApiProblem, adminUser, booleanField, jsonObject, nowIso, parsePagination, publicTeam, stringField } from "./helpers";
-import { requireAimzTeam, scopedTeam } from "./team-access";
+import { requireAimzTeam, scopedTeams } from "./team-access";
 import type { AnnouncementRow, TeamRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -24,12 +24,12 @@ async function publicAnnouncement(env: Env, row: JoinedAnnouncement | Announceme
 export function registerAnnouncementRoutes(app: App): void {
   app.get("/api/v1/announcements", async (c) => {
     const url = new URL(c.req.url);
-    const { teamId, user } = await scopedTeam(c, url.searchParams.get("team_id"));
+    const { teamIds } = await scopedTeams(c, url.searchParams.get("team_id"));
     const { limit, offset } = parsePagination(url);
-    const where = user.role === "admin"
-      ? teamId ? " WHERE a.team_id=? OR a.team_id IS NULL" : ""
-      : " WHERE a.team_id=? OR a.team_id IS NULL";
-    const values = where ? [teamId] : [];
+    // Academy-wide notices carry no team and reach everyone; a parent also sees
+    // whatever was sent to any squad a child of theirs is on.
+    const where = teamIds ? ` WHERE a.team_id IN (${teamIds.map(() => "?").join(",")}) OR a.team_id IS NULL` : "";
+    const values = teamIds ?? [];
     const [count, rows] = await Promise.all([
       c.env.DB.prepare(`SELECT COUNT(*) total FROM announcements a${where}`).bind(...values).first<{ total: number }>(),
       c.env.DB.prepare(`SELECT a.*, u.name author_name FROM announcements a LEFT JOIN users u ON u.id=a.author_id${where} ORDER BY a.pinned DESC, a.created_at DESC LIMIT ? OFFSET ?`).bind(...values, limit, offset).all<JoinedAnnouncement>(),

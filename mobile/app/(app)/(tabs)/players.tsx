@@ -5,6 +5,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
+import { useMyChildren } from '@/src/auth/useMyTeam';
 import { Screen } from '@/src/components/Screen';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
@@ -24,9 +25,40 @@ const SECTIONS: Section[] = [
   { key: 'awards', label: copy.awards },
 ];
 
-/** The academy-wide sections, plus the signed-in player's own stats. */
-const sectionsFor = (playerId: string | null | undefined): Section[] =>
-  playerId ? [...SECTIONS, { key: 'mine', label: copy.myStats }] : SECTIONS;
+/** The academy-wide sections, plus whatever stats this account can see. */
+const sectionsFor = (linked: boolean): Section[] =>
+  linked ? [...SECTIONS, { key: 'mine', label: copy.myStats }] : SECTIONS;
+
+/**
+ * A parent's children, one tab each, so each child's stats are read on their
+ * own. A player has only themselves here and is shown the panel directly.
+ */
+function MyStatsSection() {
+  const styles = useThemedStyles(stylesheet);
+  const { user } = useAuth();
+  const { children, isLoading, isError, refetch } = useMyChildren();
+  const [childId, setChildId] = useState<string | null>(null);
+  if (user?.role !== 'parent') {
+    return user?.player_id
+      ? <PlayerStatsPanel playerId={user.player_id} />
+      : <EmptyState body={copy.accountNotLinked} title="Account not linked" />;
+  }
+  if (isLoading) return <LoadingState label="Loading your children" />;
+  if (isError) return <ErrorState message="Your children could not be loaded." onRetry={refetch} />;
+  if (!children.length) return <EmptyState body={copy.accountNotLinked} title="Account not linked" />;
+  const selected = children.find((child) => child.id === childId) ?? children[0]!;
+  return <View style={styles.stack}>
+    {children.length > 1 ? <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
+      {children.map((child) => {
+        const active = child.id === selected.id;
+        return <Pressable accessibilityLabel={child.name} accessibilityRole="tab" accessibilityState={{ selected: active }} key={child.id} onPress={() => setChildId(child.id)} style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}>
+          <Text style={[styles.chipText, active && styles.chipTextActive]}>{child.name}</Text>
+        </Pressable>;
+      })}
+    </ScrollView> : null}
+    <PlayerStatsPanel playerId={selected.id} />
+  </View>;
+}
 
 function Chevron() {
   const colors = useColors();
@@ -169,7 +201,7 @@ export default function PlayersScreen() {
   const [selected, setSelected] = useState<string>('teams');
   // An account with no roster record behind it has no stats of its own to show,
   // which is every administrator and any player not linked yet.
-  const sections = useMemo(() => sectionsFor(user?.player_id), [user?.player_id]);
+  const sections = useMemo(() => sectionsFor(user?.role === 'parent' || Boolean(user?.player_id)), [user?.role, user?.player_id]);
   const section = sections.find((item) => item.key === selected) ?? sections[0]!;
 
   return <Screen title="Players">
@@ -181,7 +213,7 @@ export default function PlayersScreen() {
         </Pressable>;
       })}
     </ScrollView>
-    {section.key === 'mine' && user?.player_id ? <PlayerStatsPanel playerId={user.player_id} /> : section.key === 'awards' ? <AwardsSection /> : <TeamsSection />}
+    {section.key === 'mine' ? <MyStatsSection /> : section.key === 'awards' ? <AwardsSection /> : <TeamsSection />}
   </Screen>;
 }
 

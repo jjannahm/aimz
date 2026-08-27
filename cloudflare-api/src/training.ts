@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { ApiProblem, adminUser, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
-import { linkedTeamId, requireAimzTeam, scopedTeam } from "./team-access";
+import { canOpenTeam, requireAimzTeam, scopedTeams } from "./team-access";
 import type { AvailabilityRow, PlayerRow, TeamRow, TrainingRow, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -29,7 +29,7 @@ function publicTraining(row: TrainingRow, team: TeamRow): Record<string, unknown
 async function requireTrainingAccess(c: Context<{ Bindings: Env }>, row: TrainingRow, user?: UserRow): Promise<UserRow> {
   const actor = user ?? await currentUser(c);
   if (actor.role === "admin") return actor;
-  if (await linkedTeamId(c.env, actor) !== row.team_id) throw new ApiProblem(403, "team_access_denied", "You can only open your own squad's training sessions.");
+  if (!(await canOpenTeam(c.env, actor, row.team_id))) throw new ApiProblem(403, "team_access_denied", "You can only open your own squad's training sessions.");
   return actor;
 }
 
@@ -37,11 +37,12 @@ export function registerTrainingRoutes(app: App): void {
   app.get("/api/v1/training-sessions", async (c) => {
     const url = new URL(c.req.url);
     const requested = url.searchParams.get("team_id");
-    const { teamId } = await scopedTeam(c, requested);
+    const { teamIds: allowedTeamIds } = await scopedTeams(c, requested);
     const { limit, offset } = parsePagination(url);
     const conditions: string[] = [];
     const values: unknown[] = [];
-    if (teamId) { conditions.push("team_id=?"); values.push(teamId); }
+    // A parent sees every squad their children are on, so this is an IN list.
+    if (allowedTeamIds) { conditions.push(`team_id IN (${allowedTeamIds.map(() => "?").join(",")})`); values.push(...allowedTeamIds); }
     for (const [parameter, operator] of [["from", ">="], ["to", "<="]] as const) {
       const raw = url.searchParams.get(parameter);
       if (raw) { conditions.push(`starts_at ${operator} ?`); values.push(validInstant(raw, parameter)); }

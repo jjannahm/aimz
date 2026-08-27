@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { useMyTeam } from '@/src/auth/useMyTeam';
+import { useAuth } from '@/src/auth/AuthProvider';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
@@ -12,11 +12,13 @@ import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 export function ScheduleSection() {
   const styles = useThemedStyles(stylesheet);
-  const mine = useMyTeam();
-  const query = useQuery({ queryKey: ['training', mine.teamId, 'upcoming'], queryFn: () => api.trainingSessions(`?team_id=${encodeURIComponent(mine.teamId!)}&from=${encodeURIComponent(new Date().toISOString())}&limit=100`), enabled: Boolean(mine.teamId) });
-  if (!mine.playerId) return <EmptyState body="Ask an AIMZ administrator to link your account to your squad player." title="Account not linked" />;
-  if (mine.isLoading) return <LoadingState label="Loading your squad" />;
-  if (mine.isError) return <ErrorState message="Your linked squad could not be loaded." onRetry={mine.refetch} />;
+  const { user } = useAuth();
+  // A parent has children rather than a player record of their own.
+  const linked = user?.role === 'parent' || Boolean(user?.player_id);
+  // No team is named: the server answers with the squad this account is on, or
+  // with every squad a parent's children are on.
+  const query = useQuery({ queryKey: ['training', 'mine', 'upcoming'], queryFn: () => api.trainingSessions(`?from=${encodeURIComponent(new Date().toISOString())}&limit=100`), enabled: linked });
+  if (!linked) return <EmptyState body="Ask an AIMZ administrator to link your account to your squad player." title="Account not linked" />;
   if (query.isLoading) return <LoadingState label="Loading training schedule" />;
   if (query.isError) return <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} />;
   if (!query.data?.items.length) return <EmptyState body="Your coach has not scheduled an upcoming training session." title="No training scheduled" />;

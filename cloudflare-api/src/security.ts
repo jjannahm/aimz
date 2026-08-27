@@ -113,7 +113,7 @@ export async function verifyAccessToken(token: string, secret: string): Promise<
     const payload = value as Partial<AccessPayload>;
     if (
       typeof payload.sub !== "string" ||
-      (payload.role !== "admin" && payload.role !== "player") ||
+      (payload.role !== "admin" && payload.role !== "player" && payload.role !== "parent") ||
       payload.type !== "access" ||
       typeof payload.exp !== "number" ||
       payload.exp <= Math.floor(Date.now() / 1000)

@@ -8,7 +8,8 @@ import {
   publicUser,
   verifyPassword,
 } from "./security";
-import type { InviteRow, UserRole, UserRow } from "./types";
+import { linkedPlayerIds } from "./team-access";
+import type { InviteKind, InviteRow, UserRole, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -89,15 +90,22 @@ export function registerAuthRoutes(app: App): void {
       throw new ApiProblem(409, "invalid_invite", "This invitation code is invalid, expired, or already used.");
     }
 
+    // Which roster players this invitation was cut for. A player invitation
+    // names one and the account carries it on `users.player_id`; a parent
+    // invitation names their children, who hang off `user_children` instead.
+    const invitedPlayers = await invitePlayerIds(c.env, invite);
+    const isParent = invite.kind === "parent";
+    if (!invitedPlayers.length) throw new ApiProblem(409, "invalid_invite", "This invitation is not linked to a player. Ask an AIMZ administrator for a new one.");
+
     const user: UserRow = {
       id: crypto.randomUUID(),
       name,
       email,
       password_hash: await hashPassword(password),
-      role: "player",
+      role: isParent ? "parent" : "player",
       // A personal invitation carries the roster player it was cut for, so the
       // account knows whose stats are its own the moment it is created.
-      player_id: invite.player_id,
+      player_id: isParent ? null : invitedPlayers[0]!,
       is_active: 1,
       created_at: now,
       updated_at: now,
@@ -115,13 +123,18 @@ export function registerAuthRoutes(app: App): void {
         c.env.DB.prepare(
           "UPDATE registration_invites SET use_count = use_count + 1 WHERE id = ? AND EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
         ).bind(invite.id, claimId, user.id),
+        // Every child of a parent, in the same batch so an account is never
+        // created with only some of them attached.
+        ...(isParent ? invitedPlayers.map((playerId) => c.env.DB.prepare(
+          "INSERT INTO user_children (user_id, player_id, created_at) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
+        ).bind(user.id, playerId, now, claimId, user.id)) : []),
       ]);
     } catch (error) {
       // users.player_id is unique, so two people racing one personal invitation
       // fail here rather than quietly sharing a roster record.
-      const taken = invite.player_id
-        ? await c.env.DB.prepare("SELECT id FROM users WHERE player_id = ?").bind(invite.player_id).first()
-        : null;
+      const taken = isParent
+        ? null
+        : await c.env.DB.prepare("SELECT id FROM users WHERE player_id = ?").bind(user.player_id).first();
       if (taken) throw new ApiProblem(409, "player_already_linked", "That player already has an account. Ask an AIMZ administrator for a new invitation.");
       throw error;
     }
@@ -173,6 +186,17 @@ export function registerAuthRoutes(app: App): void {
   app.post("/api/v1/auth/password-reset/confirm", () => { throw new ApiProblem(503, "password_reset_disabled", "Password reset is disabled in staging. Contact an AIMZ administrator."); });
 
   app.get("/api/v1/users/me", async (c) => c.json(publicUser(await currentUser(c))));
+  // The roster players a parent speaks for. A player account answers with the
+  // one player it is, so the caller has a single shape either way.
+  app.get("/api/v1/users/me/children", async (c) => {
+    const user = await currentUser(c);
+    if (user.role === "admin") return c.json({ items: [] });
+    const playerIds = await linkedPlayerIds(c.env, user);
+    const result = await c.env.DB.prepare(
+      `SELECT p.id, p.name, p.team_id, t.name team_name FROM players p LEFT JOIN teams t ON t.id=p.team_id WHERE p.id IN (${playerIds.map(() => "?").join(",")}) ORDER BY p.name`,
+    ).bind(...playerIds).all<{ id: string; name: string; team_id: string; team_name: string | null }>();
+    return c.json({ items: result.results });
+  });
   app.patch("/api/v1/users/me", async (c) => {
     const user = await currentUser(c);
     const body = await jsonObject(c);
@@ -249,8 +273,13 @@ export function registerAuthRoutes(app: App): void {
 
   app.get("/api/v1/admin/registration-invites", async (c) => {
     await adminUser(c);
-    const result = await c.env.DB.prepare("SELECT * FROM registration_invites ORDER BY created_at DESC").all<InviteRow>();
-    return c.json(result.results.map(publicInvite));
+    const [result, links] = await Promise.all([
+      c.env.DB.prepare("SELECT * FROM registration_invites ORDER BY created_at DESC").all<InviteRow>(),
+      c.env.DB.prepare("SELECT ip.invite_id, ip.player_id, p.name FROM invite_players ip JOIN players p ON p.id=ip.player_id").all<{ invite_id: string; player_id: string; name: string }>(),
+    ]);
+    const byInvite = new Map<string, { id: string; name: string }[]>();
+    for (const link of links.results) byInvite.set(link.invite_id, [...(byInvite.get(link.invite_id) ?? []), { id: link.player_id, name: link.name }]);
+    return c.json(result.results.map((invite) => ({ ...publicInvite(invite), players: byInvite.get(invite.id) ?? [] })));
   });
   app.post("/api/v1/admin/registration-invites", async (c) => {
     const admin = await adminUser(c);
@@ -258,18 +287,30 @@ export function registerAuthRoutes(app: App): void {
     const label = stringField(body, "label", { min: 2, max: 120 });
     const code = stringField(body, "code", { min: 4, max: 128 });
     const expiresAt = typeof body.expires_at === "string" ? body.expires_at : null;
-    const playerId = await claimablePlayer(c.env, stringField(body, "player_id", { optional: true, nullable: true, max: 36 }) ?? null);
-    // An invitation cut for one named player is for that one person, whatever
-    // the caller asks for: a second claim would find the roster record taken.
+    const kind: InviteKind = body.kind === "parent" ? "parent" : "player";
+    // Every invitation names who it is for; there is no unlinked intake code.
+    const requested = playerIdList(body);
+    if (!requested.length) throw new ApiProblem(422, "validation_error", kind === "parent" ? "Choose at least one child from the roster." : "Choose a player from the roster.");
+    if (kind === "player" && requested.length > 1) throw new ApiProblem(422, "validation_error", "A player invitation is for one player.");
+    // A player may only ever hold one account of their own, so a player
+    // invitation is refused up front when that roster record is taken. A parent
+    // does not claim the record, so several parents of one child are fine.
+    const playerIds: string[] = [];
+    for (const id of requested) playerIds.push(kind === "player" ? (await claimablePlayer(c.env, id))! : await rosterPlayer(c.env, id));
+    // An invitation cut for named people is for them, whatever the caller asks
+    // for: a second claim would find the roster record taken.
     const requestedUses = typeof body.max_uses === "number" && body.max_uses >= 1 ? Math.floor(body.max_uses) : null;
-    const maxUses = playerId ? 1 : requestedUses;
-    const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: await hashSecret(code!), player_id: playerId, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
+    const maxUses = kind === "player" ? 1 : requestedUses;
+    const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: await hashSecret(code!), kind, player_id: kind === "player" ? playerIds[0]! : null, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
     try {
-      await c.env.DB.prepare("INSERT INTO registration_invites (id, label, code_hash, player_id, expires_at, max_uses, use_count, is_active, created_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, 0, 1, ?, ?)").bind(invite.id, invite.label, invite.code_hash, invite.player_id, invite.expires_at, invite.max_uses, admin.id, invite.created_at).run();
+      await c.env.DB.batch([
+        c.env.DB.prepare("INSERT INTO registration_invites (id, label, code_hash, kind, player_id, expires_at, max_uses, use_count, is_active, created_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)").bind(invite.id, invite.label, invite.code_hash, invite.kind, invite.player_id, invite.expires_at, invite.max_uses, admin.id, invite.created_at),
+        ...playerIds.map((playerId) => c.env.DB.prepare("INSERT INTO invite_players (invite_id, player_id) VALUES (?, ?)").bind(invite.id, playerId)),
+      ]);
     } catch {
       throw new ApiProblem(409, "invite_exists", "That invitation code already exists.");
     }
-    return c.json(publicInvite(invite), 201);
+    return c.json({ ...publicInvite(invite), player_ids: playerIds }, 201);
   });
   app.delete("/api/v1/admin/registration-invites/:id", async (c) => {
     await adminUser(c);
@@ -286,6 +327,27 @@ export function registerAuthRoutes(app: App): void {
  * given a second one. Refusing here says which player is taken; leaving it to
  * the constraint would surface as a bare failed write.
  */
+/** The roster players named on a request, as a list for either invitation kind. */
+function playerIdList(body: Record<string, unknown>): string[] {
+  const many = Array.isArray(body.player_ids) ? body.player_ids.filter((id): id is string => typeof id === "string" && id.length > 0) : [];
+  const one = typeof body.player_id === "string" && body.player_id ? [body.player_id] : [];
+  return [...new Set([...many, ...one])];
+}
+
+/** A roster player, without claiming them: several parents may name one child. */
+async function rosterPlayer(env: Env, playerId: string): Promise<string> {
+  const player = await env.DB.prepare("SELECT id FROM players WHERE id = ?").bind(playerId).first();
+  if (!player) throw new ApiProblem(422, "player_not_found", "Choose a player from the roster.");
+  return playerId;
+}
+
+/** Who an invitation is for, falling back to the column older rows used. */
+async function invitePlayerIds(env: Env, invite: InviteRow): Promise<string[]> {
+  const result = await env.DB.prepare("SELECT player_id FROM invite_players WHERE invite_id = ?").bind(invite.id).all<{ player_id: string }>();
+  const ids = result.results.map((row) => row.player_id);
+  return ids.length ? ids : invite.player_id ? [invite.player_id] : [];
+}
+
 async function claimablePlayer(env: Env, playerId: string | null, exceptUserId?: string): Promise<string | null> {
   if (!playerId) return null;
   const player = await env.DB.prepare("SELECT id FROM players WHERE id = ?").bind(playerId).first();
@@ -299,6 +361,7 @@ function publicInvite(invite: InviteRow): Record<string, unknown> {
   return {
     id: invite.id,
     label: invite.label,
+    kind: invite.kind,
     player_id: invite.player_id,
     expires_at: invite.expires_at,
     max_uses: invite.max_uses,
