@@ -139,6 +139,7 @@ export default function StandingsScreen() {
         <Text style={[styles.stat, styles.headerText]}>PTS</Text>
       </View>
       {rows.map((row: StandingRow, index: number) => <Pressable accessibilityHint="Opens head-to-head records against the other teams" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" key={row.team.id} onPress={() => setOpponentsFor(row.team.id)} style={({ pressed }) => [styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, pressed && styles.pressed]}>
+        {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
           <TeamAvatar isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={34} />
@@ -196,7 +197,13 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   row: { alignItems: 'center', backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 62, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   altRow: { backgroundColor: colors.surfaceRaised },
   aimzRow: { backgroundColor: colors.highlightedSurface },
-  leaderRow: { backgroundColor: colors.leaderSurface, borderLeftColor: colors.leaderAccent, borderLeftWidth: 4 },
+  leaderRow: { backgroundColor: colors.leaderSurface },
+  // Laid over the row rather than bordering it. A left border is part of the
+  // box, so it inset the leader's cells by its own width and left the rank,
+  // crest, name and form sitting a few pixels right of every row beneath — and
+  // of the header, which has no border to match. The table clips it to the
+  // rounded corner.
+  leaderEdge: { backgroundColor: colors.leaderAccent, bottom: 0, left: 0, position: 'absolute', top: 0, width: 4 },
   rank: { color: colors.textMuted, fontVariant: ['tabular-nums'], fontWeight: '800', width: 22 },
   leaderRank: { color: colors.leaderAccent, fontWeight: '900' },
   teamCell: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm },
