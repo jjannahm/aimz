@@ -1,18 +1,22 @@
 /**
  * Replaces the team set with the fifteen clubs of the Egyptian Women's Premier
- * League, archiving whatever was there before.
+ * League plus AIMZ itself, archiving whatever was there before.
  *
- * Every club is created with `badge_style: "generated"`, so none of them wears
- * the AIMZ crest, and with `is_aimz` true by default — the flag gates players,
- * lineups and live scoring, and a league app wants all of that on. Pass
- * --opponents to create them as opponent clubs instead, which leaves the
- * Players tab empty and makes every fixture score-entry only.
+ * Every club is created with `badge_style: "generated"`, so the badge each one
+ * shows is its own uploaded logo, falling back to a monogram shield until that
+ * logo is in place. All are `is_aimz` by default —
+ * the flag gates players, lineups and live scoring, and a league app wants all
+ * of that on. Pass --opponents to create the league clubs as opponents instead,
+ * which leaves the Players tab holding only AIMZ and makes club-versus-club
+ * fixtures score-entry only.
  *
  * Reruns update rather than duplicate: a club already present by name is
- * patched, and teams this script owns are never archived by a later run.
+ * patched, teams this script owns are never archived by a later run, and a club
+ * that already has a logo keeps it rather than storing the same picture twice.
+ * Pass --replace-crests to overwrite the artwork.
  *
  * Usage:
- *   API_URL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/seed-wepl-teams.mjs [--dry-run] [--opponents] [--crests <dir>]
+ *   API_URL=... ADMIN_EMAIL=... ADMIN_PASSWORD=... node scripts/seed-wepl-teams.mjs [--dry-run] [--opponents] [--crests <dir>] [--replace-crests]
  */
 import { readdir, readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -24,15 +28,23 @@ const DRY_RUN = process.argv.includes("--dry-run");
 const AS_OPPONENTS = process.argv.includes("--opponents");
 const CRESTS_DIR = process.argv[process.argv.indexOf("--crests") + 1];
 const WANTS_CRESTS = process.argv.includes("--crests");
+/** Re-upload even when the team already has a logo, to swap the artwork. */
+const REPLACE_CRESTS = process.argv.includes("--replace-crests");
 
 const COMPETITION = { name: "Egyptian Women's Premier League", season: "2026/27", type: "league" };
+
+/**
+ * The academy's own side, carried in the same list as the league clubs so it
+ * gets the same treatment: an uploaded logo, not the crest TeamBadge draws.
+ */
+const HOME = { name: "AIMZ", badge: "generated" };
 
 /**
  * The clubs as the Score Itt app lists them. The first ten were read off its
  * own screens; the last five come from research and are the ones to correct
  * first if a name reads wrong in the app.
  */
-const CLUBS = [
+const LEAGUE_CLUBS = [
   "FC Masar",
   "Al Ahly",
   "Wadi Degla",
@@ -49,6 +61,9 @@ const CLUBS = [
   "ENPPI",
   "Al Tayaran",
 ];
+
+/** Everything the seeder owns: the league clubs, then our own side. */
+const CLUBS = [...LEAGUE_CLUBS.map((name) => ({ name, badge: "generated" })), HOME];
 
 const MEDIA_TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
 /** `Wadi Degla` and `wadi-degla.png` should find each other. */
@@ -110,24 +125,28 @@ async function main() {
     console.log(`+ ${league.name} ${league.season}`);
   }
 
-  console.log(`\nClubs — ${AS_OPPONENTS ? "opponent clubs" : "squads"}, generated badges`);
+  console.log(`\nClubs — ${AS_OPPONENTS ? "opponent clubs" : "squads"}, uploaded logos`);
   const byName = new Map(teams.items.map((team) => [team.name, team]));
   const seeded = new Set();
-  for (const name of CLUBS) {
-    const shared = { name, season: COMPETITION.season, is_aimz: !AS_OPPONENTS, is_active: true, badge_style: "generated", competition_id: league.id };
+  for (const { name, badge } of CLUBS) {
+    // Our own side stays a squad even when the league clubs are seeded as opponents.
+    const ours = name === HOME.name || !AS_OPPONENTS;
+    const shared = { name, season: COMPETITION.season, is_aimz: ours, is_active: true, badge_style: badge, competition_id: league.id };
     const existing = byName.get(name);
     const crest = crests.get(slugify(name));
-    if (DRY_RUN) { console.log(`  ${existing ? "~" : "+"} ${name}${crest ? " (with crest)" : ""}`); if (existing) seeded.add(existing.id); continue; }
+    if (DRY_RUN) { console.log(`  ${existing ? "~" : "+"} ${name}${crest ? (existing?.logo_key && !REPLACE_CRESTS ? " (crest already up)" : " (crest uploaded)") : ""}`); if (existing) seeded.add(existing.id); continue; }
 
     const team = existing
       ? await call(`/api/v1/teams/${existing.id}`, { method: "PATCH", body: shared })
       : await call("/api/v1/teams", { method: "POST", body: shared });
     seeded.add(team.id);
-    if (crest) await uploadCrest(team, crest);
-    console.log(`  ${existing ? "~" : "+"} ${name}${crest ? " (with crest)" : ""}`);
+    const wants = crest && (REPLACE_CRESTS || !team.logo_key);
+    if (wants) await uploadCrest(team, crest);
+    const note = wants ? " (crest uploaded)" : crest ? " (crest already up)" : "";
+    console.log(`  ${existing ? "~" : "+"} ${name}${note}`);
   }
 
-  const missing = CLUBS.filter((name) => !crests.has(slugify(name)));
+  const missing = CLUBS.filter(({ name }) => !crests.has(slugify(name))).map(({ name }) => name);
   if (WANTS_CRESTS && missing.length) console.log(`\nNo crest file for: ${missing.join(", ")}`);
 
   // Archived rather than deleted: the API refuses to delete a team a player or
