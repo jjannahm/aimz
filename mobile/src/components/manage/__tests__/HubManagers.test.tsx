@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import { AnnouncementsManager } from '@/src/components/manage/HubManagers';
@@ -34,7 +34,7 @@ const team = (id: string, name: string): Team => ({
 const teams = [team('team-u11', 'U11'), team('team-u13', 'U13')];
 
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false }, mutations: { gcTime: 0, retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false }, mutations: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
@@ -56,14 +56,15 @@ describe('AnnouncementsManager', () => {
     await waitFor(() => expect(screen.getByLabelText('Title').props.value).toBe('Training update'));
     fireEvent.changeText(screen.getByLabelText('Message'), 'Meet at 5pm.');
     await waitFor(() => expect(screen.getByLabelText('Message').props.value).toBe('Meet at 5pm.'));
-    fireEvent.press(screen.getByRole('button', { name: 'Publish' }));
-
-    await waitFor(() => expect(api.createAnnouncement).toHaveBeenCalledWith({
-      team_id: 'team-u11',
-      title: 'Training update',
-      body: 'Meet at 5pm.',
-      pinned: false,
-    }));
+    await act(async () => {
+      fireEvent.press(screen.getByRole('button', { name: 'Publish' }));
+      await waitFor(() => expect(api.createAnnouncement).toHaveBeenCalledWith({
+        team_id: 'team-u11',
+        title: 'Training update',
+        body: 'Meet at 5pm.',
+        pinned: false,
+      }));
+    });
     await waitFor(() => expect(screen.getByLabelText('Title').props.value).toBe(''));
   });
 });
