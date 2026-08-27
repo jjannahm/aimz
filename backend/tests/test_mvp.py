@@ -1661,3 +1661,50 @@ async def test_audit_log_attributes_each_change_to_the_acting_admin(
         headers={"Authorization": f"Bearer {login.json()['access_token']}"},
     )
     assert forbidden.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_badge_style_is_independent_of_is_aimz(
+    client: AsyncClient, admin_headers: dict[str, str]
+) -> None:
+    # Left unset, the badge is still decided by whether the team is ours.
+    squad = await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={"name": "AIMZ U14", "is_aimz": True},
+    )
+    assert squad.status_code == 201
+    assert squad.json()["badge_style"] is None
+
+    # A league of peer clubs is all "ours" for players and lineups, and none of
+    # them wears the club crest.
+    club = await client.post(
+        "/api/v1/teams",
+        headers=admin_headers,
+        json={"name": "Wadi Degla", "is_aimz": True, "badge_style": "generated"},
+    )
+    assert club.status_code == 201
+    assert club.json()["badge_style"] == "generated"
+    assert club.json()["is_aimz"] is True
+
+    team_id = club.json()["id"]
+    updated = await client.patch(
+        f"/api/v1/teams/{team_id}",
+        headers=admin_headers,
+        json={**club.json(), "badge_style": "aimz"},
+    )
+    assert updated.json()["badge_style"] == "aimz"
+
+    cleared = await client.patch(
+        f"/api/v1/teams/{team_id}",
+        headers=admin_headers,
+        json={**club.json(), "badge_style": None},
+    )
+    assert cleared.json()["badge_style"] is None
+
+    rejected = await client.patch(
+        f"/api/v1/teams/{team_id}",
+        headers=admin_headers,
+        json={**club.json(), "badge_style": "sparkles"},
+    )
+    assert rejected.status_code == 422

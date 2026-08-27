@@ -2,6 +2,8 @@ import { useId } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { ClipPath, Defs, Path, Rect } from 'react-native-svg';
 
+import type { BadgeStyle } from '@/src/types/api';
+
 /**
  * The shield outline traced from the supplied AIMZ crest. Keeping every badge
  * on this silhouette makes fixtures feel coherent without pretending that an
@@ -52,16 +54,21 @@ export function opponentBadgeColors(name: string) {
 type Props = {
   /** AIMZ squads wear the club crest; everyone else gets a named fallback. */
   isAimz?: boolean;
+  /**
+   * The team's own badge, when it has been given one. A league of peer clubs
+   * has no "our club", so which crest is drawn cannot ride on `isAimz` alone.
+   */
+  badgeStyle?: BadgeStyle | null;
   name: string;
   size?: number;
 };
 
-export function TeamBadge({ isAimz = false, name, size = 44 }: Props) {
+export function TeamBadge({ badgeStyle, isAimz = false, name, size = 44 }: Props) {
   // A standings table renders many SVGs at once on web, so every clip reference
   // must have a unique DOM-safe id.
   const clipId = `crest-face-${useId().replace(/[^a-zA-Z0-9]/gu, '')}`;
 
-  if (!isAimz) {
+  if (badgeStyle ? badgeStyle === 'generated' : !isAimz) {
     const palette = opponentBadgeColors(name);
     return <View accessibilityElementsHidden style={[styles.wrap, { height: size, width: size }]} testID="badge-opponent">
       <Svg height={size} viewBox="0 0 100 100" width={size}>

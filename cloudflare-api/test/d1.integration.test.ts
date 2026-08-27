@@ -28,7 +28,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0018_player_contacts.sql');
+    expect(applied.results.at(-1)?.name).toBe('0019_team_badge_style.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -137,5 +137,62 @@ describe('team hub authorization and roster privacy', () => {
     expect(deleteSeries.status).toBe(204);
     const afterDelete = await (await request('/api/v1/training-sessions?limit=100', json('GET', undefined, admin.token))).json<{ items: unknown[] }>();
     expect(afterDelete.items).toHaveLength(0);
+  });
+});
+
+describe('team badges and media', () => {
+  it('holds badge_style apart from is_aimz and round-trips an uploaded crest', async () => {
+    const admin = await seedUser('admin');
+
+    // An unset badge_style leaves the badge to is_aimz, as it did before the column existed.
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U14', is_aimz: true }, admin.token))).json<{ id: string; badge_style: string | null; logo_url: string | null }>();
+    expect(squad).toMatchObject({ badge_style: null, logo_url: null });
+
+    // A league club can keep full squad features without wearing the club crest.
+    const club = await (await request('/api/v1/teams', json('POST', { name: 'Wadi Degla', is_aimz: true, badge_style: 'generated' }, admin.token))).json<{ id: string; badge_style: string; is_aimz: boolean }>();
+    expect(club).toMatchObject({ badge_style: 'generated', is_aimz: true });
+
+    const patched = await request(`/api/v1/teams/${club.id}`, json('PATCH', { badge_style: 'aimz' }, admin.token));
+    expect(await patched.json()).toMatchObject({ badge_style: 'aimz', is_aimz: true });
+    const cleared = await request(`/api/v1/teams/${club.id}`, json('PATCH', { badge_style: null }, admin.token));
+    expect(await cleared.json()).toMatchObject({ badge_style: null });
+    const rejected = await request(`/api/v1/teams/${club.id}`, json('PATCH', { badge_style: 'sparkles' }, admin.token));
+    expect(rejected.status).toBe(422);
+
+    const presigned = await request('/api/v1/media/uploads/presign', json('POST', { entity: 'team', entity_id: club.id, content_type: 'image/png' }, admin.token));
+    expect(presigned.status).toBe(200);
+    const upload = await presigned.json<{ upload_url: string; fields: Record<string, string>; object_key: string }>();
+    expect(upload.object_key.startsWith(`teams/${club.id}/`)).toBe(true);
+    expect(upload.object_key.endsWith('.png')).toBe(true);
+
+    const crest = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    const form = new FormData();
+    for (const [field, value] of Object.entries(upload.fields)) form.append(field, value);
+    form.append('file', new File([crest], 'crest.png', { type: 'image/png' }));
+    const stored = await request('/api/v1/media/uploads', { method: 'POST', body: form });
+    expect(stored.status).toBe(204);
+
+    // Only once logo_key is set does the team report a URL to fetch it from.
+    const withCrest = await request(`/api/v1/teams/${club.id}`, json('PATCH', { logo_key: upload.object_key }, admin.token));
+    expect(await withCrest.json()).toMatchObject({ logo_url: `/api/v1/media/${upload.object_key}` });
+
+    const fetched = await request(`/api/v1/media/${upload.object_key}`);
+    expect(fetched.status).toBe(200);
+    expect(fetched.headers.get('content-type')).toBe('image/png');
+    expect(new Uint8Array(await fetched.arrayBuffer())).toEqual(crest);
+
+    // The signed token is the whole authorisation, so a forged one stores nothing.
+    const forged = new FormData();
+    forged.append('token', 'not.asignedtoken');
+    forged.append('file', new File([crest], 'crest.png', { type: 'image/png' }));
+    const refused = await request('/api/v1/media/uploads', { method: 'POST', body: forged });
+    expect(refused.status).toBe(403);
+    expect((await request('/api/v1/media/teams/missing/nothing.png')).status).toBe(404);
+
+    // A match carries each side's badge choice through the joined read.
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: 'WEPL', season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const fixture = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: club.id, kickoff_datetime: now, venue: 'Cairo', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    const read = await (await request(`/api/v1/matches/${fixture.id}/live`, json('GET', undefined, admin.token))).json<{ match: { away_team: { badge_style: string | null; logo_url: string | null } } }>();
+    expect(read.match.away_team).toMatchObject({ badge_style: null, logo_url: `/api/v1/media/${upload.object_key}` });
   });
 });

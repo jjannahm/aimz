@@ -142,7 +142,7 @@ export default function StandingsScreen() {
         {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
-          <TeamAvatar isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={34} />
+          <TeamAvatar badgeStyle={row.team.badge_style} isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={34} />
           <View style={styles.team}>
             <View style={styles.nameRow}>
               <Text numberOfLines={1} style={[styles.teamName, row.rank === 1 && styles.leaderName]}>{row.team.name}</Text>
