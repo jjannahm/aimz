@@ -167,6 +167,9 @@ class Team(TimestampMixin, Base):
         Boolean, default=True, server_default="true", index=True
     )
     logo_key: Mapped[str | None] = mapped_column(String(512))
+    # Which badge to draw when no logo is uploaded. Held apart from is_aimz so a
+    # league of peer clubs can each keep their own; null derives it from is_aimz.
+    badge_style: Mapped[str | None] = mapped_column(String(16))
     # Set once per squad rather than per match; coaches rarely change week to week.
     coach: Mapped[str | None] = mapped_column(String(160))
     assistant_coach: Mapped[str | None] = mapped_column(String(160))

@@ -68,7 +68,7 @@ function Side({ team, winner, decided }: { team: Team | null; winner: boolean; d
   }
   return (
     <View style={styles.side}>
-      <TeamAvatar logoUrl={team.logo_url} name={team.name} size={28} />
+      <TeamAvatar badgeStyle={team.badge_style} isAimz={team.is_aimz} logoUrl={team.logo_url} name={team.name} size={28} />
       <Text numberOfLines={1} style={[styles.name, winner && styles.winnerName]}>{team.name}</Text>
       {winner ? <Ionicons accessibilityLabel="Winner" color={colors.leaderAccent} name="checkmark-circle" size={18} /> : null}
     </View>

@@ -13,6 +13,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
+import { mediaUrl } from '@/src/lib/mediaUrl';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AwardRank, Player, PlayerAward } from '@/src/types/api';
@@ -67,7 +68,7 @@ function Chevron() {
 function PlayerRow({ player, subtitle, spoken, trailing, last }: { player: Player; subtitle: string; spoken?: string; trailing?: ReactNode; last?: boolean }) {
   const styles = useThemedStyles(stylesheet);
   return <Pressable accessibilityLabel={`${player.name}, ${spoken ?? subtitle}`} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, last && styles.lastRow, pressed && styles.pressed]}>
-    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: player.photo_url }} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={48} />}
+    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: mediaUrl(player.photo_url) }} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={48} />}
     <View style={styles.copy}><Text style={styles.name}>{player.name}</Text><Text style={styles.position}>{subtitle}</Text></View>
     {trailing}
     <Chevron />
@@ -86,7 +87,7 @@ function useRoster() {
       if (bucket) bucket.push(player); else counts.set(player.team_id, [player]);
     }
     return (teams.data?.items ?? [])
-      .filter((team) => team.is_aimz)
+      .filter((team) => team.is_aimz && team.is_active)
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((team) => ({ team, players: counts.get(team.id) ?? [] }));
   }, [players.data, teams.data]);
@@ -108,7 +109,7 @@ function TeamsSection() {
     return <View style={styles.list}>{roster.squads.map((item, index) => {
       const count = item.players.length;
       return <Pressable accessibilityLabel={`${item.team.name}, ${count} ${count === 1 ? 'player' : 'players'}`} accessibilityRole="button" key={item.team.id} onPress={() => setOpenTeam(item.team.id)} style={({ pressed }) => [styles.row, index === roster.squads.length - 1 && styles.lastRow, pressed && styles.pressed]}>
-        <TeamAvatar isAimz={item.team.is_aimz} logoUrl={item.team.logo_url} name={item.team.age_group ?? item.team.name} size={48} />
+        <TeamAvatar badgeStyle={item.team.badge_style} isAimz={item.team.is_aimz} logoUrl={item.team.logo_url} name={item.team.name} size={48} />
         <View style={styles.copy}><Text style={styles.name}>{item.team.name}</Text><Text style={styles.position}>{item.team.age_group ? `${item.team.age_group} · ` : ''}{count} {count === 1 ? 'player' : 'players'}</Text></View>
         <Chevron />
       </Pressable>;

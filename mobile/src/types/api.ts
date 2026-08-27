@@ -51,7 +51,7 @@ export const isKnockout = (competition: Pick<Competition, 'team_count'> | null |
 
 export type CompetitionGroupRef = { id: string; name: string; position: number };
 /** `group` is null on a league row, and on a knockout team not yet drawn. */
-export type StandingRow = Schema['StandingRow'] & { form: FormResult[]; group?: CompetitionGroupRef | null };
+export type StandingRow = Omit<Schema['StandingRow'], 'team'> & { team: Team; form: FormResult[]; group?: CompetitionGroupRef | null };
 
 export type CompetitionGroup = CompetitionGroupRef & { competition_id: string; teams: Team[] };
 
@@ -224,11 +224,20 @@ export const PENALTY_OUTCOMES: { label: string; value: PenaltyOutcome }[] = [
 
 export type TeamStaff = { coach: string | null; assistant_coach: string | null; competition_id: string | null; competition_group_id: string | null };
 
+/**
+ * Which badge a team wears, kept apart from `is_aimz` so a league of peer clubs
+ * can each keep their own. Null leaves the choice to `is_aimz`, as it was
+ * before the column existed.
+ */
+export type BadgeStyle = 'aimz' | 'generated';
+
+// Not in the generated schema yet; catches up on the next `npm run api:types`.
 export type Team = TeamStaff & Omit<Schema['TeamRead'], 'squad_code' | 'age_group' | 'season' | 'logo_key'> & {
   squad_code: string | null;
   age_group: string | null;
   season: string | null;
   logo_key: string | null;
+  badge_style: BadgeStyle | null;
 };
 
 export type Player = Omit<Schema['PlayerRead'], 'jersey_number' | 'photo_key'> & {

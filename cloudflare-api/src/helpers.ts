@@ -109,13 +109,22 @@ export function parsePagination(url: URL): { limit: number; offset: number } {
   };
 }
 
+/**
+ * Media lives on this Worker, so the path is returned root-relative and the app
+ * resolves it against its API base. Keeping it relative spares every one of
+ * publicTeam's call sites from having to thread the environment through.
+ */
+export function mediaPath(objectKey: string | null): string | null {
+  return objectKey ? `/api/v1/media/${objectKey}` : null;
+}
+
 export function publicTeam(team: TeamRow | null): Record<string, unknown> | null {
   if (!team) return null;
   return {
     ...team,
     is_aimz: Boolean(team.is_aimz),
     is_active: Boolean(team.is_active),
-    logo_url: null,
+    logo_url: mediaPath(team.logo_key),
   };
 }
 
@@ -139,7 +148,7 @@ export function publicPlayer(player: PlayerRow | null): Record<string, unknown> 
     is_active: Boolean(player.is_active),
     created_at: player.created_at,
     updated_at: player.updated_at,
-    photo_url: null,
+    photo_url: mediaPath(player.photo_key),
   };
 }
 

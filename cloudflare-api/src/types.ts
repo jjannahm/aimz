@@ -29,6 +29,8 @@ export interface TeamRow {
   is_aimz: number;
   is_active: number;
   logo_key: string | null;
+  /** Which badge to draw when no logo is uploaded; null derives it from is_aimz. */
+  badge_style: "aimz" | "generated" | null;
   coach: string | null;
   assistant_coach: string | null;
   /** Which league the team is entered in. */

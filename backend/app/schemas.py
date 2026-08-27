@@ -123,6 +123,7 @@ class TeamInput(BaseModel):
     is_aimz: bool = False
     is_active: bool = True
     logo_key: str | None = Field(default=None, max_length=512)
+    badge_style: Literal["aimz", "generated"] | None = None
     coach: str | None = Field(default=None, max_length=160)
     assistant_coach: str | None = Field(default=None, max_length=160)
     competition_id: str | None = None
