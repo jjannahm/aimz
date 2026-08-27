@@ -19,6 +19,8 @@ export default function TabsLayout() {
     <Tabs.Screen name="players" options={{ title: 'Players', tabBarIcon: ({ color, size }) => <TabIcon color={color} name="players" size={size} /> }} />
     <Tabs.Screen name="my-team" options={{ title: 'Hub', href: user?.role === 'admin' ? null : undefined, tabBarIcon: ({ color, size }) => <TabIcon color={color} name="myTeam" size={size} /> }} />
     <Tabs.Screen name="manage" options={{ title: 'Manage', href: user?.role === 'admin' ? undefined : null, tabBarIcon: ({ color, size }) => <TabIcon color={color} name="manage" size={size} /> }} />
-    <Tabs.Screen name="settings" options={{ title: 'Settings', tabBarIcon: ({ color, size }) => <TabIcon color={color} name="settings" size={size} /> }} />
+    {/* Reached from the gear in every screen's header now, not the tab bar.
+      * The route stays registered so `href: null` only takes it off the bar. */}
+    <Tabs.Screen name="settings" options={{ title: 'Settings', href: null }} />
   </Tabs>;
 }

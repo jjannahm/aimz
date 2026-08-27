@@ -4,12 +4,20 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/src/components/BrandMark';
+import { SettingsButton } from '@/src/components/SettingsButton';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
-type Props = PropsWithChildren<{ title: string; action?: ReactNode; scroll?: boolean; scrollRef?: RefObject<ScrollView | null> }>;
+type Props = PropsWithChildren<{
+  title: string;
+  action?: ReactNode;
+  scroll?: boolean;
+  scrollRef?: RefObject<ScrollView | null>;
+  /** Settings itself, which has nowhere to go. */
+  hideSettings?: boolean;
+}>;
 
-export function Screen({ title, action, scroll = true, scrollRef, children }: Props) {
+export function Screen({ title, action, scroll = true, scrollRef, hideSettings = false, children }: Props) {
   const styles = useThemedStyles(stylesheet);
   const [headerHeight, setHeaderHeight] = useState(0);
   const content = (
@@ -20,7 +28,13 @@ export function Screen({ title, action, scroll = true, scrollRef, children }: Pr
         <View style={styles.heading}>
           <Text accessibilityRole="header" style={styles.title}>{title}</Text>
         </View>
-        {action}
+        {/* Settings left the tab bar, so the header carries it on every screen.
+         * It sits inside the same right-hand cluster as a screen's own action,
+         * left of it, so a close button stays on the outside edge. */}
+        <View style={styles.actions}>
+          {hideSettings ? null : <SettingsButton />}
+          {action}
+        </View>
       </View>
       {children}
       {/* A page barely taller than the screen leaves the header stranded in
@@ -51,6 +65,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   growing: { flexGrow: 1 },
   filling: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing.md },
+  actions: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs },
   heading: { flex: 1 },
   title: { color: colors.textPrimary, fontSize: theme.type.display, fontWeight: '900', letterSpacing: -0.7 },
 });
