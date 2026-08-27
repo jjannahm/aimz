@@ -12,8 +12,8 @@ const match: Match = {
   lineup_format: null, formation: null, man_of_the_match_player_id: null,
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15, created_at: '2026-09-01T00:00:00Z', updated_at: '2026-09-10T00:00:00Z',
-  home_team: { id: 'home', name: 'AIMZ Navy', squad_code: 'RTS S14', age_group: 'U14', season: '2026/27', is_aimz: true, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '' },
-  away_team: { id: 'away', name: 'Cairo Stars', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '' },
+  home_team: { id: 'home', name: 'AIMZ Navy', squad_code: 'RTS S14', age_group: 'U14', season: '2026/27', is_aimz: true, is_active: true, logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '' },
+  away_team: { id: 'away', name: 'Cairo Stars', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '' },
   competition: { id: 'competition-1', name: 'Academy League', season: '2026/27', type: 'league', team_count: null, group_size: null, created_at: '', updated_at: '' },
 };
 

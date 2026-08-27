@@ -27,7 +27,7 @@ jest.mock('@/src/lib/api', () => ({
 
 const team = (id: string, name: string): Team => ({
   id, name, is_aimz: true, squad_code: null, age_group: name, season: '2026/27', is_active: true,
-  logo_key: null, logo_url: null, coach: null, assistant_coach: null, competition_id: null,
+  logo_key: null, badge_style: null, logo_url: null, coach: null, assistant_coach: null, competition_id: null,
   competition_group_id: null, created_at: '', updated_at: '',
 });
 

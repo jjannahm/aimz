@@ -8,6 +8,7 @@ import { registerDomainRoutes } from "./domain";
 import { ApiProblem, errorResponse } from "./helpers";
 import { registerKnockoutRoutes } from "./knockout";
 import { registerMatchRoutes } from "./matches";
+import { registerMediaRoutes } from "./media";
 import { registerRosterRoutes } from "./roster";
 import { registerStatsRoutes } from "./stats";
 import { registerTrainingRoutes } from "./training";
@@ -38,8 +39,8 @@ registerTrainingRoutes(app);
 registerAnnouncementRoutes(app);
 registerAssignmentRoutes(app);
 registerRosterRoutes(app);
+registerMediaRoutes(app);
 
-app.post("/api/v1/media/uploads/presign", () => { throw new ApiProblem(503, "media_disabled", "Photo uploads are disabled in this staging preview."); });
 app.notFound((c) => errorResponse(c, new ApiProblem(404, "not_found", "The requested endpoint was not found.")));
 app.onError((error, c) => {
   if (error instanceof ApiProblem) return errorResponse(c, error);

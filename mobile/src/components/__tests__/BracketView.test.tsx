@@ -7,7 +7,7 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 
 const team = (id: string, name: string): Team => ({
   id, name, squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true,
-  logo_key: null, logo_url: null, coach: null, assistant_coach: null,
+  logo_key: null, badge_style: null, logo_url: null, coach: null, assistant_coach: null,
   competition_id: null, competition_group_id: null, created_at: '', updated_at: '',
 } as Team);
 

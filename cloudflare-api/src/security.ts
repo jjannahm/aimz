@@ -124,6 +124,59 @@ export async function verifyAccessToken(token: string, secret: string): Promise<
   }
 }
 
+interface UploadPayload {
+  /** The object key the holder of this token is allowed to write. */
+  key: string;
+  content_type: string;
+  exp: number;
+}
+
+/**
+ * R2 has no presigned POST of its own, so an upload is authorised by a
+ * short-lived token the admin endpoint mints and the upload endpoint checks.
+ * It travels in the multipart body, which is where the client already puts the
+ * fields an S3 presigned POST hands back.
+ */
+export async function createUploadToken(
+  objectKey: string,
+  contentType: string,
+  secret: string,
+  expiresIn: number,
+): Promise<string> {
+  const payload: UploadPayload = {
+    key: objectKey,
+    content_type: contentType,
+    exp: Math.floor(Date.now() / 1000) + expiresIn,
+  };
+  const body = toBase64Url(encoder.encode(JSON.stringify(payload)));
+  const key = await importHmacKey(secret, ["sign"]);
+  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(body));
+  return `${body}.${toBase64Url(new Uint8Array(signature))}`;
+}
+
+export async function verifyUploadToken(token: string, secret: string): Promise<UploadPayload | null> {
+  const parts = token.split(".");
+  if (parts.length !== 2) return null;
+  const [body, signaturePart] = parts;
+  const key = await importHmacKey(secret, ["verify"]);
+  const valid = await crypto.subtle.verify("HMAC", key, fromBase64Url(signaturePart).buffer, encoder.encode(body));
+  if (!valid) return null;
+  try {
+    const value: unknown = JSON.parse(decoder.decode(fromBase64Url(body)));
+    if (!value || typeof value !== "object") return null;
+    const payload = value as Partial<UploadPayload>;
+    if (
+      typeof payload.key !== "string" ||
+      typeof payload.content_type !== "string" ||
+      typeof payload.exp !== "number" ||
+      payload.exp <= Math.floor(Date.now() / 1000)
+    ) return null;
+    return payload as UploadPayload;
+  } catch {
+    return null;
+  }
+}
+
 export function publicUser(user: UserRow): Record<string, unknown> {
   return {
     id: user.id,
