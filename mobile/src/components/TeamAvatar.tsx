@@ -23,7 +23,12 @@ type Props = {
 export function TeamAvatar({ name, logoUrl, size = 44, isAimz, badgeStyle }: Props) {
   const uri = mediaUrl(logoUrl);
   if (uri) {
-    return <Image accessibilityElementsHidden source={{ uri }} style={{ borderRadius: size / 2, height: size, width: size }} />;
+    // A crest is a shield, not a headshot. `cover` in a round frame — which is
+    // what a photo wants — cropped the tall ones to a square and then clipped
+    // their corners: Al Ahly is 250x415, so it lost its stars and its point.
+    // `contain` letterboxes instead, so every crest arrives whole whatever
+    // shape the club draws it.
+    return <Image accessibilityElementsHidden resizeMode="contain" source={{ uri }} style={{ height: size, width: size }} testID="team-logo" />;
   }
   return <TeamBadge badgeStyle={badgeStyle} isAimz={isAimz} name={name} size={size} />;
 }

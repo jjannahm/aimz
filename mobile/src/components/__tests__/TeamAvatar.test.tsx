@@ -78,4 +78,14 @@ describe('TeamAvatar', () => {
     expect(screen.queryByTestId('badge-aimz', hidden)).toBeNull();
     expect(screen.queryByTestId('badge-opponent', hidden)).toBeNull();
   });
+
+  it('shows a crest whole rather than cropping it to a circle', async () => {
+    // Club crests are shields and rarely square — Al Ahly's is 250x415. A round
+    // frame with the default `cover` would cut it to a square and then clip the
+    // corners off what was left.
+    const screen = await render(<TeamAvatar logoUrl="https://example.test/al-ahly.webp" name="Al Ahly" size={34} />);
+    const logo = screen.getByTestId('team-logo', hidden);
+    expect(logo.props.resizeMode).toBe('contain');
+    expect(logo.props.style).not.toEqual(expect.objectContaining({ borderRadius: expect.anything() }));
+  });
 });
