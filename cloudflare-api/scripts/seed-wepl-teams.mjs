@@ -1,6 +1,8 @@
 /**
- * Replaces the team set with the fifteen clubs of the Egyptian Women's Premier
- * League plus AIMZ itself, archiving whatever was there before.
+ * Sets up the team list: the fifteen clubs of the Egyptian Women's Premier
+ * League, AIMZ itself, and the academy's age groups, archiving whatever else
+ * was there. The age groups wear the club logo and are not entered in the
+ * league.
  *
  * Every club is created with `badge_style: "generated"`, so the badge each one
  * shows is its own uploaded logo, falling back to a monogram shield until that
@@ -33,11 +35,25 @@ const REPLACE_CRESTS = process.argv.includes("--replace-crests");
 
 const COMPETITION = { name: "Egyptian Women's Premier League", season: "2026/27", type: "league" };
 
+const MEDIA_TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
+/** `Wadi Degla` and `wadi-degla.png` should find each other. */
+const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+
 /**
  * The academy's own side, carried in the same list as the league clubs so it
  * gets the same treatment: an uploaded logo, not the crest TeamBadge draws.
  */
-const HOME = { name: "AIMZ", badge: "generated" };
+const HOME = { name: "AIMZ", badge: "generated", logo: "aimz", inLeague: true };
+
+/**
+ * The age groups. They wear the club's logo rather than one of their own, and
+ * they are not entered in the league — they play their own fixtures. Listing
+ * them here is also what stops a later run archiving them along with whatever
+ * else it did not recognise.
+ */
+const SQUADS = ["U9", "U11", "U13", "U15", "U18"].map((name) => ({
+  name, badge: "generated", logo: "aimz", inLeague: false,
+}));
 
 /**
  * The clubs as the Score Itt app lists them. The first ten were read off its
@@ -62,12 +78,12 @@ const LEAGUE_CLUBS = [
   "Al Tayaran",
 ];
 
-/** Everything the seeder owns: the league clubs, then our own side. */
-const CLUBS = [...LEAGUE_CLUBS.map((name) => ({ name, badge: "generated" })), HOME];
-
-const MEDIA_TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
-/** `Wadi Degla` and `wadi-degla.png` should find each other. */
-const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, "");
+/** Everything the seeder owns: the league clubs, our senior side, our age groups. */
+const CLUBS = [
+  ...LEAGUE_CLUBS.map((name) => ({ name, badge: "generated", logo: slugify(name), inLeague: true })),
+  HOME,
+  ...SQUADS,
+];
 
 if (!EMAIL || !PASSWORD) { console.error("Set ADMIN_EMAIL and ADMIN_PASSWORD."); process.exit(1); }
 if (WANTS_CRESTS && !CRESTS_DIR) { console.error("--crests needs a directory."); process.exit(1); }
@@ -125,15 +141,15 @@ async function main() {
     console.log(`+ ${league.name} ${league.season}`);
   }
 
-  console.log(`\nClubs — ${AS_OPPONENTS ? "opponent clubs" : "squads"}, uploaded logos`);
+  console.log(`\nTeams — ${AS_OPPONENTS ? "league clubs as opponents" : "all squads"}, uploaded logos`);
   const byName = new Map(teams.items.map((team) => [team.name, team]));
   const seeded = new Set();
-  for (const { name, badge } of CLUBS) {
-    // Our own side stays a squad even when the league clubs are seeded as opponents.
-    const ours = name === HOME.name || !AS_OPPONENTS;
-    const shared = { name, season: COMPETITION.season, is_aimz: ours, is_active: true, badge_style: badge, competition_id: league.id };
+  for (const { name, badge, logo, inLeague } of CLUBS) {
+    // Our own teams stay squads even when the league clubs are seeded as opponents.
+    const ours = !inLeague || name === HOME.name || !AS_OPPONENTS;
+    const shared = { name, season: COMPETITION.season, is_aimz: ours, is_active: true, badge_style: badge, competition_id: inLeague ? league.id : null };
     const existing = byName.get(name);
-    const crest = crests.get(slugify(name));
+    const crest = crests.get(logo);
     if (DRY_RUN) { console.log(`  ${existing ? "~" : "+"} ${name}${crest ? (existing?.logo_key && !REPLACE_CRESTS ? " (crest already up)" : " (crest uploaded)") : ""}`); if (existing) seeded.add(existing.id); continue; }
 
     const team = existing
@@ -146,7 +162,7 @@ async function main() {
     console.log(`  ${existing ? "~" : "+"} ${name}${note}`);
   }
 
-  const missing = CLUBS.filter(({ name }) => !crests.has(slugify(name))).map(({ name }) => name);
+  const missing = CLUBS.filter(({ logo }) => !crests.has(logo)).map(({ name }) => name);
   if (WANTS_CRESTS && missing.length) console.log(`\nNo crest file for: ${missing.join(", ")}`);
 
   // Archived rather than deleted: the API refuses to delete a team a player or
