@@ -1,12 +1,13 @@
 /**
  * Replaces the team set with the fifteen clubs of the Egyptian Women's Premier
- * League, archiving whatever was there before.
+ * League plus AIMZ itself, archiving whatever was there before.
  *
- * Every club is created with `badge_style: "generated"`, so none of them wears
- * the AIMZ crest, and with `is_aimz` true by default — the flag gates players,
- * lineups and live scoring, and a league app wants all of that on. Pass
- * --opponents to create them as opponent clubs instead, which leaves the
- * Players tab empty and makes every fixture score-entry only.
+ * The league clubs are created with `badge_style: "generated"`, so none of them
+ * wears the AIMZ crest; AIMZ itself wears it. All are `is_aimz` by default —
+ * the flag gates players, lineups and live scoring, and a league app wants all
+ * of that on. Pass --opponents to create the league clubs as opponents instead,
+ * which leaves the Players tab holding only AIMZ and makes club-versus-club
+ * fixtures score-entry only.
  *
  * Reruns update rather than duplicate: a club already present by name is
  * patched, and teams this script owns are never archived by a later run.
@@ -28,11 +29,17 @@ const WANTS_CRESTS = process.argv.includes("--crests");
 const COMPETITION = { name: "Egyptian Women's Premier League", season: "2026/27", type: "league" };
 
 /**
+ * The academy's own side. It wears the crest `TeamBadge` draws rather than an
+ * uploaded image, so it stays sharp at every size and needs no asset.
+ */
+const HOME = { name: "AIMZ", badge: "aimz" };
+
+/**
  * The clubs as the Score Itt app lists them. The first ten were read off its
  * own screens; the last five come from research and are the ones to correct
  * first if a name reads wrong in the app.
  */
-const CLUBS = [
+const LEAGUE_CLUBS = [
   "FC Masar",
   "Al Ahly",
   "Wadi Degla",
@@ -49,6 +56,9 @@ const CLUBS = [
   "ENPPI",
   "Al Tayaran",
 ];
+
+/** Everything the seeder owns: the league clubs, then our own side. */
+const CLUBS = [...LEAGUE_CLUBS.map((name) => ({ name, badge: "generated" })), HOME];
 
 const MEDIA_TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
 /** `Wadi Degla` and `wadi-degla.png` should find each other. */
@@ -110,11 +120,13 @@ async function main() {
     console.log(`+ ${league.name} ${league.season}`);
   }
 
-  console.log(`\nClubs — ${AS_OPPONENTS ? "opponent clubs" : "squads"}, generated badges`);
+  console.log(`\nClubs — ${AS_OPPONENTS ? "opponent clubs" : "squads"}; AIMZ wears the club crest`);
   const byName = new Map(teams.items.map((team) => [team.name, team]));
   const seeded = new Set();
-  for (const name of CLUBS) {
-    const shared = { name, season: COMPETITION.season, is_aimz: !AS_OPPONENTS, is_active: true, badge_style: "generated", competition_id: league.id };
+  for (const { name, badge } of CLUBS) {
+    // Our own side stays a squad even when the league clubs are seeded as opponents.
+    const ours = badge === "aimz" || !AS_OPPONENTS;
+    const shared = { name, season: COMPETITION.season, is_aimz: ours, is_active: true, badge_style: badge, competition_id: league.id };
     const existing = byName.get(name);
     const crest = crests.get(slugify(name));
     if (DRY_RUN) { console.log(`  ${existing ? "~" : "+"} ${name}${crest ? " (with crest)" : ""}`); if (existing) seeded.add(existing.id); continue; }
@@ -127,7 +139,7 @@ async function main() {
     console.log(`  ${existing ? "~" : "+"} ${name}${crest ? " (with crest)" : ""}`);
   }
 
-  const missing = CLUBS.filter((name) => !crests.has(slugify(name)));
+  const missing = LEAGUE_CLUBS.filter((name) => !crests.has(slugify(name)));
   if (WANTS_CRESTS && missing.length) console.log(`\nNo crest file for: ${missing.join(", ")}`);
 
   // Archived rather than deleted: the API refuses to delete a team a player or
