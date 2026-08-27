@@ -58,6 +58,7 @@ describe('StandingsScreen', () => {
     expect(await screen.findByLabelText('Women Academy League, season 2026')).toBeTruthy();
     expect(screen.getByText('Women Academy League')).toBeTruthy();
     expect(screen.getByText('2026')).toBeTruthy();
+    expect(screen.queryByText('WA')).toBeNull();
     // The old header ran the two together inside one pill.
     expect(screen.queryByText('Women Academy League · 2026')).toBeNull();
   });
