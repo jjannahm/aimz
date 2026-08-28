@@ -5,13 +5,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
+import { AnimatedTabPill, FadeThrough } from '@/src/components/AnimatedTabPill';
 import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
-import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
@@ -106,19 +107,19 @@ export default function StandingsScreen() {
     {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.tabs} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
       {eligible.map((item) => {
         const active = item.id === competitionId;
-        return <Pressable accessibilityLabel={item.name} accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.id} onPress={() => setSelected(item.id)} style={({ pressed }) => [styles.tab, active && styles.activeTab, pressed && styles.pressed]}>
-          <Text style={[styles.tabLabel, active && styles.activeLabel]}>{item.name}</Text>
-        </Pressable>;
+        return <AnimatedTabPill key={item.id} label={item.name} onPress={() => setSelected(item.id)} selected={active} style={styles.tab} testID={`competition-tab-${item.id}`} />;
       })}
     </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
-    {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
-    {comparing ? (comparing.opponentId
-      ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
-      : <View style={styles.h2h}><Text style={styles.h2hPrompt}>Pick another team to compare with {table.data?.find((row) => row.team.id === comparing.teamId)?.team.name ?? 'this team'}.</Text></View>) : null}
-    {competitions.isLoading || table.isLoading ? <LoadingState label="Calculating table" /> : competitions.isError || table.isError ? <ErrorState message={(competitions.error as ApiError | null)?.message ?? (table.error as ApiError | null)?.message ?? 'Could not load standings.'} onRetry={() => { competitions.refetch(); table.refetch(); }} /> : knockout && view === 'bracket' ? (bracket.data?.rounds.length ? <BracketView bracket={bracket.data} busy={draw.isPending || pickWinner.isPending} onAdvance={user?.role === 'admin' ? (round) => draw.mutate(round) : undefined} onPickWinner={user?.role === 'admin' ? (slot, teamId) => pickWinner.mutate({ slot, teamId }) : undefined} /> : <EmptyState body="The bracket appears once the competition is drawn." title="No bracket yet" />)
-      : !competitionId || !table.data?.length ? <EmptyState body="Finished matches will create the table automatically." title="No standings yet" />
-      : knockout ? <View style={styles.groups}>{groupedRows.map((group) => <View key={group.name} style={styles.group}><Text style={styles.groupName}>{group.name}</Text>{tableFor(group.rows)}</View>)}</View>
-      : tableFor(table.data)}
+    <FadeThrough testID="standings-content" transitionKey={competitionId}>
+      {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
+      {comparing ? (comparing.opponentId
+        ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
+        : <View style={styles.h2h}><Text style={styles.h2hPrompt}>Pick another team to compare with {table.data?.find((row) => row.team.id === comparing.teamId)?.team.name ?? 'this team'}.</Text></View>) : null}
+      {competitions.isLoading || table.isLoading ? <LoadingState label="Calculating table" /> : competitions.isError || table.isError ? <ErrorState message={(competitions.error as ApiError | null)?.message ?? (table.error as ApiError | null)?.message ?? 'Could not load standings.'} onRetry={() => { competitions.refetch(); table.refetch(); }} /> : knockout && view === 'bracket' ? (bracket.data?.rounds.length ? <BracketView bracket={bracket.data} busy={draw.isPending || pickWinner.isPending} onAdvance={user?.role === 'admin' ? (round) => draw.mutate(round) : undefined} onPickWinner={user?.role === 'admin' ? (slot, teamId) => pickWinner.mutate({ slot, teamId }) : undefined} /> : <EmptyState body="The bracket appears once the competition is drawn." title="No bracket yet" />)
+        : !competitionId || !table.data?.length ? <EmptyState body="Finished matches will create the table automatically." title="No standings yet" />
+        : knockout ? <View style={styles.groups}>{groupedRows.map((group) => <View key={group.name} style={styles.group}><Text style={styles.groupName}>{group.name}</Text>{tableFor(group.rows)}</View>)}</View>
+        : tableFor(table.data)}
+    </FadeThrough>
   </Screen>;
 
   function tableFor(rows: StandingRow[]) {
@@ -159,12 +160,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   group: { gap: theme.spacing.sm },
   groupName: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
   tabs: { gap: theme.spacing.sm },
-  activeTab: { backgroundColor: colors.accent, borderColor: colors.accent },
-  activeLabel: { color: colors.onAccent, fontWeight: '900' },
-  tabLabel: { color: colors.textSecondary, fontWeight: '800' },
-  // Pill, like SegmentedControl: these are the same kind of control, and the
-  // softer corner was the only place navigation did not agree with itself.
-  tab: { ...noFocusRing, alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
+  // AnimatedTabPill draws the pill itself — radius, border and focus-ring
+  // reset included — so this only spaces the label inside it.
+  tab: { paddingHorizontal: theme.spacing.md },
   pressed: { opacity: 0.7 },
   form: { flexDirection: 'row', gap: 3, marginTop: 4 },
   formDot: { alignItems: 'center', borderRadius: 3, height: 14, justifyContent: 'center', width: 14 },

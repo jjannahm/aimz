@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
-import { StyleSheet, type ViewStyle } from 'react-native';
+import { AccessibilityInfo, StyleSheet, type ViewStyle } from 'react-native';
 
 import { useLocalSearchParams } from 'expo-router';
 
@@ -46,6 +46,12 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 jest.setTimeout(30_000);
+
+beforeEach(() => {
+  jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+});
+
+afterEach(() => jest.restoreAllMocks());
 
 describe('StandingsScreen', () => {
   beforeEach(() => {
@@ -95,6 +101,8 @@ describe('StandingsScreen', () => {
 
     expect(await screen.findByRole('tab', { name: 'Women Academy League' })).toBeTruthy();
     expect(screen.getAllByRole('tab')).toHaveLength(2);
+    expect(screen.getByTestId('competition-tab-c-1-fill')).toBeTruthy();
+    expect(screen.getByTestId('standings-content')).toBeTruthy();
     // Defaults to the first competition.
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-1'));
 
