@@ -8,6 +8,7 @@ import type { LineupEntry, LiveMatchSnapshot, Match, MatchEvent } from '@/src/ty
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({
+  usePathname: () => '/',
   router: { push: jest.fn(), back: jest.fn() },
   useLocalSearchParams: () => ({ id: 'match-1' }),
   Redirect: 'Redirect',

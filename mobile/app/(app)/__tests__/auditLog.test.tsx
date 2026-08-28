@@ -8,6 +8,7 @@ import type { AuditEntry } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({
+  usePathname: () => '/',
   router: { push: jest.fn(), back: jest.fn() },
   useLocalSearchParams: () => ({}),
   Redirect: 'Redirect',

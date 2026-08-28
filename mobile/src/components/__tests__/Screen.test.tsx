@@ -6,7 +6,7 @@ import { CloseButton } from '@/src/components/CloseButton';
 import { Screen } from '@/src/components/Screen';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
-jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() } }));
+jest.mock('expo-router', () => ({ router: { push: jest.fn(), back: jest.fn() }, usePathname: () => '/standings' }));
 
 describe('Screen header', () => {
   afterEach(() => jest.clearAllMocks());
@@ -15,7 +15,8 @@ describe('Screen header', () => {
   it('carries a way into settings on every screen', async () => {
     const screen = await render(<Screen title="Matches"><Text>body</Text></Screen>);
     fireEvent.press(screen.getByLabelText('Settings'));
-    expect(router.push).toHaveBeenCalledWith('/settings');
+    // The screen it was pressed on travels with it, so closing comes back here.
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/settings', params: { from: '/standings' } });
   });
 
   it('leaves it off the settings screen itself', async () => {

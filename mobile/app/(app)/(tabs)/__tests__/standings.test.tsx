@@ -12,7 +12,7 @@ import type { Competition, StandingRow, Team } from '@/src/types/api';
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'player' } }) }));
 // Reached from the tab bar here, so no competition is named in the route.
-jest.mock('expo-router', () => ({ router: { push: jest.fn() }, useLocalSearchParams: jest.fn(() => ({})) }));
+jest.mock('expo-router', () => ({ router: { push: jest.fn() }, useLocalSearchParams: jest.fn(() => ({})), usePathname: () => '/' }));
 
 jest.mock('@/src/lib/api', () => ({
   api: { competitions: jest.fn(), standings: jest.fn(), headToHead: jest.fn() },

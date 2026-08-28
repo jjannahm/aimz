@@ -10,6 +10,7 @@ import type { LiveMatchSnapshot, Match, MatchPhase } from '@/src/types/api';
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-haptics', () => ({ notificationAsync: jest.fn(), NotificationFeedbackType: { Success: 'success' } }));
 jest.mock('expo-router', () => ({
+  usePathname: () => '/',
   router: { push: jest.fn(), back: jest.fn() },
   useLocalSearchParams: () => ({ id: 'match-1' }),
   Redirect: 'Redirect',

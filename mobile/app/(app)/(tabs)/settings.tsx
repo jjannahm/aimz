@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQueryClient } from '@tanstack/react-query';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Controller, useForm } from 'react-hook-form';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 import { z } from 'zod';
@@ -24,6 +24,7 @@ const profileSchema = z.object({ name: z.string().min(2, 'Enter your name.') });
 const passwordSchema = z.object({ current: z.string().min(1, 'Enter your current password.'), next: z.string().min(10, 'Use at least 10 characters.') });
 
 export default function SettingsScreen() {
+  const { from } = useLocalSearchParams<{ from?: string }>();
   const styles = useThemedStyles(stylesheet);
   const { user, signOut } = useAuth();
   const { mode, preference, setPreference } = useAppTheme();
@@ -34,7 +35,10 @@ export default function SettingsScreen() {
   const savePassword = password.handleSubmit(async ({ current, next }) => { try { await api.changePassword(current, next); password.reset(); await signOut(); queryClient.clear(); router.replace('/(auth)/login'); Alert.alert('Password updated', 'For security, sign in again with your new password.'); } catch (error) { password.setError('root', { message: (error as ApiError).message }); } });
   const confirmDelete = () => Alert.alert('Delete your account?', 'Your login and sessions will be permanently removed. Historical team statistics are preserved.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Delete account', style: 'destructive', onPress: async () => { try { await api.deleteMe(); await sessionStore.clear(); queryClient.clear(); router.replace('/(auth)/login'); } catch (error) { Alert.alert('Could not delete account', (error as ApiError).message); } } }]);
   const closeSettings = () => {
-    if (router.canGoBack()) router.back();
+    // The screen the gear was pressed on, which a tab change never left in the
+    // history for `back` to find.
+    if (typeof from === 'string' && from && from !== '/settings') router.replace(from as Parameters<typeof router.replace>[0]);
+    else if (router.canGoBack()) router.back();
     else router.replace('/(app)/(tabs)');
   };
   return <Screen action={<CloseButton onPress={closeSettings} />} hideSettings title="Settings">
