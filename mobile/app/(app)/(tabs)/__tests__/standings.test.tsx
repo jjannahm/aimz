@@ -15,7 +15,7 @@ jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'p
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, useLocalSearchParams: jest.fn(() => ({})), usePathname: () => '/' }));
 
 jest.mock('@/src/lib/api', () => ({
-  api: { competitions: jest.fn(), standings: jest.fn(), headToHead: jest.fn() },
+  api: { bracket: jest.fn(), competitions: jest.fn(), standings: jest.fn(), headToHead: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -99,6 +99,18 @@ describe('StandingsScreen', () => {
     fireEvent.press(screen.getByRole('tab', { name: 'Delta Cup' }));
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-2'));
     expect(await screen.findByLabelText('Delta Cup, season 2026')).toBeTruthy();
+  });
+
+  it('switches a knockout between its groups and bracket views', async () => {
+    const knockout = { ...league, team_count: 8, group_size: 4 };
+    jest.mocked(api.competitions).mockResolvedValue({ items: [knockout], total: 1, limit: 100, offset: 0 });
+    jest.mocked(api.bracket).mockResolvedValue({ competition_id: knockout.id, team_count: 8, rounds: [] });
+    const screen = await render(<StandingsScreen />, { wrapper });
+
+    expect(await screen.findByRole('tab', { name: 'Groups' })).toBeTruthy();
+    fireEvent.press(screen.getByRole('tab', { name: 'Bracket' }));
+    expect(await screen.findByText('No bracket yet')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Bracket' }).props.accessibilityState.selected).toBe(true);
   });
 
   it('badges each team by whether it is ours', async () => {
