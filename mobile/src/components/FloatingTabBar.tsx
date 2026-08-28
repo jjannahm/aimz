@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TabIcon, type TabIconName } from '@/src/components/TabIcon';
@@ -44,13 +44,17 @@ const CHIP = theme.touch.minimum;
 const MAGNIFY = 1.4;
 /** How many chips away from the focus the swell still reaches. */
 const FALLOFF = 1.7;
-/** How far a swollen chip overshoots the rail, which its name has to clear. */
-const SWELL = Math.round(CHIP * (MAGNIFY - 1));
+/**
+ * What frosts the rail. `backdrop-filter` is a web platform feature — blurring
+ * what sits behind a native view takes a module this app does not carry — so the
+ * rail is translucent only where there is a blur to back that up, and solid
+ * elsewhere rather than see-through and muddled.
+ */
+const frosting = Platform.OS === 'web' ? ({ backdropFilter: 'blur(24px) saturate(180%)' } as ViewStyle) : null;
 
 /**
  * What a page has to leave clear at its foot with the dock as low as it goes:
- * the rail, the gap below it, and room for the name floating above whichever
- * chip is swollen.
+ * the rail, the gap below it, and the swell standing out of its top.
  */
 const CLEARANCE = theme.spacing.xxxl + theme.spacing.xxl;
 
@@ -75,6 +79,9 @@ export function useDockClearance() {
  * chip is full size at the focus, back to resting {@link FALLOFF} chips away,
  * and somewhere between at the fractions the spring passes through on its way.
  * That is what carries the swell along the dock rather than teleporting it.
+ *
+ * The names take no part in it. Every chip keeps its own, on the dock's floor,
+ * and the swell travels over the top of them.
  */
 export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) {
   const styles = useThemedStyles(stylesheet);
@@ -110,7 +117,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
 
   return (
     <View style={[styles.wrap, { paddingBottom: Math.max(insets.bottom, theme.spacing.md) }]}>
-      <View style={styles.rail}>
+      <View style={[styles.rail, frosting]}>
         {routes.map((route, index) => {
           const { options } = descriptors[route.key]!;
           const label = typeof options.title === 'string' ? options.title : route.name;
@@ -138,16 +145,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
               >
                 <TabIcon color={focused ? colors.onAccent : colors.textMuted} name={icons[route.name] ?? 'matches'} size={22} />
               </Animated.View>
-              {/* The dock names one chip at a time, the one the focus is on, and
-                * fades that name in as the swell arrives under it. */}
-              {index === focusIndex ? (
-                <Animated.View
-                  pointerEvents="none"
-                  style={[styles.name, { opacity: centre.interpolate({ inputRange: [index - 0.5, index, index + 0.5], outputRange: [0, 1, 0], extrapolate: 'clamp' }) }]}
-                >
-                  <Text numberOfLines={1} style={styles.label}>{label}</Text>
-                </Animated.View>
-              ) : null}
+              <Text numberOfLines={1} style={[styles.label, focused && styles.labelOn]}>{label}</Text>
             </Pressable>
           );
         })}
@@ -165,7 +163,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   rail: {
     alignItems: 'flex-end',
     alignSelf: 'center',
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: Platform.OS === 'web' ? colors.surfaceGlass : colors.surfaceRaised,
     borderColor: colors.border,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
@@ -181,24 +179,17 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     shadowOpacity: 0.35,
     shadowRadius: 16,
   },
-  // The press target keeps its resting size however far the chip swells, so
-  // magnification only ever makes a target easier to hit.
-  item: { ...noFocusRing, alignItems: 'center', height: CHIP, justifyContent: 'center', width: CHIP },
+  // The chip's resting size is the smallest the target ever gets, so
+  // magnification only ever makes one easier to hit. The name below sets the
+  // width wherever it is the wider of the two.
+  item: { ...noFocusRing, alignItems: 'center', gap: theme.spacing.xs, minWidth: CHIP },
+  // `transformOrigin: 'bottom'` grows the chip up off its own name, so the swell
+  // stands out of the rail and the names never budge.
   chip: { alignItems: 'center', backgroundColor: colors.background, borderRadius: theme.radius.pill, height: CHIP, justifyContent: 'center', transformOrigin: 'bottom', width: CHIP },
   chipOn: { backgroundColor: colors.accent },
-  // Cleared of the swell, and free to be wider than the chip it names.
-  name: { alignItems: 'center', bottom: CHIP + SWELL + theme.spacing.xs, left: -theme.spacing.xxxl, position: 'absolute', right: -theme.spacing.xxxl, zIndex: 1 },
-  label: {
-    backgroundColor: colors.surfaceRaised,
-    borderColor: colors.border,
-    borderRadius: theme.radius.sm,
-    borderWidth: 1,
-    color: colors.textPrimary,
-    fontSize: theme.type.caption,
-    fontWeight: '700',
-    overflow: 'hidden',
-    paddingHorizontal: theme.spacing.sm,
-    paddingVertical: 2,
-  },
+  // `textSecondary`, not `textMuted`: whatever scrolls under the glass shows
+  // through it, and a muted grey stops carrying against a bright page.
+  label: { color: colors.textSecondary, fontSize: theme.type.caption, fontWeight: '700' },
+  labelOn: { color: colors.textPrimary },
   pressed: { opacity: 0.7 },
 });
