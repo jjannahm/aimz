@@ -110,6 +110,26 @@ describe('FadeThrough', () => {
     }
   });
 
+  it('brings the content back when the key returns before the fade finishes', async () => {
+    // An animation that moves the value but never reports finishing, which is
+    // what an in-flight fade looks like at the moment it is interrupted.
+    jest.spyOn(Animated, 'timing').mockImplementation((value, config) => ({
+      start: () => { (value as Animated.Value).setValue(Number(config.toValue) === 0 ? 0.5 : 1); },
+      stop: jest.fn(),
+    }) as unknown as Animated.CompositeAnimation);
+    const screen = await render(<FadeThrough testID="fade" transitionKey="a"><Text>A content</Text></FadeThrough>);
+    await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
+
+    await screen.rerender(<FadeThrough testID="fade" transitionKey="b"><Text>B content</Text></FadeThrough>);
+    await screen.rerender(<FadeThrough testID="fade" transitionKey="a"><Text>A content</Text></FadeThrough>);
+
+    // Nothing is left to fade it back in, so it must not be stranded part-way
+    // out — a screen at low opacity reads as an empty one.
+    const style = StyleSheet.flatten(screen.getByTestId('fade').props.style) as ViewStyle;
+    expect(currentValue(style.opacity as ReadableAnimatedValue)).toBe(1);
+    expect(screen.getByText('A content')).toBeTruthy();
+  });
+
   it('switches content immediately when reduced motion is enabled', async () => {
     jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
     const timing = jest.spyOn(Animated, 'timing');
