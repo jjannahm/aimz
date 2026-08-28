@@ -91,40 +91,49 @@ describe('FloatingTabBar', () => {
     expect(screen.getAllByRole('tab').map((tab) => tab.props.accessibilityLabel)).toEqual(['Matches', 'Standings', 'Players', 'Manage']);
   });
 
-  it('names only the tab that is selected', async () => {
+  it('names every tab, not only the one that is selected', async () => {
     const screen = await render(<FloatingTabBar {...props(0)} />);
     expect(screen.getByText('Matches')).toBeTruthy();
-    expect(screen.queryByText('Standings')).toBeNull();
+    expect(screen.getByText('Standings')).toBeTruthy();
+    expect(screen.getByText('Players')).toBeTruthy();
+    expect(screen.getByText('Manage')).toBeTruthy();
+    // The one the layout hid stays out, name and all.
     expect(screen.queryByText('Hub')).toBeNull();
   });
 
-  it('moves the name to whichever tab is selected', async () => {
+  // Every tab is named now, so the selection has to read off its own state
+  // rather than off which one carries a name.
+  it('marks the tab that is selected, and only it', async () => {
     const screen = await render(<FloatingTabBar {...props(4)} />);
-    expect(screen.getByText('Manage')).toBeTruthy();
-    expect(screen.queryByText('Matches')).toBeNull();
+    const selected = screen.getAllByRole('tab').filter((tab) => tab.props.accessibilityState?.selected);
+    expect(selected.map((tab) => tab.props.accessibilityLabel)).toEqual(['Manage']);
   });
 
-  // A pointer takes the name off the selection while it is over the dock, which
+  // A pointer takes the swell off the selection while it is over the dock, which
   // is the dock's own behaviour on a desktop and never fires on a touchscreen.
-  it('names the tab the pointer is over, without opening it', async () => {
+  it('carries the swell to the tab the pointer is over, without opening it', async () => {
+    const spring = jest.spyOn(Animated, 'spring');
     const screen = await render(<FloatingTabBar {...props(0)} />);
+    await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
+    spring.mockClear();
 
     await fireEvent(screen.getByLabelText('Players'), 'hoverIn');
 
-    expect(screen.getByText('Players')).toBeTruthy();
-    expect(screen.queryByText('Matches')).toBeNull();
+    expect(spring).toHaveBeenCalled();
     expect(navigate).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Matches').props.accessibilityState).toMatchObject({ selected: true });
   });
 
-  it('gives the name back to the selected tab once the pointer leaves', async () => {
+  it('brings the swell back to the selected tab once the pointer leaves', async () => {
+    const spring = jest.spyOn(Animated, 'spring');
     const screen = await render(<FloatingTabBar {...props(0)} />);
+    await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
     await fireEvent(screen.getByLabelText('Players'), 'hoverIn');
+    spring.mockClear();
 
     await fireEvent(screen.getByLabelText('Players'), 'hoverOut');
 
-    expect(screen.getByText('Matches')).toBeTruthy();
-    expect(screen.queryByText('Players')).toBeNull();
+    expect(spring).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 0 }));
   });
 
   it('opens the tab that was pressed', async () => {
@@ -156,8 +165,7 @@ describe('FloatingTabBar', () => {
 
     await screen.rerender(<FloatingTabBar {...props(2)} />);
 
-    expect(spring).toHaveBeenCalled();
-    expect(screen.getByText('Players')).toBeTruthy();
+    expect(spring).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 2 }));
   });
 
   it('places the swell outright for somebody who asked for less motion', async () => {
@@ -170,7 +178,7 @@ describe('FloatingTabBar', () => {
     await screen.rerender(<FloatingTabBar {...props(2)} />);
 
     expect(spring).not.toHaveBeenCalled();
-    expect(screen.getByText('Players')).toBeTruthy();
+    expect(screen.getByLabelText('Players').props.accessibilityState).toMatchObject({ selected: true });
   });
 });
 
@@ -180,7 +188,7 @@ function Clearance() {
 }
 
 describe('useDockClearance', () => {
-  it('asks a page to clear the rail and the name above it', async () => {
+  it('asks a page to clear the rail and the swell above it', async () => {
     const screen = await render(<Clearance />);
     expect(screen.getByTestId('clearance').props.children).toBe(112);
   });

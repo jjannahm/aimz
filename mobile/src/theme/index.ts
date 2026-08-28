@@ -27,6 +27,9 @@ const dark = {
   background: '#020817',
   surface: '#020817',
   surfaceRaised: '#1E293B',
+  // `surfaceRaised` with the page left showing through, for a surface that is
+  // frosted rather than laid on top. Only the web build blurs what is behind it.
+  surfaceGlass: 'rgba(30, 41, 59, 0.72)',
   border: '#1E293B',
   accent: '#3B82F6',
   accentSoft: '#0EA2E7',
@@ -67,6 +70,7 @@ export const lightColors: ThemeColors = {
   background: '#A6C4E8',
   surface: '#F9FCFF',
   surfaceRaised: '#E7EDF6',
+  surfaceGlass: 'rgba(231, 237, 246, 0.72)',
   border: '#D8DFE9',
   accent: '#101723',
   accentSoft: '#1E40AF',
