@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View, type LayoutRectangle } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View, type LayoutRectangle, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TabIcon, type TabIconName } from '@/src/components/TabIcon';
@@ -9,16 +9,24 @@ import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 /**
  * What the tab navigator hands its bar. Described here rather than imported:
  * `@react-navigation/bottom-tabs` is expo-router's own dependency, not one of
- * ours, and `href` is expo-router's addition to the options besides.
+ * ours. `href` is not among the options: expo-router takes it off and leaves a
+ * hidden item style in its place, which is what {@link isHidden} reads.
  */
 type TabBarProps = {
   state: { index: number; routes: { key: string; name: string }[] };
-  descriptors: Record<string, { options: { title?: string; href?: string | null } }>;
+  descriptors: Record<string, { options: { title?: string; tabBarItemStyle?: StyleProp<ViewStyle> } }>;
   navigation: {
     emit: (event: { type: 'tabPress'; target: string; canPreventDefault: true }) => { defaultPrevented: boolean };
     navigate: (name: string) => void;
   };
 };
+
+/**
+ * Whether the layout hid this route. `href: null` never reaches a bar of our
+ * own: expo-router strips `href` from the options and marks the item
+ * `display: 'none'` instead, so that is the flag to read.
+ */
+const isHidden = (style: StyleProp<ViewStyle>): boolean => StyleSheet.flatten(style)?.display === 'none';
 
 /** Which glyph a route wears, keyed by the route's own name. */
 const icons: Record<string, TabIconName> = {
@@ -47,7 +55,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
 
   // Routes the layout hid — settings, and whichever of Manage or Hub this role
   // does not have — never reach the bar.
-  const routes = state.routes.filter((route) => descriptors[route.key]?.options.href !== null);
+  const routes = state.routes.filter((route) => !isHidden(descriptors[route.key]?.options.tabBarItemStyle));
   const activeIndex = routes.findIndex((route) => route.key === state.routes[state.index]?.key);
   const box = boxes[activeIndex];
 
