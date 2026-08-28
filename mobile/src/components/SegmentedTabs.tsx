@@ -18,24 +18,31 @@ type Props<Value extends string> = {
 /**
  * A row of choices inside one capsule, with the chosen one wearing a pill.
  *
- * The pill hugs its own label rather than taking an equal share of the row, so
- * "Live" is the width of the word and not a third of the bar. That makes the
- * tabs different widths, which is why the pill cannot be placed by fraction:
- * each tab reports its own box as it lays out and the pill is animated onto
- * whichever is chosen, the way the tab bar moves its own.
+ * The bar spans the page and the choices are spread evenly across it, but the
+ * pill hugs its own label: "Live" is highlighted to the width of the word, not
+ * to the third of the bar its tab occupies. So two boxes are measured, not one
+ * — the tab for where it sits, the label within it for how wide to draw — and
+ * the pill is animated onto whichever is chosen, the way the tab bar moves its
+ * own.
  *
  * The tabs keep a full-height touch target either side of the text, so the
  * tighter pill costs nothing in accuracy.
  */
 export function SegmentedTabs<Value extends string>({ options, value, onChange, label }: Props<Value>) {
   const styles = useThemedStyles(stylesheet);
-  const [boxes, setBoxes] = useState<Record<number, LayoutRectangle>>({});
+  // Where each tab sits, and how much room its label takes inside it.
+  const [tabs, setTabs] = useState<Record<number, LayoutRectangle>>({});
+  const [labels, setLabels] = useState<Record<number, LayoutRectangle>>({});
   const left = useRef(new Animated.Value(0)).current;
   const width = useRef(new Animated.Value(0)).current;
   const settled = useRef(false);
 
   const index = Math.max(0, options.findIndex((option) => option.value === value));
-  const box = boxes[index];
+  const tab = tabs[index];
+  const label_ = labels[index];
+  // The label's own offset is measured from its tab, so the two add up to a
+  // position along the bar.
+  const box = tab && label_ ? { x: tab.x + label_.x, width: label_.width } : null;
 
   useEffect(() => {
     if (!box) return;
@@ -64,12 +71,21 @@ export function SegmentedTabs<Value extends string>({ options, value, onChange, 
             key={option.value}
             onLayout={(event) => {
               const next = event.nativeEvent.layout;
-              setBoxes((current) => current[position]?.width === next.width && current[position]?.x === next.x ? current : { ...current, [position]: next });
+              setTabs((current) => current[position]?.width === next.width && current[position]?.x === next.x ? current : { ...current, [position]: next });
             }}
             onPress={() => onChange(option.value)}
             style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
           >
-            <Text numberOfLines={1} style={[styles.label, selected && styles.labelOn]}>{option.label}</Text>
+            {/* The pill's footprint: the word and the room either side of it. */}
+            <View
+              onLayout={(event) => {
+                const next = event.nativeEvent.layout;
+                setLabels((current) => current[position]?.width === next.width && current[position]?.x === next.x ? current : { ...current, [position]: next });
+              }}
+              style={styles.hug}
+            >
+              <Text numberOfLines={1} style={[styles.label, selected && styles.labelOn]}>{option.label}</Text>
+            </View>
           </Pressable>
         );
       })}
@@ -78,10 +94,14 @@ export function SegmentedTabs<Value extends string>({ options, value, onChange, 
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  bar: { alignSelf: 'flex-start', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', maxWidth: '100%', padding: theme.spacing.xs },
+  // Spans the page, as the row it replaced did.
+  bar: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', padding: theme.spacing.xs },
   // Behind the labels, so the chosen one reads through it.
   pill: { backgroundColor: colors.accent, borderRadius: theme.radius.pill, bottom: theme.spacing.xs, position: 'absolute', top: theme.spacing.xs },
-  tab: { alignItems: 'center', justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
+  // An equal share of the bar, so the choices are spread across its width. The
+  // whole share is the touch target; only the pill inside it is tight.
+  tab: { alignItems: 'center', flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum },
+  hug: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.md },
   label: { color: colors.textSecondary, fontWeight: '800' },
   labelOn: { color: colors.onAccent, fontWeight: '900' },
   pressed: { opacity: 0.7 },
