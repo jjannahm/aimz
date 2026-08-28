@@ -26,18 +26,25 @@ describe('SegmentedTabs', () => {
     expect(onChange).toHaveBeenCalledWith('finished');
   });
 
-  // The pill hugs its own label rather than taking an equal share of the row,
-  // which a flexed tab would undo by stretching every one to the same width.
-  it('sizes each tab to its own label, not to a share of the row', async () => {
+  // The bar spans the page and the choices are spread across it, so each tab
+  // takes an equal share — the whole of which stays tappable.
+  it('spreads the choices across the bar, and keeps each one tappable', async () => {
     const screen = await render(<SegmentedTabs onChange={jest.fn()} options={options} value="live" />);
     for (const tab of screen.getAllByRole('tab')) {
       const style = flatten(tab);
-      expect(style.flex).toBeUndefined();
-      expect(style.flexGrow).toBeUndefined();
-      // Room either side of the text, so the tighter pill costs no accuracy.
-      expect(style.paddingHorizontal).toBeGreaterThanOrEqual(12);
+      expect(style.flex).toBe(1);
       expect(style.minHeight).toBeGreaterThanOrEqual(44);
     }
+  });
+
+  // Only the pill is tight: it is drawn around the word and the room either
+  // side of it, rather than filling the share of the bar the tab occupies.
+  it('keeps the pill to the width of the word', async () => {
+    const screen = await render(<SegmentedTabs onChange={jest.fn()} options={options} value="live" />);
+    const hug = flatten(screen.getByText('Live').parent);
+    expect(hug.paddingHorizontal).toBeGreaterThanOrEqual(12);
+    expect(hug.flex).toBeUndefined();
+    expect(hug.alignSelf).not.toBe('stretch');
   });
 
   it('leaves an unselected choice as plain text', async () => {
