@@ -98,11 +98,13 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   bar: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', padding: theme.spacing.xs },
   // Behind the labels, so the chosen one reads through it.
   pill: { backgroundColor: colors.accent, borderRadius: theme.radius.pill, bottom: theme.spacing.xs, position: 'absolute', top: theme.spacing.xs },
-  // An equal share of the bar, so the choices are spread across its width. The
-  // whole share is the touch target; only the pill inside it is tight.
-  tab: { alignItems: 'center', flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum },
+  // Grows from the width of its own label rather than taking a fixed share, so
+  // the row spreads across the bar without a long word being given less room
+  // than it needs — an equal share left "Upcoming" over its own on a narrow
+  // phone. The whole share is the touch target; only the pill inside is tight.
+  tab: { alignItems: 'center', flexBasis: 'auto', flexGrow: 1, justifyContent: 'center', minHeight: theme.touch.minimum },
   hug: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: theme.spacing.md },
-  label: { color: colors.textSecondary, fontWeight: '800' },
+  label: { color: colors.textSecondary, fontSize: theme.type.body, fontWeight: '800' },
   labelOn: { color: colors.onAccent, fontWeight: '900' },
   pressed: { opacity: 0.7 },
 });
