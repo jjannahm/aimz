@@ -155,9 +155,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     elevation: 12,
     flexDirection: 'row',
-    // The marker is a rounded rectangle inside a pill, so at either end its
-    // corner would otherwise cross the rail's own curve.
-    overflow: 'hidden',
     padding: theme.spacing.xs,
     shadowColor: '#000',
     shadowOffset: { height: 8, width: 0 },
@@ -167,13 +164,30 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // Laid in the lane before the tabs are, so the tabs draw over it. It fills
   // the rail's height, which is what leaves it wrapping name as well as glyph.
   //
-  // A plain surface rather than the accent, because a tab's own colours cannot
-  // travel with the marker: they change the moment it is opened, while the
-  // marker takes the whole slide to arrive. An accent fill would need its glyph
-  // inverted, and for those few hundred milliseconds the inverted glyph would
-  // be sitting on bare rail. Against a surface, both colours read wherever the
-  // marker happens to be.
-  marker: { backgroundColor: colors.surface, borderRadius: theme.radius.lg, bottom: theme.spacing.xs, left: theme.spacing.xs, position: 'absolute', top: theme.spacing.xs },
+  // The accent is washed over the rail rather than replacing it, which is what
+  // lets a tab keep one set of colours. A solid fill would need its glyph and
+  // name inverted to read, and a tab's colours cannot travel with the marker —
+  // they change the moment it is opened, while the marker takes the whole slide
+  // to arrive, so the inverted pair would spend that time on bare rail. A wash
+  // leaves the rail's own light and dark where they were, so both read wherever
+  // the marker happens to be.
+  //
+  // A pill, not a rounded rectangle: inset evenly inside the rail's own pill it
+  // sits exactly concentric with it, which is what lets the glow off the ends
+  // rather than being clipped back to the rail.
+  marker: {
+    backgroundColor: colors.selectionSurface,
+    // A full-strength rim and a halo around a washed middle: what makes the
+    // marker read as the accent rather than as a faintly tinted patch.
+    borderColor: colors.selectionGlow,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    bottom: theme.spacing.xs,
+    boxShadow: `0 0 24px ${colors.selectionGlow}`,
+    left: theme.spacing.xs,
+    position: 'absolute',
+    top: theme.spacing.xs,
+  },
   // An equal share of the rail each, and tall enough that the whole tab clears
   // the minimum target on its own.
   item: { ...noFocusRing, alignItems: 'center', flex: 1, gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingVertical: theme.spacing.sm },
