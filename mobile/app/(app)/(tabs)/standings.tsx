@@ -162,7 +162,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   activeTab: { backgroundColor: colors.accent, borderColor: colors.accent },
   activeLabel: { color: colors.onAccent, fontWeight: '900' },
   tabLabel: { color: colors.textSecondary, fontWeight: '800' },
-  tab: { ...noFocusRing, alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
+  // Pill, like SegmentedControl: these are the same kind of control, and the
+  // softer corner was the only place navigation did not agree with itself.
+  tab: { ...noFocusRing, alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
   pressed: { opacity: 0.7 },
   form: { flexDirection: 'row', gap: 3, marginTop: 4 },
   formDot: { alignItems: 'center', borderRadius: 3, height: 14, justifyContent: 'center', width: 14 },
