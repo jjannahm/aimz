@@ -8,6 +8,7 @@ import type { AwardRank, Player, Team } from '@/src/types/api';
 
 // Icon fonts pull in native asset loading that jest-expo does not resolve here.
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
+jest.mock('expo-router', () => ({ router: { push: jest.fn() }, usePathname: () => '/players' }));
 
 jest.mock('@/src/lib/api', () => ({
   api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), matches: jest.fn(), myChildren: jest.fn() },

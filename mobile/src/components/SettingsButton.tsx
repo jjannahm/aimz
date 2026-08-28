@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { Pressable, StyleSheet } from 'react-native';
 
 import { type ThemeColors } from '@/src/theme';
@@ -12,12 +12,16 @@ import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 export function SettingsButton() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
+  // Where the gear was pressed, so closing settings comes back here. Moving
+  // between tabs leaves no history to go back through, so the way back has to
+  // be carried rather than popped.
+  const from = usePathname();
   return (
     <Pressable
       accessibilityLabel="Settings"
       accessibilityRole="button"
       hitSlop={10}
-      onPress={() => router.push('/settings')}
+      onPress={() => router.push({ pathname: '/settings', params: { from } })}
       style={({ pressed }) => [styles.button, pressed && styles.pressed]}
     >
       <Ionicons color={colors.textPrimary} name="settings-outline" size={22} style={styles.icon} />
