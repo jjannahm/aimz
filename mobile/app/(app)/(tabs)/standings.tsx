@@ -15,7 +15,7 @@ import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
-import { isKnockout, type BracketSlot, type Competition, type FormResult, type StandingRow } from '@/src/types/api';
+import { isKnockout, type BracketSlot, type FormResult, type StandingRow } from '@/src/types/api';
 
 // A five-match strip under the team name: the row is too tight for another column.
 function FormStrip({ form }: { form: FormResult[] }) {
@@ -28,16 +28,6 @@ function FormStrip({ form }: { form: FormResult[] }) {
     {form.map((result, index) => <View key={index} style={[styles.formDot, { backgroundColor: tint[result] }]}>
       <Text accessibilityElementsHidden style={styles.formLetter}>{result}</Text>
     </View>)}
-  </View>;
-}
-
-function CompetitionHeader({ competition }: { competition: Competition }) {
-  const styles = useThemedStyles(stylesheet);
-  return <View accessibilityLabel={`${competition.name}, season ${competition.season}`} style={styles.headerCard}>
-    <View style={styles.headerCopy}>
-      <Text numberOfLines={1} style={styles.headerName}>{competition.name}</Text>
-      <Text numberOfLines={1} style={styles.headerSeason}>{competition.season}</Text>
-    </View>
   </View>;
 }
 
@@ -120,8 +110,7 @@ export default function StandingsScreen() {
           <Text style={[styles.tabLabel, active && styles.activeLabel]}>{item.name}</Text>
         </Pressable>;
       })}
-    </ScrollView> : null}
-    {competition ? <CompetitionHeader competition={competition} /> : null}
+    </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
     {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
     {comparing ? (comparing.opponentId
       ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
@@ -165,6 +154,7 @@ export default function StandingsScreen() {
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   tabBar: { flexGrow: 0 },
+  soleCompetition: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900', paddingHorizontal: theme.spacing.xs },
   groups: { gap: theme.spacing.lg },
   group: { gap: theme.spacing.sm },
   groupName: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
@@ -173,10 +163,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   activeLabel: { color: colors.onAccent, fontWeight: '900' },
   tabLabel: { color: colors.textSecondary, fontWeight: '800' },
   tab: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
-  headerCard: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 80, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  headerCopy: { flex: 1, gap: 2 },
-  headerName: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' },
-  headerSeason: { color: colors.textMuted, fontSize: theme.type.label },
   pressed: { opacity: 0.7 },
   form: { flexDirection: 'row', gap: 3, marginTop: 4 },
   formDot: { alignItems: 'center', borderRadius: 3, height: 14, justifyContent: 'center', width: 14 },
