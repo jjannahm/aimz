@@ -7,7 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
-import { SegmentedTabs } from '@/src/components/SegmentedTabs';
+import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
@@ -122,7 +122,7 @@ export default function StandingsScreen() {
       })}
     </ScrollView> : null}
     {competition ? <CompetitionHeader competition={competition} /> : null}
-    {knockout ? <SegmentedTabs label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
+    {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
     {comparing ? (comparing.opponentId
       ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
       : <View style={styles.h2h}><Text style={styles.h2hPrompt}>Pick another team to compare with {table.data?.find((row) => row.team.id === comparing.teamId)?.team.name ?? 'this team'}.</Text></View>) : null}

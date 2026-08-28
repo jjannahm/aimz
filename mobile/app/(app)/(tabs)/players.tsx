@@ -7,6 +7,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useMyChildren } from '@/src/auth/useMyTeam';
 import { Screen } from '@/src/components/Screen';
+import { SegmentedControl, type SegmentedOption } from '@/src/components/SegmentedControl';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
@@ -18,16 +19,16 @@ import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AwardRank, Player, PlayerAward } from '@/src/types/api';
 
-type Section = { key: string; label: string };
+type Section = SegmentedOption<string>;
 
 const SECTIONS: Section[] = [
-  { key: 'teams', label: copy.teams },
-  { key: 'awards', label: copy.awards },
+  { value: 'teams', label: copy.teams },
+  { value: 'awards', label: copy.awards },
 ];
 
 /** The academy-wide sections, plus the reader's own stats when they have any. */
 const sectionsFor = (linked: boolean): Section[] =>
-  linked ? [...SECTIONS, { key: 'mine', label: copy.myStats }] : SECTIONS;
+  linked ? [...SECTIONS, { value: 'mine', label: copy.myStats }] : SECTIONS;
 
 /**
  * A parent's children, one tab each, so each child's stats are read on their
@@ -196,7 +197,6 @@ function AwardsSection() {
 }
 
 export default function PlayersScreen() {
-  const styles = useThemedStyles(stylesheet);
   const { user } = useAuth();
   const [selected, setSelected] = useState<string>('teams');
   // An account with no roster record behind it has no stats of its own to show,
@@ -204,18 +204,11 @@ export default function PlayersScreen() {
   // An administrator manages the academy rather than playing in it, so the tab
   // is not theirs even when their own login happens to be linked to a player.
   const sections = useMemo(() => sectionsFor(user?.role !== 'admin' && (user?.role === 'parent' || Boolean(user?.player_id))), [user?.role, user?.player_id]);
-  const section = sections.find((item) => item.key === selected) ?? sections[0]!;
+  const section = sections.find((item) => item.value === selected) ?? sections[0]!;
 
   return <Screen title="Players">
-    <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
-      {sections.map((item) => {
-        const active = item.key === section.key;
-        return <Pressable accessibilityLabel={item.label} accessibilityRole="tab" accessibilityState={{ selected: active }} key={item.key} onPress={() => setSelected(item.key)} style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}>
-          <Text style={[styles.chipText, active && styles.chipTextActive]}>{item.label}</Text>
-        </Pressable>;
-      })}
-    </ScrollView>
-    {section.key === 'mine' ? <MyStatsSection /> : section.key === 'awards' ? <AwardsSection /> : <TeamsSection />}
+    <SegmentedControl label="Player section" onChange={setSelected} options={sections} value={section.value} />
+    {section.value === 'mine' ? <MyStatsSection /> : section.value === 'awards' ? <AwardsSection /> : <TeamsSection />}
   </Screen>;
 }
 
