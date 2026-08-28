@@ -1,6 +1,6 @@
 /**
  * Sets up the team list: the fifteen clubs of the Egyptian Women's Premier
- * League, AIMZ itself, and the academy's age groups. The age groups wear the
+ * League (EWPL), AIMZ itself, and the academy's age groups. The age groups wear the
  * club logo and are not entered in the league.
  *
  * Teams it does not list are left alone unless --archive-others is passed.
@@ -43,7 +43,9 @@ const REPLACE_CRESTS = process.argv.includes("--replace-crests");
  */
 const ARCHIVE_OTHERS = process.argv.includes("--archive-others");
 
-const COMPETITION = { name: "Egyptian Women's Premier League", season: "2026/27", type: "league" };
+// The name is the lookup key: change it here and in the database together,
+// or a run creates a second competition and moves every club into it.
+const COMPETITION = { name: "EWPL", season: "2026/27", type: "league" };
 
 const MEDIA_TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
 /** `Wadi Degla` and `wadi-degla.png` should find each other. */
@@ -53,7 +55,7 @@ const slugify = (value) => value.toLowerCase().replace(/[^a-z0-9]+/gu, "-").repl
  * The academy's own side, carried in the same list as the league clubs so it
  * gets the same treatment: an uploaded logo, not the crest TeamBadge draws.
  */
-const HOME = { name: "AIMZ", badge: "generated", logo: "aimz", inLeague: true };
+const HOME = { name: "AIMZ", badge: "generated", logo: "aimz", competition: COMPETITION.name };
 
 /**
  * The age groups. They wear the club's logo rather than one of their own, and
@@ -62,7 +64,10 @@ const HOME = { name: "AIMZ", badge: "generated", logo: "aimz", inLeague: true };
  * else it did not recognise.
  */
 const SQUADS = ["U9", "U11", "U13", "U15", "U18"].map((name) => ({
-  name, badge: "generated", logo: "aimz", inLeague: false,
+  // Each age group plays its own league, which is named after it. Leaving this
+  // unset dropped them out of the "teams entered" list while their results kept
+  // them in the table, so the two disagreed by one row.
+  name, badge: "generated", logo: "aimz", competition: name,
 }));
 
 /**
@@ -90,7 +95,7 @@ const LEAGUE_CLUBS = [
 
 /** Everything the seeder owns: the league clubs, our senior side, our age groups. */
 const CLUBS = [
-  ...LEAGUE_CLUBS.map((name) => ({ name, badge: "generated", logo: slugify(name), inLeague: true })),
+  ...LEAGUE_CLUBS.map((name) => ({ name, badge: "generated", logo: slugify(name), competition: COMPETITION.name })),
   HOME,
   ...SQUADS,
 ];
@@ -180,10 +185,16 @@ async function main() {
   console.log(`\nTeams — ${AS_OPPONENTS ? "league clubs as opponents" : "all squads"}, uploaded logos`);
   const byName = new Map(teams.items.map((team) => [team.name, team]));
   const seeded = new Set();
-  for (const { name, badge, logo, inLeague } of CLUBS) {
+  // Only the league above is created here; an age group's competition belongs
+  // to other work, so it is entered where one already exists and left out
+  // rather than invented where one does not.
+  const competitionByName = new Map(competitions.items.map((item) => [item.name, item.id]));
+  competitionByName.set(COMPETITION.name, league.id);
+
+  for (const { name, badge, logo, competition } of CLUBS) {
     // Our own teams stay squads even when the league clubs are seeded as opponents.
-    const ours = !inLeague || name === HOME.name || !AS_OPPONENTS;
-    const shared = { name, season: COMPETITION.season, is_aimz: ours, is_active: true, badge_style: badge, competition_id: inLeague ? league.id : null };
+    const ours = competition !== COMPETITION.name || name === HOME.name || !AS_OPPONENTS;
+    const shared = { name, season: COMPETITION.season, is_aimz: ours, is_active: true, badge_style: badge, competition_id: competitionByName.get(competition) ?? null };
     const existing = byName.get(name);
     const crest = crests.get(logo);
     if (DRY_RUN) { console.log(`  ${existing ? "~" : "+"} ${name}${crest ? (existing?.logo_key && !REPLACE_CRESTS ? " (crest already up)" : " (crest uploaded)") : ""}`); if (existing) seeded.add(existing.id); continue; }

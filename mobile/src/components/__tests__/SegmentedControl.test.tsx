@@ -2,6 +2,7 @@ import { fireEvent, render, type RenderResult } from '@testing-library/react-nat
 import { AccessibilityInfo, Animated, StyleSheet, type TextStyle, type ViewStyle } from 'react-native';
 
 import { SegmentedControl } from '@/src/components/SegmentedControl';
+import { theme } from '@/src/theme';
 
 const options = [
   { label: 'Live', value: 'live' },
@@ -85,6 +86,14 @@ describe('SegmentedControl', () => {
     expect(indicator.bottom).toBe(0);
     expect(indicator.top).toBe(0);
     expect(indicator.width).toBe(100);
+  });
+
+  it.each(options.map((option) => option.value))('keeps both indicator ends rounded when %s is selected', async (value) => {
+    const screen = await render(<SegmentedControl onChange={jest.fn()} options={options} value={value} />);
+    await layoutTabs(screen.getAllByRole('tab'));
+
+    const indicator = flattenView(screen.getByTestId('segmented-control-indicator'));
+    expect(indicator.borderRadius).toBe(theme.radius.pill);
   });
 
   it('slides one indicator to the newly selected tab', async () => {

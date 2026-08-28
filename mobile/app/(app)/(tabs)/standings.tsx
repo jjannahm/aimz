@@ -160,7 +160,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   group: { gap: theme.spacing.sm },
   groupName: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
   tabs: { gap: theme.spacing.sm },
-  tab: { borderRadius: theme.radius.md, paddingHorizontal: theme.spacing.md },
+  // AnimatedTabPill draws the pill itself — radius, border and focus-ring
+  // reset included — so this only spaces the label inside it.
+  tab: { paddingHorizontal: theme.spacing.md },
   pressed: { opacity: 0.7 },
   form: { flexDirection: 'row', gap: 3, marginTop: 4 },
   formDot: { alignItems: 'center', borderRadius: 3, height: 14, justifyContent: 'center', width: 14 },
