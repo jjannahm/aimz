@@ -109,33 +109,6 @@ describe('FloatingTabBar', () => {
     expect(selected.map((tab) => tab.props.accessibilityLabel)).toEqual(['Manage']);
   });
 
-  // A pointer takes the swell off the selection while it is over the dock, which
-  // is the dock's own behaviour on a desktop and never fires on a touchscreen.
-  it('carries the swell to the tab the pointer is over, without opening it', async () => {
-    const spring = jest.spyOn(Animated, 'spring');
-    const screen = await render(<FloatingTabBar {...props(0)} />);
-    await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
-    spring.mockClear();
-
-    await fireEvent(screen.getByLabelText('Players'), 'hoverIn');
-
-    expect(spring).toHaveBeenCalled();
-    expect(navigate).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Matches').props.accessibilityState).toMatchObject({ selected: true });
-  });
-
-  it('brings the swell back to the selected tab once the pointer leaves', async () => {
-    const spring = jest.spyOn(Animated, 'spring');
-    const screen = await render(<FloatingTabBar {...props(0)} />);
-    await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
-    await fireEvent(screen.getByLabelText('Players'), 'hoverIn');
-    spring.mockClear();
-
-    await fireEvent(screen.getByLabelText('Players'), 'hoverOut');
-
-    expect(spring).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 0 }));
-  });
-
   it('opens the tab that was pressed', async () => {
     const screen = await render(<FloatingTabBar {...props(0)} />);
     fireEvent.press(screen.getByLabelText('Players'));
@@ -156,8 +129,8 @@ describe('FloatingTabBar', () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
-  // The swell travels to the tab that was opened rather than jumping onto it.
-  it('slides the swell onto the tab that was opened', async () => {
+  // The marker travels to the tab that was opened rather than blinking onto it.
+  it('slides the marker onto the tab that was opened', async () => {
     const spring = jest.spyOn(Animated, 'spring');
     const screen = await render(<FloatingTabBar {...props(0)} />);
     await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
@@ -168,7 +141,7 @@ describe('FloatingTabBar', () => {
     expect(spring).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 2 }));
   });
 
-  it('places the swell outright for somebody who asked for less motion', async () => {
+  it('places the marker outright for somebody who asked for less motion', async () => {
     jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
     const spring = jest.spyOn(Animated, 'spring');
     const screen = await render(<FloatingTabBar {...props(0)} />);
@@ -188,9 +161,9 @@ function Clearance() {
 }
 
 describe('useDockClearance', () => {
-  it('asks a page to clear the rail and the swell above it', async () => {
+  it('asks a page to clear the rail and the gap below it', async () => {
     const screen = await render(<Clearance />);
-    expect(screen.getByTestId('clearance').props.children).toBe(112);
+    expect(screen.getByTestId('clearance').props.children).toBe(96);
   });
 
   // The dock rests on the home indicator's inset, so the name floating above it
@@ -201,6 +174,6 @@ describe('useDockClearance', () => {
         <Clearance />
       </SafeAreaInsetsContext.Provider>,
     );
-    expect(screen.getByTestId('clearance').props.children).toBe(130);
+    expect(screen.getByTestId('clearance').props.children).toBe(114);
   });
 });
