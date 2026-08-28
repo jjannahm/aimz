@@ -33,6 +33,10 @@ const dark = {
   border: '#1E293B',
   accent: '#3B82F6',
   accentSoft: '#0EA2E7',
+  // The accent laid *over* a surface rather than replacing it, so whatever sits
+  // on top keeps reading the way it did off it, and the halo it throws.
+  selectionSurface: 'rgba(59, 130, 246, 0.75)',
+  selectionGlow: 'rgba(59, 130, 246, 0.9)',
   onAccent: '#0F172A',
   textPrimary: '#F8FAFC',
   textSecondary: '#CBD5E1',
@@ -74,6 +78,10 @@ export const lightColors: ThemeColors = {
   border: '#D8DFE9',
   accent: '#101723',
   accentSoft: '#1E40AF',
+  // This theme's own accent is near-black, so the selection takes its blue from
+  // `accentSoft` — a wash of the accent itself would read as grey.
+  selectionSurface: 'rgba(30, 64, 175, 0.6)',
+  selectionGlow: 'rgba(30, 64, 175, 0.55)',
   onAccent: '#FAFAFA',
   textPrimary: '#060A12',
   textSecondary: '#334155',
