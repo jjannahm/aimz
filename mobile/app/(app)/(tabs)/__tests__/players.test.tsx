@@ -106,9 +106,18 @@ describe('PlayersScreen', () => {
     await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-2'));
   });
 
-  // An administrator has no roster record behind their login, so there are no
-  // stats of their own to offer.
-  it('leaves My Stats out for an account with no player behind it', async () => {
+  // An administrator manages the academy rather than playing in it. The staging
+  // admin's own login is linked to a player, which is what had been letting the
+  // tab through.
+  it('leaves My Stats out for an administrator linked to a player', async () => {
+    mockUser = { role: 'admin', player_id: 'p-1' };
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await screen.findByRole('tab', { name: 'Teams' });
+    expect(screen.queryByRole('tab', { name: 'My Stats' })).toBeNull();
+    expect(screen.getAllByRole('tab')).toHaveLength(2);
+  });
+
+  it('leaves My Stats out for an administrator with no player behind them', async () => {
     mockUser = { role: 'admin', player_id: null };
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByRole('tab', { name: 'Teams' });
