@@ -1,7 +1,6 @@
 import type { PropsWithChildren } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import {
-  AccessibilityInfo,
   Animated,
   Easing,
   Pressable,
@@ -11,6 +10,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
+import { useReduceMotion } from '@/src/lib/useReduceMotion';
 import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
@@ -28,26 +28,6 @@ type FadeThroughProps = PropsWithChildren<{
   transitionKey: string | null | undefined;
   testID?: string;
 }>;
-
-function useReduceMotion() {
-  // Start conservatively so a selection made before the async preference read
-  // never flashes an animation at somebody who has asked not to see one.
-  const [reduceMotion, setReduceMotion] = useState(true);
-
-  useEffect(() => {
-    let mounted = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
-      if (mounted) setReduceMotion(enabled);
-    });
-    const subscription = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduceMotion);
-    return () => {
-      mounted = false;
-      subscription.remove();
-    };
-  }, []);
-
-  return reduceMotion;
-}
 
 /**
  * A standalone tab whose selected colour grows from the bottom edge.

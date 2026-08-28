@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/src/components/BrandMark';
+import { useDockClearance } from '@/src/components/FloatingTabBar';
 import { SettingsButton } from '@/src/components/SettingsButton';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -20,8 +21,9 @@ type Props = PropsWithChildren<{
 export function Screen({ title, action, scroll = true, scrollRef, hideSettings = false, children }: Props) {
   const styles = useThemedStyles(stylesheet);
   const [headerHeight, setHeaderHeight] = useState(0);
+  const clearance = useDockClearance();
   const content = (
-    <View style={[styles.content, scroll ? styles.growing : styles.filling]}>
+    <View style={[styles.content, { paddingBottom: clearance }, scroll ? styles.growing : styles.filling]}>
       <View onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)} style={styles.header}>
         {/* The brand holds the top-left corner, ahead of the page's own title. */}
         <BrandMark size={30} />
@@ -61,9 +63,10 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   safe: { backgroundColor: colors.background, flex: 1 },
   scroller: { flex: 1, minHeight: 0 },
   scroll: { flexGrow: 1 },
-  // The tab bar floats over the page rather than taking a strip below it, so
-  // the last of the content has to clear where it sits.
-  content: { alignSelf: 'center', gap: theme.spacing.lg, maxWidth: 760, padding: theme.spacing.lg, paddingBottom: theme.spacing.xxxl + theme.spacing.xl, width: '100%' },
+  // The dock floats over the page rather than taking a strip below it, so the
+  // last of the content has to clear where it sits, name included. How much
+  // that is depends on the inset, so `useDockClearance` sets it per screen.
+  content: { alignSelf: 'center', gap: theme.spacing.lg, maxWidth: 760, padding: theme.spacing.lg, width: '100%' },
   growing: { flexGrow: 1 },
   filling: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing.md },
