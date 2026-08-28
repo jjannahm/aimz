@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { theme, type ThemeColors } from '@/src/theme';
+import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 export type SegmentedOption<Value extends string> = {
@@ -60,6 +60,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     padding: 0,
   },
   segment: {
+    ...noFocusRing,
     alignItems: 'center',
     flex: 1,
     justifyContent: 'center',
