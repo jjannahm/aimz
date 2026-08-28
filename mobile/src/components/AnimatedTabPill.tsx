@@ -144,15 +144,32 @@ export function FadeThrough({ children, testID, transitionKey }: FadeThroughProp
   const [displayed, setDisplayed] = useState(() => ({ children, key: transitionKey }));
   const latest = useRef({ children, key: transitionKey });
   const generation = useRef(0);
+  /** The transition that has faded out but not yet reached its new content. */
+  const midFade = useRef(0);
   latest.current = { children, key: transitionKey };
 
   useEffect(() => {
-    if (displayed.key === transitionKey) return undefined;
+    if (displayed.key === transitionKey) {
+      // The key came back to what is already on screen before the fade-out
+      // finished, so no fade-in is coming to undo it. Left alone the content
+      // keeps whatever opacity the stopped animation reached — near zero, if it
+      // got far enough, which reads as an empty screen. Bumping the generation
+      // orphans the fade-out's own callback so it cannot revive the transition.
+      if (midFade.current) {
+        midFade.current = 0;
+        generation.current += 1;
+        opacity.stopAnimation();
+        opacity.setValue(1);
+      }
+      return undefined;
+    }
 
     const currentGeneration = ++generation.current;
+    midFade.current = currentGeneration;
     opacity.stopAnimation();
 
     if (reduceMotion) {
+      midFade.current = 0;
       setDisplayed(latest.current);
       opacity.setValue(1);
       return undefined;
@@ -168,6 +185,7 @@ export function FadeThrough({ children, testID, transitionKey }: FadeThroughProp
 
     fadeOut.start(({ finished }) => {
       if (!finished || generation.current !== currentGeneration) return;
+      midFade.current = 0;
       setDisplayed(latest.current);
       opacity.setValue(0);
       fadeIn = Animated.timing(opacity, {
