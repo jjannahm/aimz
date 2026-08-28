@@ -1,4 +1,5 @@
 import type { Match, MatchStatus } from '@/src/types/api';
+import { toEgyptWallClock } from '@/src/lib/egyptTime';
 
 export type CompetitionMatchGroup = {
   competitionId: string;
@@ -15,9 +16,10 @@ export type DateMatchGroup = {
 };
 
 function localDateKey(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const local = toEgyptWallClock(date);
+  const year = local.year;
+  const month = String(local.month).padStart(2, '0');
+  const day = String(local.day).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 

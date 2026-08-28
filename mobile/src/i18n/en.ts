@@ -5,9 +5,11 @@ export const copy = {
   emptyMatches: 'No matches in this section yet.',
   emptyPlayers: 'No players match this filter yet.',
   teams: 'Teams',
-  topScorers: 'Top Scorers',
-  topAssisters: 'Top Assisters',
+  awards: 'Leaderboards',
+  myStats: 'My Stats',
+  emptyAwards: 'Season awards appear once a competition has a finished match.',
   emptySquad: (ageGroup: string) => `Admin-added ${ageGroup} players will appear here.`,
   emptyLeaders: 'Rankings build automatically once finished matches have player stats.',
+  accountNotLinked: 'Ask an AIMZ administrator to link your account to your squad player.',
   retry: 'Try again',
 } as const;

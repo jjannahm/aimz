@@ -10,6 +10,7 @@ import type { LiveMatchSnapshot, Match, MatchPhase } from '@/src/types/api';
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-haptics', () => ({ notificationAsync: jest.fn(), NotificationFeedbackType: { Success: 'success' } }));
 jest.mock('expo-router', () => ({
+  usePathname: () => '/',
   router: { push: jest.fn(), back: jest.fn() },
   useLocalSearchParams: () => ({ id: 'match-1' }),
   Redirect: 'Redirect',
@@ -17,7 +18,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn() }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
 jest.mock('@/src/lib/api', () => ({
-  api: { live: jest.fn(), players: jest.fn(), setMatchPhase: jest.fn(), createEvent: jest.fn() },
+  api: { live: jest.fn(), players: jest.fn(), setMatchPhase: jest.fn(), createEvent: jest.fn(), setManOfTheMatch: jest.fn(), stats: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -25,13 +26,13 @@ const match = (over: Partial<Match> = {}): Match => ({
   id: 'match-1', competition_id: 'c-1', home_team_id: 'home', away_team_id: 'away',
   kickoff_datetime: '2026-08-20T18:30:00.000Z', venue: 'AIMZ Arena',
   status: 'live', phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z',
-  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null,
+  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null, man_of_the_match_player_id: null,
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15,
   created_at: '', updated_at: '',
-  home_team: { id: 'home', name: 'AIMZ U18', squad_code: null, age_group: 'U18', season: '2026', is_aimz: true, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, logo_url: null, created_at: '', updated_at: '' },
-  away_team: { id: 'away', name: 'Giza Lions', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, logo_url: null, created_at: '', updated_at: '' },
-  competition: { id: 'c-1', name: 'Women Academy League', season: '2026', type: 'league', created_at: '', updated_at: '' },
+  home_team: { id: 'home', name: 'AIMZ U18', squad_code: null, age_group: 'U18', season: '2026', is_aimz: true, is_active: true, logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, logo_url: null, created_at: '', updated_at: '' },
+  away_team: { id: 'away', name: 'Giza Lions', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, logo_url: null, created_at: '', updated_at: '' },
+  competition: { id: 'c-1', name: 'Women Academy League', season: '2026', type: 'league', team_count: null, group_size: null, created_at: '', updated_at: '' },
   ...over,
 });
 
@@ -39,7 +40,7 @@ const snapshot = (over: Partial<Match> = {}): LiveMatchSnapshot =>
   ({ match: match(over), events: [], lineup: [], revision: 1 }) as LiveMatchSnapshot;
 
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
@@ -104,6 +105,25 @@ describe('LiveScoringScreen — End match', () => {
   });
 });
 
+describe('LiveScoringScreen — opponent-only redirect', () => {
+  afterEach(() => jest.clearAllMocks());
+
+  it('runs its hooks, then redirects the admin to final-score entry', async () => {
+    const base = match();
+    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+    jest.mocked(api.live).mockResolvedValue(snapshot({
+      status: 'scheduled',
+      phase: 'not_started',
+      phase_started_at: null,
+      home_team: { ...base.home_team!, is_aimz: false },
+      away_team: { ...base.away_team!, is_aimz: false },
+    }));
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    await waitFor(() => expect(screen.toJSON()).toMatchObject({ type: 'Redirect', props: { href: { pathname: '/result/[id]', params: { id: 'match-1' } } } }));
+    expect(api.live).toHaveBeenCalledWith('match-1');
+  });
+});
+
 describe('LiveScoringScreen — Cards', () => {
   beforeEach(() => {
     jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
@@ -160,5 +180,127 @@ describe('LiveScoringScreen — Cards', () => {
     fireEvent.press(screen.getByText('Sub'));
     expect(await screen.findByText('Add Sub')).toBeTruthy();
     expect(screen.getByText('Coming on')).toBeTruthy();
+  });
+});
+
+const scorer = {
+  id: 'p-1', name: 'Nour Adel', team_id: 'home', position: 'Defender', jersey_number: 4,
+  photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '',
+};
+
+describe('LiveScoringScreen — own goals and missed penalties', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [scorer], total: 1, limit: 100, offset: 0 });
+    jest.mocked(api.live).mockResolvedValue(snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:40:00.000Z' }));
+    jest.mocked(api.createEvent).mockResolvedValue({} as never);
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-20T18:40:00.000Z'));
+  });
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks(); });
+
+  // Both are things that happen to a goal attempt, so they are logged from the
+  // Goal tab rather than from tabs of their own.
+  it('keeps own goal and a missed penalty inside the goal form', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    expect(await screen.findByLabelText('Own goal')).toBeTruthy();
+    expect(screen.getByLabelText('Penalty missed')).toBeTruthy();
+    expect(screen.queryByText('Pen miss')).toBeNull();
+  });
+
+  it('logs an own goal against the side that put it in, with no assist to credit', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Own goal'));
+
+    expect(await screen.findByText('Add own goal')).toBeTruthy();
+    // The admin picks who it counts for; the scorer comes from the other side.
+    expect(screen.getByText('Counts for')).toBeTruthy();
+    expect(screen.getByText(/Put through their own net/u)).toBeTruthy();
+    expect(screen.queryByText('Assisted by (optional)')).toBeNull();
+
+    fireEvent.press(screen.getByText('Add own goal'));
+    await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
+    expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'own_goal', team_id: 'away' });
+  });
+
+  it('asks how a penalty was missed before it shows the form', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Penalty missed'));
+
+    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(screen.getByText('Off target')).toBeTruthy();
+    // The rest of the form waits on the outcome, the way a card does.
+    expect(screen.queryByText('Team')).toBeNull();
+
+    fireEvent.press(screen.getByText('Saved'));
+    expect(await screen.findByText('Team')).toBeTruthy();
+    fireEvent.press(screen.getByText('Add missed penalty'));
+    await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
+    expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'penalty_missed', penalty_outcome: 'saved' });
+  });
+
+  it('leaves the scored-from-a-penalty box to a goal that went in', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    expect(await screen.findByLabelText('Scored from a penalty')).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Penalty missed'));
+    fireEvent.press(await screen.findByText('Saved'));
+    expect(screen.queryByLabelText('Scored from a penalty')).toBeNull();
+  });
+
+  it('sends a substitution reason only when one is chosen', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Sub'));
+    expect(await screen.findByText('Reason (optional)')).toBeTruthy();
+
+    fireEvent.press(screen.getByText('Add Sub'));
+    await waitFor(() => expect(api.createEvent).toHaveBeenCalled());
+    // Left alone, a tactical change carries no reason.
+    expect(jest.mocked(api.createEvent).mock.calls[0]![1]).toMatchObject({ type: 'substitution', substitution_reason: null });
+  });
+
+  it('keeps the reason off every other event type', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    expect(await screen.findByText('Add Goal')).toBeTruthy();
+    expect(screen.queryByText('Reason (optional)')).toBeNull();
+  });
+});
+
+describe('LiveScoringScreen — who can be substituted', () => {
+  const bench = { id: 'bench-1', name: 'Malak Sherif', team_id: 'home', position: 'Forward', jersey_number: 12, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' };
+  const lineup = [
+    { id: 'l1', match_id: 'match-1', player_id: 'p-1', team_id: 'home', is_starter: true, is_captain: false, position: 'Forward', jersey_number: 9 },
+    { id: 'l2', match_id: 'match-1', player_id: 'bench-1', team_id: 'home', is_starter: false, is_captain: false, position: 'Forward', jersey_number: 12 },
+  ];
+
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [scorer, bench], total: 2, limit: 100, offset: 0 });
+    jest.mocked(api.createEvent).mockResolvedValue({} as never);
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-20T18:40:00.000Z'));
+  });
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks(); });
+
+  const openSub = async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Sub'));
+    return screen;
+  };
+
+  it('offers the bench to come on and the pitch to come off', async () => {
+    jest.mocked(api.live).mockResolvedValue({ ...snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z' }), lineup } as never);
+    const screen = await openSub();
+    fireEvent.press(await screen.findByLabelText('Coming on'));
+    expect(await screen.findByText('#12 Malak Sherif')).toBeTruthy();
+    // A starter cannot come on; they are already on.
+    expect(screen.queryByText('#9 Nour Hassan')).toBeNull();
+  });
+
+  // The list has to follow the match, not just its kickoff: after one change the
+  // arriving player can be taken off and the departing one is out of both lists.
+  it('follows the pitch once a substitution has been made', async () => {
+    const sub = { id: 'e-sub', match_id: 'match-1', type: 'substitution' as const, minute: 5, team_id: 'home', player_id: 'bench-1', secondary_player_id: 'p-1', related_event_id: null, notes: null, is_penalty: false, substitution_reason: null, penalty_outcome: null, client_operation_id: 'sub', created_at: '', updated_at: '' };
+    jest.mocked(api.live).mockResolvedValue({ ...snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z' }), lineup, events: [sub] } as never);
+    const screen = await openSub();
+
+    fireEvent.press(await screen.findByLabelText('Coming off'));
+    expect(await screen.findByText('#12 Malak Sherif')).toBeTruthy();
+    expect(screen.queryByText('#9 Nour Hassan')).toBeNull();
   });
 });

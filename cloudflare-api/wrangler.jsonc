@@ -10,7 +10,8 @@
     "FRONTEND_ORIGIN": "https://aimz-egypt-staging.pages.dev",
     "ADMIN_NAME": "AIMZ Staging Admin",
     "ACCESS_TOKEN_SECONDS": "900",
-    "REFRESH_TOKEN_DAYS": "30"
+    "REFRESH_TOKEN_DAYS": "30",
+    "MEDIA_MAX_BYTES": "5242880"
   },
   "d1_databases": [
     {
@@ -18,6 +19,12 @@
       "database_name": "aimz-staging-db",
       "database_id": "09e5f039-a7ed-4249-975d-a3b3e4467dc0",
       "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "aimz-staging-media"
     }
   ],
   "observability": {

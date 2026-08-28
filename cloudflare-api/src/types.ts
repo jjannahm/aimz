@@ -1,8 +1,12 @@
-export type UserRole = "player" | "admin";
+export type UserRole = "player" | "admin" | "parent";
+/** What an invitation creates when it is redeemed. */
+export type InviteKind = "player" | "parent";
 export type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
 export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";
-export type EventType = "goal" | "assist" | "yellow_card" | "red_card" | "substitution";
+export type EventType = "goal" | "assist" | "own_goal" | "penalty_missed" | "yellow_card" | "red_card" | "substitution";
+export type SubstitutionReason = "tactical" | "injury" | "concussion" | "disciplinary" | "other";
+export type PenaltyOutcome = "saved" | "off_target";
 
 export interface UserRow {
   id: string;
@@ -25,10 +29,14 @@ export interface TeamRow {
   is_aimz: number;
   is_active: number;
   logo_key: string | null;
+  /** Which badge to draw when no logo is uploaded; null derives it from is_aimz. */
+  badge_style: "aimz" | "generated" | null;
   coach: string | null;
   assistant_coach: string | null;
   /** Which league the team is entered in. */
   competition_id: string | null;
+  /** Which group of a knockout competition, once the draw is made. */
+  competition_group_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -38,8 +46,41 @@ export interface CompetitionRow {
   name: string;
   season: string;
   type: CompetitionType;
+  /**
+   * How many teams a knockout competition is drawn for: 8, 16 or 32.
+   *
+   * Null is the whole of the old behaviour — a league table and nothing else.
+   * The format lives here rather than in `type` because `type` carries a CHECK
+   * constraint, and SQLite cannot widen one without rebuilding the table.
+   */
+  team_count: number | null;
+  /**
+   * How many teams share a group.
+   *
+   * Null on everything drawn before custom shapes, which were always fours.
+   */
+  group_size: number | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface CompetitionGroupRow {
+  id: string;
+  competition_id: string;
+  name: string;
+  position: number;
+}
+
+export interface BracketSlotRow {
+  id: string;
+  competition_id: string;
+  /** Teams left in the round: 16, 8, 4, 2. */
+  round: number;
+  position: number;
+  home_team_id: string | null;
+  away_team_id: string | null;
+  winner_team_id: string | null;
+  match_id: string | null;
 }
 
 export interface PlayerRow {
@@ -49,7 +90,62 @@ export interface PlayerRow {
   position: string;
   jersey_number: number | null;
   photo_key: string | null;
+  date_of_birth: string | null;
   is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrainingRow {
+  id: string;
+  team_id: string;
+  starts_at: string;
+  duration_minutes: number;
+  venue: string;
+  notes: string | null;
+  series_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AvailabilityRow {
+  id: string;
+  training_session_id: string;
+  player_id: string;
+  status: "going" | "maybe" | "not_going";
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssignmentRow {
+  id: string;
+  match_id: string | null;
+  training_session_id: string | null;
+  title: string;
+  assigned_player_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnnouncementRow {
+  id: string;
+  team_id: string | null;
+  title: string;
+  body: string;
+  author_id: string | null;
+  pinned: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlayerContactRow {
+  id: string;
+  player_id: string;
+  name: string;
+  relationship: string | null;
+  email: string | null;
+  phone: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -79,6 +175,8 @@ export interface MatchRow {
   lineup_format: number | null;
   /** Outfield shape, e.g. "4-4-2"; digits sum to lineup_format - 1. */
   formation: string | null;
+  /** Picked by an admin once the match is finished, not voted for. */
+  man_of_the_match_player_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -95,6 +193,10 @@ export interface EventRow {
   notes: string | null;
   /** Goals only: whether the goal came from a penalty kick. */
   is_penalty: number;
+  /** Substitutions only: why the player came off. */
+  substitution_reason: SubstitutionReason | null;
+  /** Missed penalties only: saved by the keeper, or off target. */
+  penalty_outcome: PenaltyOutcome | null;
   client_operation_id: string;
   created_at: string;
   updated_at: string;
@@ -119,6 +221,8 @@ export interface StatRow {
   minutes_played: number;
   goals: number;
   assists: number;
+  /** Kept apart from goals so an own goal never inflates a scoring record. */
+  own_goals: number;
   yellow_cards: number;
   red_cards: number;
   created_at: string;
@@ -129,11 +233,49 @@ export interface InviteRow {
   id: string;
   label: string;
   code_hash: string;
+  /** What redeeming this creates: one player, or a parent of several. */
+  kind: InviteKind;
+  /** Kept for invitations written before `invite_players`; read that instead. */
+  player_id: string | null;
   expires_at: string | null;
   max_uses: number | null;
   use_count: number;
   is_active: number;
   created_by_id: string | null;
+  created_at: string;
+}
+
+export interface StandingAccumulator {
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goals_for: number;
+  goals_against: number;
+  points: number;
+}
+
+/** One player's season, totalled across a competition's finished matches. */
+export interface AwardTotals {
+  player_id: string;
+  motm: number;
+  goals: number;
+  assists: number;
+  minutes: number;
+  cards: number;
+  appearances: number;
+}
+
+export interface AuditRow {
+  id: string;
+  actor_id: string | null;
+  /** Kept alongside the id so a removed admin's actions still read. */
+  actor_name: string;
+  action: string;
+  entity_type: string;
+  entity_id: string | null;
+  match_id: string | null;
+  summary: string;
   created_at: string;
 }
 

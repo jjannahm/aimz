@@ -6,11 +6,11 @@ import type { Match } from '@/src/types/api';
 const base: Match = {
   id: 'match-row', competition_id: 'competition', home_team_id: 'home', away_team_id: 'away',
   kickoff_datetime: '2026-08-20T18:30:00.000Z', venue: 'AIMZ Arena', status: 'scheduled', phase: 'not_started', phase_started_at: null,
-  home_score: 0, away_score: 0, revision: 0, lineup_format: null, formation: null, half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
+  home_score: 0, away_score: 0, revision: 0, lineup_format: null, formation: null, man_of_the_match_player_id: null, half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: true, extra_time_half_length_minutes: 15, created_at: '', updated_at: '',
-  home_team: { id: 'home', name: 'AIMZ Women', squad_code: null, age_group: null, season: null, is_aimz: true, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, logo_url: null, created_at: '', updated_at: '' },
-  away_team: { id: 'away', name: 'Cairo Stars', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, logo_url: null, created_at: '', updated_at: '' },
-  competition: { id: 'competition', name: 'Academy League', season: '2026/27', type: 'league', created_at: '', updated_at: '' },
+  home_team: { id: 'home', name: 'AIMZ Women', squad_code: null, age_group: null, season: null, is_aimz: true, is_active: true, logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, logo_url: null, created_at: '', updated_at: '' },
+  away_team: { id: 'away', name: 'Cairo Stars', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, logo_url: null, created_at: '', updated_at: '' },
+  competition: { id: 'competition', name: 'Academy League', season: '2026/27', type: 'league', team_count: null, group_size: null, created_at: '', updated_at: '' },
 };
 
 describe('MatchRow', () => {
@@ -40,5 +40,15 @@ describe('MatchRow', () => {
     const screen = await render(<MatchRow match={{ ...base, status: 'finished', phase: 'finished', home_score: 3, away_score: 2 }} />);
     expect(screen.getByLabelText(/AIMZ Women 3, Cairo Stars 2\./)).toBeTruthy();
     expect(screen.getByText('FT')).toBeTruthy();
+  });
+
+  // Regression: the crest used to be tinted gold in the away slot, so an
+  // AIMZ-vs-AIMZ fixture (or simply AIMZ playing away) showed a yellow badge.
+  it('shows the same club crest whichever side of the fixture it plays on', async () => {
+    const home = await render(<MatchRow match={base} />);
+    const swapped = await render(<MatchRow match={{ ...base, home_team: base.away_team, away_team: base.home_team }} />);
+    const hidden = { includeHiddenElements: true } as const;
+    expect(home.getByTestId('badge-aimz', hidden)).toBeTruthy();
+    expect(swapped.getByTestId('badge-aimz', hidden)).toBeTruthy();
   });
 });

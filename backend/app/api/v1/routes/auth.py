@@ -55,13 +55,28 @@ async def register(payload: RegisterRequest, session: SessionDep) -> TokenRespon
         email=str(payload.email).lower(),
         hashed_password=hash_password(payload.password),
         role=UserRole.player,
+        # A personal invitation carries the roster player it was cut for, so the
+        # account knows whose stats are its own the moment it is created.
+        player_id=invite.player_id,
     )
+    invited_player_id = invite.player_id
     session.add(user)
     invite.use_count += 1
     try:
         await session.flush()
     except IntegrityError as exc:
         await session.rollback()
+        # Two constraints can land here. Saying "email" for a player collision
+        # would send someone to change an address that was never the problem.
+        if invited_player_id is not None and await session.scalar(
+            select(User.id).where(User.player_id == invited_player_id)
+        ):
+            raise api_error(
+                409,
+                "player_already_linked",
+                "That player already has an account. "
+                "Ask an AIMZ administrator for a new invitation.",
+            ) from exc
         raise api_error(409, "email_in_use", "An account already uses that email.") from exc
     response = await issue_session(session, user)
     await session.commit()

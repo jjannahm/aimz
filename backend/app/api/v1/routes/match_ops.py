@@ -7,6 +7,7 @@ from app.db.models import (
     Match,
     MatchEvent,
     MatchLineupEntry,
+    MatchPhase,
     MatchStatus,
     Player,
     PlayerMatchStat,
@@ -15,18 +16,33 @@ from app.schemas import (
     LineupEntryInput,
     LineupEntryRead,
     LiveMatchSnapshot,
+    ManOfTheMatchInput,
     MatchEventInput,
     MatchEventRead,
     MatchEventUpdate,
     MatchPhaseUpdate,
     MatchRead,
+    MatchResultInput,
     PlayerMatchStatRead,
     PlayerStatInput,
 )
+from app.services.audit import record_audit
 from app.services.match_clock import apply_phase_action
-from app.services.scoring import add_event, load_match_detail, remove_event, update_event
+from app.services.scoring import (
+    add_event,
+    load_match_detail,
+    opponent_only_match,
+    remove_event,
+    require_scorable,
+    update_event,
+)
 
 router = APIRouter()
+
+
+def describe_event(event: MatchEvent) -> str:
+    minute = "no minute" if event.minute is None else f"{event.minute}'"
+    return f"{event.type.value.replace('_', ' ')} at {minute}"
 
 
 async def require_match(session: SessionDep, match_id: str) -> Match:
@@ -40,12 +56,125 @@ async def require_match(session: SessionDep, match_id: str) -> Match:
 async def update_match_phase(
     match_id: str,
     payload: MatchPhaseUpdate,
-    _: AdminUser,
+    actor: AdminUser,
     session: SessionDep,
 ) -> Match:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     apply_phase_action(match, payload.action)
     match.revision += 1
+    record_audit(
+        session,
+        actor,
+        action=payload.action,
+        entity_type="match",
+        entity_id=match_id,
+        match_id=match_id,
+        summary=f"Match clock moved to {match.phase.value.replace('_', ' ')}.",
+    )
+    await session.commit()
+    refreshed = await load_match_detail(session, match_id)
+    if refreshed is None:
+        raise api_error(404, "match_not_found", "Match not found.")
+    return refreshed
+
+
+@router.post("/{match_id}/result", response_model=MatchRead)
+async def record_result(
+    match_id: str,
+    payload: MatchResultInput,
+    actor: AdminUser,
+    session: SessionDep,
+) -> Match:
+    """The whole scoring surface for a match between two opponent clubs.
+
+    Everywhere else a scoreline is derived from the timeline and never written
+    by hand, because the timeline is the record. Here there is no timeline to
+    derive it from, so the score is the record, and this is the only route that
+    may set it. Kept off PATCH deliberately: PATCH takes a whole match, and
+    widening it would let a stale client roll a corrected score back.
+
+    It goes straight to finished without asking the clock, since scheduled to
+    finished is a transition the phase machine has no reason to allow. Calling
+    it again on a finished match is how a wrong score is corrected.
+    """
+    match = await require_match(session, match_id)
+    if not await opponent_only_match(session, match):
+        raise api_error(
+            409,
+            "not_opponent_only",
+            "This match has an AIMZ squad in it. Score it from live scoring.",
+        )
+    correction = match.status == MatchStatus.finished
+    match.home_score = payload.home_score
+    match.away_score = payload.away_score
+    match.status = MatchStatus.finished
+    match.phase = MatchPhase.finished
+    match.phase_started_at = None
+    match.revision += 1
+    verb = "Corrected the final score to" if correction else "Recorded a final score of"
+    record_audit(
+        session,
+        actor,
+        action="result_entered",
+        entity_type="match",
+        entity_id=match_id,
+        match_id=match_id,
+        summary=f"{verb} {payload.home_score}-{payload.away_score}.",
+    )
+    await session.commit()
+    refreshed = await load_match_detail(session, match_id)
+    if refreshed is None:
+        raise api_error(404, "match_not_found", "Match not found.")
+    return refreshed
+
+
+@router.post("/{match_id}/man-of-the-match", response_model=MatchRead)
+async def set_man_of_the_match(
+    match_id: str,
+    payload: ManOfTheMatchInput,
+    actor: AdminUser,
+    session: SessionDep,
+) -> Match:
+    match = await require_match(session, match_id)
+    await require_scorable(session, match)
+    if match.status != MatchStatus.finished:
+        raise api_error(
+            409, "match_not_finished", "Pick man of the match once the match has finished."
+        )
+    name = "No one"
+    if payload.player_id is not None:
+        player = await session.get(Player, payload.player_id)
+        if player is None or player.team_id not in {match.home_team_id, match.away_team_id}:
+            raise api_error(422, "invalid_award_player", "That player did not play in this match.")
+        appeared = await session.scalar(
+            select(PlayerMatchStat).where(
+                PlayerMatchStat.match_id == match_id,
+                PlayerMatchStat.player_id == payload.player_id,
+                PlayerMatchStat.appeared.is_(True),
+            )
+        )
+        if appeared is None:
+            raise api_error(
+                422, "player_did_not_appear", "Only a player who appeared can take the award."
+            )
+        name = player.name
+    match.man_of_the_match_player_id = payload.player_id
+    # The live snapshot is cached on this, so a stale ETag would hide the award.
+    match.revision += 1
+    record_audit(
+        session,
+        actor,
+        action="man_of_the_match_set",
+        entity_type="match",
+        entity_id=match_id,
+        match_id=match_id,
+        summary=(
+            "Cleared man of the match."
+            if payload.player_id is None
+            else f"Named {name} man of the match."
+        ),
+    )
     await session.commit()
     refreshed = await load_match_detail(session, match_id)
     if refreshed is None:
@@ -69,12 +198,22 @@ async def list_events(match_id: str, _: CurrentUser, session: SessionDep) -> lis
 
 @router.post("/{match_id}/events", response_model=MatchEventRead, status_code=201)
 async def create_event(
-    match_id: str, payload: MatchEventInput, _: AdminUser, session: SessionDep
+    match_id: str, payload: MatchEventInput, actor: AdminUser, session: SessionDep
 ) -> MatchEvent:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     if match.status == MatchStatus.scheduled:
         raise api_error(409, "match_not_started", "Start the match before adding events.")
     event = await add_event(session, match_id, payload)
+    record_audit(
+        session,
+        actor,
+        action="event_added",
+        entity_type="match_event",
+        entity_id=event.id,
+        match_id=match_id,
+        summary=f"Added {describe_event(event)}.",
+    )
     await session.commit()
     await session.refresh(event)
     return event
@@ -85,18 +224,38 @@ async def edit_event(
     match_id: str,
     event_id: str,
     payload: MatchEventUpdate,
-    _: AdminUser,
+    actor: AdminUser,
     session: SessionDep,
 ) -> MatchEvent:
     event = await update_event(session, match_id, event_id, payload)
+    record_audit(
+        session,
+        actor,
+        action="event_corrected",
+        entity_type="match_event",
+        entity_id=event_id,
+        match_id=match_id,
+        summary=f"Corrected {describe_event(event)}.",
+    )
     await session.commit()
     await session.refresh(event)
     return event
 
 
 @router.delete("/{match_id}/events/{event_id}", status_code=204)
-async def delete_event(match_id: str, event_id: str, _: AdminUser, session: SessionDep) -> Response:
+async def delete_event(
+    match_id: str, event_id: str, actor: AdminUser, session: SessionDep
+) -> Response:
     await remove_event(session, match_id, event_id)
+    record_audit(
+        session,
+        actor,
+        action="event_removed",
+        entity_type="match_event",
+        entity_id=event_id,
+        match_id=match_id,
+        summary="Removed an event from the timeline.",
+    )
     await session.commit()
     return Response(status_code=204)
 
@@ -119,10 +278,11 @@ async def get_lineup(match_id: str, _: CurrentUser, session: SessionDep) -> list
 async def replace_lineup(
     match_id: str,
     payload: list[LineupEntryInput],
-    _: AdminUser,
+    actor: AdminUser,
     session: SessionDep,
 ) -> list[MatchLineupEntry]:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     # Once the match is under way, who is on the pitch changes through
     # substitutions rather than by rewriting who started.
     if match.status != MatchStatus.scheduled:
@@ -146,6 +306,16 @@ async def replace_lineup(
     await session.execute(delete(MatchLineupEntry).where(MatchLineupEntry.match_id == match_id))
     session.add_all(rows)
     match.revision += 1
+    starters = sum(row.is_starter for row in rows)
+    record_audit(
+        session,
+        actor,
+        action="lineup_saved",
+        entity_type="lineup",
+        entity_id=match_id,
+        match_id=match_id,
+        summary=f"Saved a lineup with {starters} starters.",
+    )
     await session.commit()
     for row in rows:
         await session.refresh(row)
@@ -172,10 +342,11 @@ async def get_player_stats(
 async def update_player_stats(
     match_id: str,
     payload: list[PlayerStatInput],
-    _: AdminUser,
+    actor: AdminUser,
     session: SessionDep,
 ) -> list[PlayerMatchStat]:
     match = await require_match(session, match_id)
+    await require_scorable(session, match)
     rows: list[PlayerMatchStat] = []
     for item in payload:
         player = await session.get(Player, item.player_id)
@@ -194,6 +365,15 @@ async def update_player_stats(
         stat.minutes_played = item.minutes_played
         rows.append(stat)
     match.revision += 1
+    record_audit(
+        session,
+        actor,
+        action="minutes_saved",
+        entity_type="player_stats",
+        entity_id=match_id,
+        match_id=match_id,
+        summary=f"Saved minutes for {len(rows)} players.",
+    )
     await session.commit()
     for row in rows:
         await session.refresh(row)

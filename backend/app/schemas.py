@@ -5,7 +5,15 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
-from app.db.models import CompetitionType, EventType, MatchPhase, MatchStatus, UserRole
+from app.db.models import (
+    CompetitionType,
+    EventType,
+    MatchPhase,
+    MatchStatus,
+    PenaltyOutcome,
+    SubstitutionReason,
+    UserRole,
+)
 from app.services.storage import create_signed_read_url
 
 
@@ -84,13 +92,22 @@ class AdminUserCreate(RegisterRequest):
 class InviteCreate(BaseModel):
     label: str = Field(min_length=2, max_length=120)
     code: str = Field(min_length=4, max_length=128)
+    # Cutting an invitation for one named player links the account it creates to
+    # that roster record, which is how a player sees their own stats.
+    player_id: str | None = Field(default=None, max_length=36)
     expires_at: datetime | None = None
     max_uses: int | None = Field(default=None, ge=1)
+
+
+class AdminUserUpdate(BaseModel):
+    # Null unlinks. Anything else must be a roster player nobody else holds.
+    player_id: str | None = Field(default=None, max_length=36)
 
 
 class InviteRead(ORMModel):
     id: str
     label: str
+    player_id: str | None
     expires_at: datetime | None
     max_uses: int | None
     use_count: int
@@ -106,6 +123,7 @@ class TeamInput(BaseModel):
     is_aimz: bool = False
     is_active: bool = True
     logo_key: str | None = Field(default=None, max_length=512)
+    badge_style: Literal["aimz", "generated"] | None = None
     coach: str | None = Field(default=None, max_length=160)
     assistant_coach: str | None = Field(default=None, max_length=160)
     competition_id: str | None = None
@@ -154,6 +172,11 @@ class PlayerRead(PlayerInput, ORMModel):
     def resolve_photo(self) -> PlayerRead:
         self.photo_url = create_signed_read_url(self.photo_key)
         return self
+
+
+class AdminAccountRead(UserRead):
+    player: PlayerRead | None = None
+    team: TeamRead | None = None
 
 
 EXTRA_TIME_PERIODS = 2
@@ -225,6 +248,9 @@ class MatchInput(BaseModel):
 class MatchRead(MatchInput, ORMModel):
     id: str
     phase: MatchPhase
+    # Read-only here: set through POST /matches/{id}/man-of-the-match, which can
+    # check the match is finished and the player actually played.
+    man_of_the_match_player_id: str | None = None
     phase_started_at: datetime | None
     home_score: int
     away_score: int
@@ -247,8 +273,22 @@ class MatchPhaseUpdate(BaseModel):
 
 
 LOGGABLE_EVENTS = frozenset(
-    {EventType.goal, EventType.yellow_card, EventType.red_card, EventType.substitution}
+    {
+        EventType.goal,
+        EventType.own_goal,
+        EventType.penalty_missed,
+        EventType.yellow_card,
+        EventType.red_card,
+        EventType.substitution,
+    }
 )
+
+
+def _loggable(value: EventType) -> EventType:
+    # An assist is recorded on the goal it came from, not as an event of its own.
+    if value not in LOGGABLE_EVENTS:
+        raise ValueError(f"{value.value} cannot be logged as its own event.")
+    return value
 
 
 class MatchEventInput(BaseModel):
@@ -260,15 +300,14 @@ class MatchEventInput(BaseModel):
     related_event_id: str | None = None
     notes: str | None = Field(default=None, max_length=1000)
     is_penalty: bool = False
+    substitution_reason: SubstitutionReason | None = None
+    penalty_outcome: PenaltyOutcome | None = None
     client_operation_id: str = Field(min_length=8, max_length=64)
 
     @field_validator("type")
     @classmethod
     def loggable(cls, value: EventType) -> EventType:
-        # An assist is recorded on the goal it came from, not on its own.
-        if value not in LOGGABLE_EVENTS:
-            raise ValueError("Assists are recorded on the goal, not as their own event.")
-        return value
+        return _loggable(value)
 
 
 class MatchEventUpdate(BaseModel):
@@ -279,6 +318,14 @@ class MatchEventUpdate(BaseModel):
     secondary_player_id: str | None = None
     notes: str | None = Field(default=None, max_length=1000)
     is_penalty: bool | None = None
+    substitution_reason: SubstitutionReason | None = None
+    penalty_outcome: PenaltyOutcome | None = None
+
+    @field_validator("type")
+    @classmethod
+    def loggable(cls, value: EventType | None) -> EventType | None:
+        # POST refuses an assist; PATCH used to let one in through the back door.
+        return None if value is None else _loggable(value)
 
 
 class MatchEventRead(MatchEventInput, ORMModel):
@@ -313,6 +360,7 @@ class PlayerMatchStatRead(PlayerStatInput, ORMModel):
     match_id: str
     goals: int
     assists: int
+    own_goals: int
     yellow_cards: int
     red_cards: int
 
@@ -327,6 +375,8 @@ class LiveMatchSnapshot(BaseModel):
 class StandingRow(BaseModel):
     rank: int
     team: TeamRead
+    # Most recent five results, newest first: "W", "D" or "L".
+    form: list[str] = Field(default_factory=list)
     played: int
     won: int
     drawn: int
@@ -343,6 +393,8 @@ class PlayerLeaderRow(BaseModel):
     team: TeamRead
     goals: int
     assists: int
+    yellow_cards: int
+    red_cards: int
     appearances: int
 
 
@@ -353,9 +405,81 @@ class PlayerSeasonSummary(BaseModel):
     minutes_played: int
     goals: int
     assists: int
+    own_goals: int
     yellow_cards: int
     red_cards: int
     matches: list[PlayerMatchStatRead]
+
+
+class MatchResultInput(BaseModel):
+    """The final score of a match nobody from AIMZ was at to score live."""
+
+    home_score: int = Field(ge=0, le=99)
+    away_score: int = Field(ge=0, le=99)
+
+
+class ManOfTheMatchInput(BaseModel):
+    # Null clears the award, so a mistaken pick can be undone.
+    player_id: str | None = None
+
+
+class HeadToHeadMeeting(BaseModel):
+    match_id: str
+    kickoff_datetime: datetime
+    competition: CompetitionRead | None = None
+    home_team: TeamRead | None = None
+    away_team: TeamRead | None = None
+    home_score: int
+    away_score: int
+    # From the requested team's point of view: "W", "D" or "L".
+    result: str
+
+
+class HeadToHead(BaseModel):
+    team: TeamRead
+    opponent: TeamRead
+    played: int
+    won: int
+    drawn: int
+    lost: int
+    goals_for: int
+    goals_against: int
+    meetings: list[HeadToHeadMeeting]
+
+
+class PlayerAward(BaseModel):
+    label: str
+    player: PlayerRead
+    team: TeamRead
+    value: int
+    # Rendered after the number, e.g. "goals".
+    unit: str
+
+
+class TeamAward(BaseModel):
+    label: str
+    team: TeamRead
+    value: int
+    unit: str
+
+
+class SeasonAwards(BaseModel):
+    competition: CompetitionRead
+    # Empty until the competition has a finished match to draw on.
+    player_awards: list[PlayerAward] = Field(default_factory=list)
+    team_awards: list[TeamAward] = Field(default_factory=list)
+
+
+class AuditLogRead(ORMModel):
+    id: str
+    actor_id: str | None
+    actor_name: str
+    action: str
+    entity_type: str
+    entity_id: str | None
+    match_id: str | None
+    summary: str
+    created_at: datetime
 
 
 class PresignRequest(BaseModel):

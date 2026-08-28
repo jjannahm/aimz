@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { CompetitionRow, JsonObject, MatchRow, PlayerRow, TeamRow, UserRow } from "./types";
+import type { CompetitionRow, JsonObject, MatchRow, PlayerRow, StatRow, TeamRow, UserRow } from "./types";
 import { verifyAccessToken } from "./security";
 
 export class ApiProblem extends Error {
@@ -66,12 +66,13 @@ export function stringField(
 export function numberField(
   body: JsonObject,
   field: string,
-  options: { min?: number; max?: number; optional?: boolean; nullable?: boolean } = {},
+  options: { min?: number; max?: number; optional?: boolean; nullable?: boolean; integer?: boolean } = {},
 ): number | null | undefined {
   const value = body[field];
   if (value === undefined && options.optional) return undefined;
   if (value === null && options.nullable) return null;
   if (typeof value !== "number" || !Number.isFinite(value)) throw validation(field, "Must be a number.");
+  if (options.integer && !Number.isInteger(value)) throw validation(field, "Must be a whole number.");
   if (options.min !== undefined && value < options.min) throw validation(field, `Must be at least ${options.min}.`);
   if (options.max !== undefined && value > options.max) throw validation(field, `Must be at most ${options.max}.`);
   return value;
@@ -108,13 +109,22 @@ export function parsePagination(url: URL): { limit: number; offset: number } {
   };
 }
 
+/**
+ * Media lives on this Worker, so the path is returned root-relative and the app
+ * resolves it against its API base. Keeping it relative spares every one of
+ * publicTeam's call sites from having to thread the environment through.
+ */
+export function mediaPath(objectKey: string | null): string | null {
+  return objectKey ? `/api/v1/media/${objectKey}` : null;
+}
+
 export function publicTeam(team: TeamRow | null): Record<string, unknown> | null {
   if (!team) return null;
   return {
     ...team,
     is_aimz: Boolean(team.is_aimz),
     is_active: Boolean(team.is_active),
-    logo_url: null,
+    logo_url: mediaPath(team.logo_key),
   };
 }
 
@@ -122,9 +132,24 @@ export function publicCompetition(competition: CompetitionRow | null): Record<st
   return competition ? { ...competition } : null;
 }
 
+export function publicStat(stat: StatRow): Record<string, unknown> {
+  return { ...stat, appeared: Boolean(stat.appeared) };
+}
+
 export function publicPlayer(player: PlayerRow | null): Record<string, unknown> | null {
   if (!player) return null;
-  return { ...player, is_active: Boolean(player.is_active), photo_url: null };
+  return {
+    id: player.id,
+    name: player.name,
+    team_id: player.team_id,
+    position: player.position,
+    jersey_number: player.jersey_number,
+    photo_key: player.photo_key,
+    is_active: Boolean(player.is_active),
+    created_at: player.created_at,
+    updated_at: player.updated_at,
+    photo_url: mediaPath(player.photo_key),
+  };
 }
 
 export function publicMatch(

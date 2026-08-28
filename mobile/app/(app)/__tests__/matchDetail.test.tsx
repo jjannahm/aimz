@@ -4,10 +4,11 @@ import type { ReactNode } from 'react';
 
 import MatchDetailScreen from '@/app/(app)/match/[id]';
 import { api } from '@/src/lib/api';
-import type { LineupEntry, LiveMatchSnapshot, Match } from '@/src/types/api';
+import type { LineupEntry, LiveMatchSnapshot, Match, MatchEvent } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({
+  usePathname: () => '/',
   router: { push: jest.fn(), back: jest.fn() },
   useLocalSearchParams: () => ({ id: 'match-1' }),
   Redirect: 'Redirect',
@@ -15,7 +16,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn() }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
 jest.mock('@/src/lib/api', () => ({
-  api: { live: jest.fn(), players: jest.fn() },
+  api: { live: jest.fn(), players: jest.fn(), matchAssignments: jest.fn().mockResolvedValue([]) },
   ApiError: class extends Error {},
 }));
 
@@ -23,13 +24,13 @@ const match = (over: Partial<Match> = {}): Match => ({
   id: 'match-1', competition_id: 'c-1', home_team_id: 'home', away_team_id: 'away',
   kickoff_datetime: '2026-08-20T18:30:00.000Z', venue: 'AIMZ Arena',
   status: 'live', phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z',
-  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null,
+  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null, man_of_the_match_player_id: null,
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15,
   created_at: '', updated_at: '',
-  home_team: { id: 'home', name: 'AIMZ U18', squad_code: null, age_group: 'U18', season: '2026', is_aimz: true, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, created_at: '', updated_at: '' },
-  away_team: { id: 'away', name: 'Giza Lions', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, coach: null, assistant_coach: null, competition_id: null, created_at: '', updated_at: '' },
-  competition: { id: 'c-1', name: 'Women Academy League', season: '2026', type: 'league', created_at: '', updated_at: '' },
+  home_team: { id: 'home', name: 'AIMZ U18', squad_code: null, age_group: 'U18', season: '2026', is_aimz: true, is_active: true, logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '' },
+  away_team: { id: 'away', name: 'Giza Lions', squad_code: null, age_group: null, season: null, is_aimz: false, is_active: true, logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '' },
+  competition: { id: 'c-1', name: 'Women Academy League', season: '2026', type: 'league', team_count: null, group_size: null, created_at: '', updated_at: '' },
   ...over,
 });
 
@@ -42,7 +43,7 @@ const snapshot = (over: Partial<Match> = {}, lineup: LineupEntry[] = []): LiveMa
   ({ match: match(over), events: [], lineup, revision: 1 }) as LiveMatchSnapshot;
 
 function wrapper({ children }: { children: ReactNode }) {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
@@ -59,6 +60,21 @@ describe('MatchDetailScreen — End match moved to live scoring', () => {
     const screen = await render(<MatchDetailScreen />, { wrapper });
     await screen.findByText('Open live scoring');
     expect(screen.queryByText('End match')).toBeNull();
+  });
+
+  it('suppresses empty timeline, pitch, and lineup for opponent-only results', async () => {
+    const base = match();
+    jest.mocked(api.live).mockResolvedValue(snapshot({
+      status: 'finished',
+      phase: 'finished',
+      home_team: { ...base.home_team!, is_aimz: false },
+      away_team: { ...base.away_team!, is_aimz: false },
+    }));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('No team sheet or timeline is recorded for matches between two opponent clubs.')).toBeTruthy();
+    expect(screen.getByText('Edit final score')).toBeTruthy();
+    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(screen.queryByText('Lineups')).toBeNull();
   });
 });
 
@@ -122,5 +138,55 @@ describe('MatchDetailScreen — timeline', () => {
     const screen = await render(<MatchDetailScreen />, { wrapper });
     expect(await screen.findByText('Amina Adel')).toBeTruthy();
     expect(screen.queryByText(/^Assist:/u)).toBeNull();
+  });
+});
+
+const event = (over: Partial<MatchEvent> = {}): MatchEvent => ({
+  id: 'e-1', match_id: 'match-1', type: 'goal', minute: 10, team_id: 'home',
+  player_id: null, secondary_player_id: null, related_event_id: null, notes: null,
+  is_penalty: false, substitution_reason: null, penalty_outcome: null,
+  client_operation_id: 'op-1', created_at: '', updated_at: '',
+  ...over,
+}) as MatchEvent;
+
+describe('MatchDetailScreen — richer timeline', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  it('says which side an own goal counted for', async () => {
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot(), events: [event({ type: 'own_goal', team_id: 'home' })],
+    } as LiveMatchSnapshot);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    // Filed against the home side, so it counted for the away side.
+    expect(await screen.findByText('Own goal for Giza Lions')).toBeTruthy();
+  });
+
+  it('shows why a player came off', async () => {
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot(), events: [event({ id: 'e-2', type: 'substitution', substitution_reason: 'injury' })],
+    } as LiveMatchSnapshot);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('Reason: Injury')).toBeTruthy();
+  });
+
+  it('shows how a penalty was missed', async () => {
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot(), events: [event({ id: 'e-3', type: 'penalty_missed', penalty_outcome: 'saved' })],
+    } as LiveMatchSnapshot);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('Saved')).toBeTruthy();
+    expect(screen.getByText('Penalty missed')).toBeTruthy();
+  });
+
+  it('leaves a plain substitution without a reason line', async () => {
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot(), events: [event({ id: 'e-4', type: 'substitution' })],
+    } as LiveMatchSnapshot);
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+    expect(await screen.findByText('Substitution')).toBeTruthy();
+    expect(screen.queryByText(/^Reason:/)).toBeNull();
   });
 });

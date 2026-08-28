@@ -1,6 +1,6 @@
 import type { ColorValue } from 'react-native';
 
-export type TabIconName = 'manage' | 'matches' | 'players' | 'settings' | 'standings';
+export type TabIconName = 'manage' | 'matches' | 'myTeam' | 'players' | 'settings' | 'standings';
 
 type Props = {
   color: ColorValue;
@@ -17,9 +17,10 @@ const common = {
 
 function MatchesIcon() {
   return <>
-    <circle cx="12" cy="12" r="8.5" />
-    <path d="m9.3 10.1 2.7-2 2.7 2-1 3.2h-3.4l-1-3.2Z" />
-    <path d="m12 3.5 0 4.6M3.9 9.2l5.4.9M6.4 18.8l3.9-5.5M17.6 18.8l-3.9-5.5M20.1 9.2l-5.4.9" />
+    <rect height="15" rx="1.5" width="20" x="2" y="4.5" />
+    <path d="M12 4.5v15" />
+    <circle cx="12" cy="12" r="2.8" />
+    <path d="M2 8.8h2.8v6.4H2M22 8.8h-2.8v6.4H22" />
   </>;
 }
 
@@ -46,11 +47,14 @@ function ManageIcon() {
   </>;
 }
 
+function MyTeamIcon() {
+  return <><rect height="17" rx="2" width="18" x="3" y="4" /><path d="M7 2v4M17 2v4M3 9h18M7 13h3M14 13h3M7 17h3" /></>;
+}
+
 function SettingsIcon() {
   return <>
+    <path d="M18.2 10.2L21.2 10.5L21.2 13.5L18.2 13.8L17.7 15.2L19.6 17.4L17.4 19.6L15.2 17.7L13.8 18.2L13.5 21.2L10.5 21.2L10.2 18.2L8.8 17.7L6.6 19.6L4.4 17.4L6.3 15.2L5.8 13.8L2.8 13.5L2.8 10.5L5.8 10.2L6.3 8.8L4.4 6.6L6.6 4.4L8.8 6.3L10.2 5.8L10.5 2.8L13.5 2.8L13.8 5.8L15.2 6.3L17.4 4.4L19.6 6.6L17.7 8.8Z" />
     <circle cx="12" cy="12" r="3.2" />
-    <circle cx="12" cy="12" r="7" />
-    <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1" />
   </>;
 }
 
@@ -59,6 +63,7 @@ const icons: Record<TabIconName, () => React.JSX.Element> = {
   standings: StandingsIcon,
   players: PlayersIcon,
   manage: ManageIcon,
+  myTeam: MyTeamIcon,
   settings: SettingsIcon,
 };
 

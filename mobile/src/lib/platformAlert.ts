@@ -31,6 +31,33 @@ export function registerDialogHost(next: Present): () => void {
   };
 }
 
+type Announce = (message: string) => void;
+
+let announce: Announce | null = null;
+
+/**
+ * ToastHost claims this slot while mounted, the way DialogHost claims the
+ * dialog one.
+ */
+export function registerToastHost(next: Announce): () => void {
+  announce = next;
+  return () => {
+    if (announce === next) announce = null;
+  };
+}
+
+/**
+ * Says something went right, without asking to be dismissed.
+ *
+ * A dialog is the wrong shape for good news: it stops the admin to tell them
+ * nothing went wrong, and it cannot survive the navigation that usually
+ * follows. With no host mounted this stays silent — a success nobody sees is
+ * better than a modal nobody asked for.
+ */
+export function showToast(message: string): void {
+  announce?.(message);
+}
+
 export function showMessage(title: string, message?: string): void {
   if (present) {
     present({ title, message });

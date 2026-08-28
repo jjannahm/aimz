@@ -1,25 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type {
-  Competition,
-  LeaderMetric,
-  LineupEntry,
-  LiveMatchSnapshot,
-  Match,
-  MatchPhaseAction,
-  MatchEvent,
-  Page,
-  Player,
-  PlayerLeaderRow,
-  PlayerMatchStat,
-  PlayerSeasonSummary,
-  PresignResponse,
-  RegistrationInvite,
-  StandingRow,
-  Team,
-  TokenResponse,
-  User,
-} from '@/src/types/api';
+import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -252,7 +233,9 @@ export const api = {
   matches: (query = '') => request<Page<Match>>(`/api/v1/matches${query}`),
   createMatch: (payload: Partial<Match>) => request<Match>('/api/v1/matches', { method: 'POST', body: payload }),
   updateMatch: (id: string, payload: Partial<Match>) => request<Match>(`/api/v1/matches/${id}`, { method: 'PATCH', body: payload }),
+  setMatchResult: (id: string, home_score: number, away_score: number) => request<Match>(`/api/v1/matches/${id}/result`, { method: 'POST', body: { home_score, away_score } }),
   setMatchPhase: (id: string, action: MatchPhaseAction) => request<Match>(`/api/v1/matches/${id}/phase`, { method: 'POST', body: { action } }),
+  setManOfTheMatch: (id: string, player_id: string | null) => request<Match>(`/api/v1/matches/${id}/man-of-the-match`, { method: 'POST', body: { player_id } }),
   deleteMatch: (id: string) => request<void>(`/api/v1/matches/${id}`, { method: 'DELETE' }),
   live: (id: string) => request<LiveMatchSnapshot>(`/api/v1/matches/${id}/live`),
   createEvent: (matchId: string, payload: Partial<MatchEvent>) => request<MatchEvent>(`/api/v1/matches/${matchId}/events`, { method: 'POST', body: payload }),
@@ -260,16 +243,51 @@ export const api = {
   lineup: (matchId: string, payload: Partial<LineupEntry>[]) => request<LineupEntry[]>(`/api/v1/matches/${matchId}/lineup`, { method: 'PUT', body: payload }),
   stats: (matchId: string, payload: Partial<PlayerMatchStat>[]) => request<PlayerMatchStat[]>(`/api/v1/matches/${matchId}/player-stats`, { method: 'PUT', body: payload }),
   standings: (competitionId: string) => request<StandingRow[]>(`/api/v1/competitions/${competitionId}/standings`),
-  leaders: (metric: LeaderMetric, options: { ageGroup?: string; season?: string; limit?: number } = {}) => {
+  groups: (competitionId: string) => request<CompetitionGroup[]>(`/api/v1/competitions/${competitionId}/groups`),
+  setGroupTeams: (competitionId: string, groupId: string, teamIds: string[]) =>
+    request<CompetitionGroup>(`/api/v1/competitions/${competitionId}/groups/${groupId}/teams`, { method: 'PUT', body: teamIds.map((team_id) => ({ team_id })) }),
+  bracket: (competitionId: string) => request<Bracket>(`/api/v1/competitions/${competitionId}/bracket`),
+  advanceRound: (competitionId: string, round: number) => request<Bracket>(`/api/v1/competitions/${competitionId}/advance`, { method: 'POST', body: { round } }),
+  setBracketWinner: (slotId: string, winner_team_id: string | null) => request<Bracket>(`/api/v1/bracket-slots/${slotId}`, { method: 'PATCH', body: { winner_team_id } }),
+  leaders: (metric: LeaderMetric, options: { ageGroup?: string; season?: string; competitionId?: string; limit?: number } = {}) => {
     const params = new URLSearchParams({ metric });
     if (options.ageGroup) params.set('age_group', options.ageGroup);
     if (options.season) params.set('season', options.season);
+    if (options.competitionId) params.set('competition_id', options.competitionId);
     if (options.limit) params.set('limit', String(options.limit));
     return request<PlayerLeaderRow[]>(`/api/v1/stats/leaders?${params.toString()}`);
   },
+  headToHead: (teamId: string, opponentId: string) => request<HeadToHead>(`/api/v1/teams/${teamId}/head-to-head/${opponentId}`),
+  awards: (competitionId: string) => request<SeasonAwards>(`/api/v1/competitions/${competitionId}/awards`),
+  awardRanking: (competitionId: string, metric: AwardMetric, limit = 25) =>
+    request<AwardRank[]>(`/api/v1/competitions/${competitionId}/awards/${metric}?limit=${limit}`),
+  auditLog: (matchId?: string) => request<Page<AuditEntry>>(`/api/v1/admin/audit-log${matchId ? `?match_id=${encodeURIComponent(matchId)}` : ''}`),
   playerStats: (playerId: string, season?: string) => request<PlayerSeasonSummary>(`/api/v1/players/${playerId}/stats${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   invites: () => request<RegistrationInvite[]>('/api/v1/admin/registration-invites'),
-  createInvite: (payload: { label: string; code: string; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
+  createInvite: (payload: { label: string; code: string; kind: InviteKind; player_ids: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
   revokeInvite: (id: string) => request<void>(`/api/v1/admin/registration-invites/${id}`, { method: 'DELETE' }),
+  myChildren: () => request<{ items: LinkedChild[] }>('/api/v1/users/me/children'),
+  adminUsers: (query = '?limit=100') => request<Page<AdminAccount>>(`/api/v1/admin/users${query}`),
+  linkUserPlayer: (id: string, player_id: string | null) => request<User>(`/api/v1/admin/users/${id}`, { method: 'PATCH', body: { player_id } }),
+  trainingSessions: (query = '') => request<Page<TrainingSession>>(`/api/v1/training-sessions${query}`),
+  trainingSession: (id: string) => request<TrainingSession>(`/api/v1/training-sessions/${id}`),
+  createTrainingSessions: (payload: { team_id: string; venue: string; notes: string | null; duration_minutes: number; occurrences: string[] }) => request<TrainingSession[]>('/api/v1/training-sessions', { method: 'POST', body: payload }),
+  updateTrainingSession: (id: string, payload: Partial<Pick<TrainingSession, 'starts_at' | 'duration_minutes' | 'venue' | 'notes'>>) => request<TrainingSession>(`/api/v1/training-sessions/${id}`, { method: 'PATCH', body: payload }),
+  deleteTrainingSession: (id: string, scope: 'one' | 'series' = 'one') => request<void>(`/api/v1/training-sessions/${id}?scope=${scope}`, { method: 'DELETE' }),
+  announcements: (query = '') => request<Page<Announcement>>(`/api/v1/announcements${query}`),
+  createAnnouncement: (payload: Partial<Announcement>) => request<Announcement>('/api/v1/announcements', { method: 'POST', body: payload }),
+  updateAnnouncement: (id: string, payload: Partial<Announcement>) => request<Announcement>(`/api/v1/announcements/${id}`, { method: 'PATCH', body: payload }),
+  deleteAnnouncement: (id: string) => request<void>(`/api/v1/announcements/${id}`, { method: 'DELETE' }),
+  trainingAvailability: (id: string) => request<TrainingAvailability[]>(`/api/v1/training-sessions/${id}/availability`),
+  setTrainingAvailability: (id: string, status: TrainingAvailability['status'], note: string | null = null, player_id?: string) => request<TrainingAvailability>(`/api/v1/training-sessions/${id}/availability`, { method: 'PUT', body: { status, note, ...(player_id ? { player_id } : {}) } }),
+  matchAssignments: (id: string) => request<EventAssignment[]>(`/api/v1/matches/${id}/assignments`),
+  trainingAssignments: (id: string) => request<EventAssignment[]>(`/api/v1/training-sessions/${id}/assignments`),
+  createMatchAssignment: (id: string, title: string, assigned_player_id: string | null = null) => request<EventAssignment>(`/api/v1/matches/${id}/assignments`, { method: 'POST', body: { title, assigned_player_id } }),
+  createTrainingAssignment: (id: string, title: string, assigned_player_id: string | null = null) => request<EventAssignment>(`/api/v1/training-sessions/${id}/assignments`, { method: 'POST', body: { title, assigned_player_id } }),
+  updateAssignment: (id: string, assigned_player_id: string | null) => request<EventAssignment>(`/api/v1/event-assignments/${id}`, { method: 'PATCH', body: { assigned_player_id } }),
+  deleteMatchAssignment: (matchId: string, id: string) => request<void>(`/api/v1/matches/${matchId}/assignments/${id}`, { method: 'DELETE' }),
+  deleteTrainingAssignment: (trainingId: string, id: string) => request<void>(`/api/v1/training-sessions/${trainingId}/assignments/${id}`, { method: 'DELETE' }),
+  playerRosterDetails: (id: string) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`),
+  savePlayerRosterDetails: (id: string, payload: { date_of_birth: string | null; contacts: { name: string; relationship: string | null; email: string | null; phone: string | null }[] }) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`, { method: 'PUT', body: payload }),
   presign: (entity: 'team' | 'player', entity_id: string, content_type: 'image/jpeg' | 'image/png' | 'image/webp') => request<PresignResponse>('/api/v1/media/uploads/presign', { method: 'POST', body: { entity, entity_id, content_type } }),
 };

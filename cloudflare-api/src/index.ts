@@ -1,9 +1,17 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { registerAuditRoutes } from "./audit";
+import { registerAnnouncementRoutes } from "./announcements";
+import { registerAssignmentRoutes } from "./assignments";
 import { registerAuthRoutes } from "./auth";
 import { registerDomainRoutes } from "./domain";
 import { ApiProblem, errorResponse } from "./helpers";
+import { registerKnockoutRoutes } from "./knockout";
 import { registerMatchRoutes } from "./matches";
+import { registerMediaRoutes } from "./media";
+import { registerRosterRoutes } from "./roster";
+import { registerStatsRoutes } from "./stats";
+import { registerTrainingRoutes } from "./training";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -24,8 +32,15 @@ app.get("/api/v1/health/ready", async (c) => {
 registerAuthRoutes(app);
 registerDomainRoutes(app);
 registerMatchRoutes(app);
+registerStatsRoutes(app);
+registerAuditRoutes(app);
+registerKnockoutRoutes(app);
+registerTrainingRoutes(app);
+registerAnnouncementRoutes(app);
+registerAssignmentRoutes(app);
+registerRosterRoutes(app);
+registerMediaRoutes(app);
 
-app.post("/api/v1/media/uploads/presign", () => { throw new ApiProblem(503, "media_disabled", "Photo uploads are disabled in this staging preview."); });
 app.notFound((c) => errorResponse(c, new ApiProblem(404, "not_found", "The requested endpoint was not found.")));
 app.onError((error, c) => {
   if (error instanceof ApiProblem) return errorResponse(c, error);

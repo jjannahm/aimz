@@ -15,24 +15,27 @@ import { ChoiceField } from '@/src/components/ChoiceField';
 import { CollapsibleSection } from '@/src/components/CollapsibleSection';
 import { DateTimeField } from '@/src/components/DateTimeField';
 import { FormField } from '@/src/components/FormField';
+import { AnnouncementsManager, ScheduleManager } from '@/src/components/manage/HubManagers';
 import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { appConfig } from '@/src/config';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
-import { confirmAction, showMessage } from '@/src/lib/platformAlert';
+import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
-import { EXTRA_TIME_PERIODS, totalMatchMinutes } from '@/src/types/api';
-import type { Competition, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
+import { ADVANCE_PER_GROUP, describeCustomDraw, EXTRA_TIME_PERIODS, GROUP_SIZE, isKnockout, KNOCKOUT_TEAM_COUNTS, totalMatchMinutes } from '@/src/types/api';
+import type { BadgeStyle, Competition, InviteKind, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
 
-type Resource = 'teams' | 'competitions' | 'opponents' | 'players' | 'matches' | 'invites';
+type LegacyResource = 'teams' | 'competitions' | 'opponents' | 'players' | 'matches' | 'invites';
+type HubResource = 'schedule' | 'announcements';
+type Resource = LegacyResource | HubResource;
 type Entity = Team | Competition | Player | Match | RegistrationInvite;
-const resources: { label: string; value: Resource }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Opponents', value: 'opponents' }, { label: 'Players', value: 'players' }, { label: 'Matches', value: 'matches' }, { label: 'Invites', value: 'invites' }];
-const schema = z.object({ name: z.string(), code: z.string(), ageGroup: z.string(), season: z.string(), type: z.string(), teamId: z.string(), position: z.string(), jersey: z.string(), competitionId: z.string(), homeTeamId: z.string(), awayTeamId: z.string(), kickoff: z.string(), venue: z.string(), status: z.string(), halfLength: z.string(), numHalves: z.string(), halfTimeBreak: z.string(), coach: z.string(), assistantCoach: z.string(), teamCompetitionId: z.string(), hasExtraTime: z.string(), extraTimeLength: z.string(), label: z.string() });
+const resources: { label: string; value: Resource }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Opponents', value: 'opponents' }, { label: 'Players', value: 'players' }, { label: 'Matches', value: 'matches' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', value: 'announcements' }, { label: 'Invites', value: 'invites' }];
+const schema = z.object({ name: z.string(), code: z.string(), ageGroup: z.string(), season: z.string(), type: z.string(), teamId: z.string(), position: z.string(), jersey: z.string(), competitionId: z.string(), homeTeamId: z.string(), awayTeamId: z.string(), kickoff: z.string(), venue: z.string(), status: z.string(), halfLength: z.string(), numHalves: z.string(), halfTimeBreak: z.string(), coach: z.string(), assistantCoach: z.string(), teamCompetitionId: z.string(), hasExtraTime: z.string(), extraTimeLength: z.string(), label: z.string(), teamCount: z.string(), teamGroupId: z.string(), groupCount: z.string(), groupSize: z.string(), inviteKind: z.string(), invitePlayerIds: z.string(), badgeStyle: z.string() });
 type Values = z.infer<typeof schema>;
-const defaults: Values = { name: '', code: '', ageGroup: '', season: '', type: 'league', teamId: '', position: '', jersey: '', competitionId: '', homeTeamId: '', awayTeamId: '', kickoff: new Date().toISOString(), venue: '', status: 'scheduled', halfLength: '45', numHalves: '2', halfTimeBreak: '15', coach: '', assistantCoach: '', teamCompetitionId: '', hasExtraTime: 'false', extraTimeLength: '15', label: '' };
+const defaults: Values = { name: '', code: '', ageGroup: '', season: '', type: 'league', teamId: '', position: '', jersey: '', competitionId: '', homeTeamId: '', awayTeamId: '', kickoff: new Date().toISOString(), venue: '', status: 'scheduled', halfLength: '45', numHalves: '2', halfTimeBreak: '15', coach: '', assistantCoach: '', teamCompetitionId: '', hasExtraTime: 'false', extraTimeLength: '15', label: '', teamCount: '', teamGroupId: '', groupCount: '4', groupSize: '4', inviteKind: 'player', invitePlayerIds: '', badgeStyle: '' };
 
 /** Parses the three period inputs, or null when any is not a whole number in range. */
 function readTimeStructure(values: Pick<Values, 'halfLength' | 'numHalves' | 'halfTimeBreak' | 'hasExtraTime' | 'extraTimeLength'>): MatchTimeStructure | null {
@@ -56,6 +59,135 @@ function ExtraTimeLength({ control }: { control: Control<Values> }) {
   return <Controller control={control} name="extraTimeLength" render={({ field }) => <FormField hint={`Minutes per extra-time period (${EXTRA_TIME_PERIODS} played)`} inputMode="numeric" keyboardType="number-pad" label="Extra-time period length (minutes)" onChangeText={field.onChange} value={field.value} />} />;
 }
 
+/** The draw size, which only a knockout has. */
+function KnockoutSize({ control, competitionId, teams }: { control: Control<Values>; competitionId: string | null; teams: Team[] }) {
+  const styles = useThemedStyles(stylesheet);
+  const type = useWatch({ control, name: 'type' });
+  const [teamCount, groupCount, groupSize] = useWatch({ control, name: ['teamCount', 'groupCount', 'groupSize'] });
+  const groups = useQuery({ queryKey: ['competition-groups', competitionId], queryFn: () => api.groups(competitionId!), enabled: Boolean(competitionId) });
+  if (type !== 'tournament') return null;
+  // Redrawing the groups would orphan everyone already placed in one, so the
+  // size stops being a choice the moment the first team is entered.
+  const drawn = groups.data?.some((group) => group.teams.length > 0) ?? false;
+  const custom = teamCount === CUSTOM_DRAW;
+  return <>
+    {drawn
+      ? <View style={styles.lockedField}>
+        <Text style={styles.lockedLabel}>Number of teams</Text>
+        <Text style={styles.lockedValue}>{describeDraw(groups.data?.length ?? 0, Number(groupSize) || 0)}</Text>
+      </View>
+      : <Controller control={control} name="teamCount" render={({ field }) => <ChoiceField label="Number of teams" onChange={field.onChange} options={[...KNOCKOUT_TEAM_COUNTS.map((count) => ({ label: describeDraw(count / 4, 4), value: String(count) })), { label: 'Custom…', value: CUSTOM_DRAW }]} placeholder="Choose a size" value={field.value} />} />}
+    {custom && !drawn ? <CustomDraw control={control} groupCount={groupCount} groupSize={groupSize} /> : null}
+    <Text style={styles.pickerNote}>{drawn
+      ? 'The size is fixed because teams have been entered. Empty every group to change it.'
+      : competitionId
+        ? 'Groups and an empty bracket are drawn up as soon as the competition is saved. The size is fixed once teams are entered.'
+        : 'Groups and an empty bracket are drawn up as soon as this competition is saved, and teams can be entered from here afterwards.'}</Text>
+    {competitionId ? <KnockoutGroups competitionId={competitionId} teams={teams} /> : null}
+  </>;
+}
+
+/**
+ * The draw, done from the competition itself.
+ *
+ * Teams can also be pointed at a group one at a time from the Squads and
+ * Opponents forms; both write the same `competition_group_id`, so the two stay
+ * in step with each other.
+ */
+function KnockoutGroups({ competitionId, teams }: { competitionId: string; teams: Team[] }) {
+  const styles = useThemedStyles(stylesheet);
+  const client = useQueryClient();
+  const [error, setError] = React.useState<string | null>(null);
+  const groups = useQuery({ queryKey: ['competition-groups', competitionId], queryFn: () => api.groups(competitionId) });
+  const assign = useMutation({
+    mutationFn: ({ groupId, teamIds }: { groupId: string; teamIds: string[] }) => api.setGroupTeams(competitionId, groupId, teamIds),
+    onError: (failure) => setError((failure as ApiError).message),
+    onSuccess: async () => { setError(null); await invalidateAfterWrite(client, 'bracket', 'team'); },
+  });
+  if (groups.isLoading) return <Text style={styles.pickerNote}>Loading groups…</Text>;
+  if (!groups.data?.length) return <Text style={styles.pickerNote}>Save the competition to draw up its groups.</Text>;
+  const drawnElsewhere = new Set(groups.data.flatMap((group) => group.teams.map((team) => team.id)));
+  return <View style={styles.groupList}>
+    <Text style={styles.groupsHeading}>Groups & teams</Text>
+    {error ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{error}</Text> : null}
+    {groups.data.map((group) => {
+      const full = group.teams.length >= GROUP_SIZE;
+      const available = teams.filter((team) => !drawnElsewhere.has(team.id));
+      return <View key={group.id} style={styles.groupCard}>
+        <View style={styles.groupHeader}>
+          <Text style={styles.groupTitle}>{group.name}</Text>
+          <Text style={[styles.groupCount, full && styles.groupCountFull]}>{group.teams.length} of {GROUP_SIZE}</Text>
+        </View>
+        {group.teams.length
+          ? group.teams.map((team) => <View key={team.id} style={styles.groupTeam}>
+            <Text numberOfLines={1} style={styles.groupTeamName}>{team.name}</Text>
+            <AppButton compact disabled={assign.isPending} label="Remove" onPress={() => assign.mutate({ groupId: group.id, teamIds: group.teams.filter((item) => item.id !== team.id).map((item) => item.id) })} variant="ghost" />
+          </View>)
+          : <Text style={styles.pickerNote}>No teams drawn yet.</Text>}
+        {full
+          ? <Text style={styles.pickerNote}>This group is full. Remove a team before adding another.</Text>
+          : <ChoiceField
+            label="Add a team"
+            onChange={(teamId) => { if (teamId) assign.mutate({ groupId: group.id, teamIds: [...group.teams.map((team) => team.id), teamId] }); }}
+            options={available.length ? available.map((team) => ({ label: `${team.name} · ${team.is_aimz ? 'AIMZ' : 'Opponent'}`, value: team.id })) : [{ label: 'Every team is already drawn', value: '' }]}
+            placeholder="Choose a team"
+            value=""
+          />}
+      </View>;
+    })}
+  </View>;
+}
+
+/**
+ * The form values a saved knockout reopens on.
+ *
+ * A shape that matches one of the presets shows as that preset; anything else
+ * is a custom draw, and its two numbers are filled in.
+ */
+function knockoutFormValues(item: Competition): Pick<Values, 'teamCount' | 'groupCount' | 'groupSize'> {
+  if (!item.team_count) return { teamCount: '', groupCount: '4', groupSize: '4' };
+  const size = item.group_size ?? GROUP_SIZE;
+  const count = item.team_count / size;
+  const preset = size === GROUP_SIZE && (KNOCKOUT_TEAM_COUNTS as readonly number[]).includes(item.team_count);
+  return { teamCount: preset ? String(item.team_count) : CUSTOM_DRAW, groupCount: String(count), groupSize: String(size) };
+}
+
+/** The sentinel the size picker uses for a draw the admin shapes themselves. */
+const CUSTOM_DRAW = 'custom';
+
+/** "24 teams · 6 groups of 4", the phrasing the presets already read in. */
+const describeDraw = (groupCount: number, groupSize: number) => `${groupCount * groupSize} teams · ${groupCount} groups of ${groupSize}`;
+
+/**
+ * A draw the admin shapes themselves.
+ *
+ * The total is shown as it is typed, and a shape that would not make a bracket
+ * says so here rather than being refused on save.
+ */
+function CustomDraw({ control, groupCount, groupSize }: { control: Control<Values>; groupCount: string; groupSize: string }) {
+  const styles = useThemedStyles(stylesheet);
+  const counts = { groups: Number(groupCount), size: Number(groupSize) };
+  const problem = describeCustomDraw(counts.groups, counts.size);
+  return <>
+    <View style={styles.two}>
+      <Controller control={control} name="groupCount" render={({ field }) => <FormField containerStyle={styles.flexButton} inputMode="numeric" keyboardType="number-pad" label="Number of groups" onChangeText={field.onChange} value={field.value} />} />
+      <Controller control={control} name="groupSize" render={({ field }) => <FormField containerStyle={styles.flexButton} inputMode="numeric" keyboardType="number-pad" label="Teams per group" onChangeText={field.onChange} value={field.value} />} />
+    </View>
+    {problem
+      ? <Text accessibilityLiveRegion="polite" style={styles.error}>{problem}</Text>
+      : <Text accessibilityLiveRegion="polite" style={styles.summary}>{describeDraw(counts.groups, counts.size)} · {counts.groups * ADVANCE_PER_GROUP} through to the bracket</Text>}
+  </>;
+}
+
+/** Which group of a knockout the team is drawn into. */
+function TeamGroup({ competitions, control }: { competitions: Competition[]; control: Control<Values> }) {
+  const competitionId = useWatch({ control, name: 'teamCompetitionId' });
+  const competition = competitions.find((item) => item.id === competitionId);
+  const groups = useQuery({ queryKey: ['competition-groups', competitionId], queryFn: () => api.groups(competitionId), enabled: Boolean(competitionId) && isKnockout(competition) });
+  if (!isKnockout(competition) || !groups.data?.length) return null;
+  return <Controller control={control} name="teamGroupId" render={({ field }) => <ChoiceField label="Group" onChange={field.onChange} options={[{ label: 'Not drawn yet', value: '' }, ...groups.data.map((group) => ({ label: group.name, value: group.id }))]} placeholder="Choose a group" value={field.value} />} />;
+}
+
 function MatchLengthSummary({ control }: { control: Control<Values> }) {
   const styles = useThemedStyles(stylesheet);
   const [halfLength, numHalves, halfTimeBreak, hasExtraTime, extraTimeLength] = useWatch({ control, name: ['halfLength', 'numHalves', 'halfTimeBreak', 'hasExtraTime', 'extraTimeLength'] });
@@ -76,6 +208,8 @@ export default function ManageScreen() {
   const [resource, setResource] = React.useState<Resource>('teams');
   const [editing, setEditing] = React.useState<Entity | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
+  /** Knockouts created in this sitting, whose next save completes their setup. */
+  const [drawnUp, setDrawnUp] = React.useState<string[]>([]);
   const pageRef = React.useRef<ScrollView | null>(null);
   const teams = useQuery({ queryKey: ['teams', 'admin'], queryFn: () => api.teams('?limit=100') });
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
@@ -86,25 +220,58 @@ export default function ManageScreen() {
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
 
   const switchResource = (next: Resource) => { setResource(next); setEditing(null); form.reset(defaults); setFormError(null); };
+  // Eight sections stay visible in a fixed two-by-four grid. Long labels wrap
+  // on narrow phones, and the cells stretch their pills to an even row height.
+  const resourceChips = <View style={styles.chips}>{resources.map((item) => <View key={item.value} style={styles.chipCell}>
+    <Pressable accessibilityRole="tab" accessibilityState={{ selected: resource === item.value }} onPress={() => switchResource(item.value)} style={({ pressed }) => [styles.chip, resource === item.value && styles.chipActive, pressed && styles.pressed]}>
+      <Text style={[styles.chipText, resource === item.value && styles.chipTextActive]}>{item.label}</Text>
+    </Pressable>
+  </View>)}</View>;
+  const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active) ?? [];
+  if (resource === 'schedule' || resource === 'announcements') return <Screen scrollRef={pageRef} title="Manage academy">
+    {resourceChips}
+    {resource === 'schedule' ? <ScheduleManager teams={aimzTeams} /> : <AnnouncementsManager teams={aimzTeams} />}
+  </Screen>;
   const query = resource === 'teams' || resource === 'opponents' ? teams : resource === 'competitions' ? competitions : resource === 'players' ? players : resource === 'matches' ? matches : invites;
   const allTeams = teams.data?.items ?? [];
   const items: Entity[] = resource === 'teams' ? allTeams.filter((team) => team.is_aimz) : resource === 'opponents' ? allTeams.filter((team) => !team.is_aimz) : resource === 'competitions' ? competitions.data?.items ?? [] : resource === 'players' ? players.data?.items ?? [] : resource === 'matches' ? matches.data?.items ?? [] : invites.data ?? [];
   // Every admin write clears the views built on it, including derived ones
   // like standings, leaderboards and squad counts.
-  const entityFor: Record<Resource, Parameters<typeof invalidateAfterWrite>[1]> = { teams: 'team', opponents: 'team', players: 'player', competitions: 'competition', matches: 'match', invites: 'invite' };
+  const entityFor: Record<LegacyResource, Parameters<typeof invalidateAfterWrite>[1]> = { teams: 'team', opponents: 'team', players: 'player', competitions: 'competition', matches: 'match', invites: 'invite' };
   const invalidate = async () => { await invalidateAfterWrite(client, entityFor[resource]); };
 
   const save = form.handleSubmit(async (values) => {
     setFormError(null);
+    /** A competition whose draw is still to be made keeps the form on itself. */
+    let stayOn: Competition | null = null;
+    /** A competition whose draw is done sends the admin to its standings. */
+    let finished: Competition | null = null;
     try {
       if (resource === 'teams' || resource === 'opponents') {
         if (!values.name.trim()) throw new Error(resource === 'opponents' ? 'Enter the opposing club name.' : 'Enter a team or squad name.');
-        const payload = { name: values.name.trim(), squad_code: values.code.trim() || null, age_group: values.ageGroup.trim() || null, season: values.season.trim() || null, is_aimz: resource === 'teams', is_active: true, competition_id: values.teamCompetitionId || null, coach: values.coach.trim() || null, assistant_coach: values.assistantCoach.trim() || null, logo_key: editing && 'logo_key' in editing ? editing.logo_key : null };
+        const payload = { name: values.name.trim(), squad_code: values.code.trim() || null, age_group: values.ageGroup.trim() || null, season: values.season.trim() || null, is_aimz: resource === 'teams', is_active: true, competition_id: values.teamCompetitionId || null, competition_group_id: values.teamGroupId || null, coach: values.coach.trim() || null, assistant_coach: values.assistantCoach.trim() || null, badge_style: (values.badgeStyle || null) as BadgeStyle | null, logo_key: editing && 'logo_key' in editing ? editing.logo_key : null };
         editing ? await api.updateTeam(editing.id, payload) : await api.createTeam(payload);
       } else if (resource === 'competitions') {
         if (!values.name.trim() || !values.season.trim()) throw new Error('Enter a competition name and season.');
-        const payload = { name: values.name.trim(), season: values.season.trim(), type: values.type as Competition['type'] };
-        editing ? await api.updateCompetition(editing.id, payload) : await api.createCompetition(payload);
+        // A knockout is a tournament with a draw shape; everything else has none.
+        if (values.type === 'tournament' && !values.teamCount) throw new Error('Choose how many teams the knockout is drawn for.');
+        const custom = values.teamCount === CUSTOM_DRAW;
+        const groupCount = custom ? Number(values.groupCount) : Number(values.teamCount) / GROUP_SIZE;
+        const groupSize = custom ? Number(values.groupSize) : GROUP_SIZE;
+        const wrong = values.type === 'tournament' ? describeCustomDraw(groupCount, groupSize) : null;
+        if (wrong) throw new Error(wrong);
+        const payload = values.type === 'tournament'
+          ? { name: values.name.trim(), season: values.season.trim(), type: values.type as Competition['type'], team_count: groupCount * groupSize, group_size: groupSize }
+          : { name: values.name.trim(), season: values.season.trim(), type: values.type as Competition['type'], team_count: null, group_size: null };
+        const saved = editing ? await api.updateCompetition(editing.id, payload) : await api.createCompetition(payload);
+        // A knockout is only half set up when it saves: its groups exist but
+        // stand empty, and the draw is made from this very form. Clearing back
+        // to a blank one hid the section that does it, which read as the
+        // feature not being there at all.
+        if (saved.team_count && !editing) { stayOn = saved; setDrawnUp((current) => [...current, saved.id]); }
+        // Saving it again is the admin saying the draw is done, so they are
+        // taken to the table it produces.
+        else if (saved.team_count) finished = saved;
       } else if (resource === 'players') {
         if (!values.name.trim() || !values.teamId || !values.position.trim()) throw new Error('Enter the player name, squad and position.');
         const payload = { name: values.name.trim(), team_id: values.teamId, position: values.position.trim(), jersey_number: values.jersey ? Number(values.jersey) : null, photo_key: editing && 'photo_key' in editing ? editing.photo_key : null, is_active: true };
@@ -117,18 +284,33 @@ export default function ManageScreen() {
         editing ? await api.updateMatch(editing.id, payload) : await api.createMatch(payload);
       } else {
         if (!values.label.trim() || !values.code.trim()) throw new Error('Enter an invite label and code.');
-        await api.createInvite({ label: values.label.trim(), code: values.code.trim() });
+        const invitePlayerIds = values.invitePlayerIds.split(',').filter(Boolean);
+        // Every invitation names who it is for; there is no unlinked code.
+        if (!invitePlayerIds.length) throw new Error(values.inviteKind === 'parent' ? 'Choose at least one child.' : 'Choose a player.');
+        await api.createInvite({ label: values.label.trim(), code: values.code.trim(), kind: values.inviteKind as InviteKind, player_ids: invitePlayerIds });
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      await invalidate(); setEditing(null); form.reset(defaults);
+      await invalidate();
+      if (stayOn) {
+        setEditing(stayOn);
+        form.reset({ ...defaults, name: stayOn.name, season: stayOn.season, type: stayOn.type, ...knockoutFormValues(stayOn) });
+        showToast('Groups drawn up — add teams below');
+        return;
+      }
+      setEditing(null); form.reset(defaults);
+      if (finished) {
+        showToast(drawnUp.includes(finished.id) ? 'Knockout competition created' : 'Groups updated');
+        setDrawnUp((current) => current.filter((id) => id !== finished!.id));
+        router.push({ pathname: '/(app)/(tabs)/standings', params: { competition: finished.id } });
+      }
     } catch (error) { setFormError(error instanceof ApiError || error instanceof Error ? error.message : 'Could not save this item.'); }
   });
 
   const beginEdit = (item: Entity) => {
     setEditing(item); setFormError(null);
     pageRef.current?.scrollTo({ y: 0, animated: true });
-    if ((resource === 'teams' || resource === 'opponents') && 'is_aimz' in item) form.reset({ ...defaults, name: item.name, code: item.squad_code ?? '', ageGroup: item.age_group ?? '', season: item.season ?? '', coach: item.coach ?? '', assistantCoach: item.assistant_coach ?? '', teamCompetitionId: item.competition_id ?? '' });
-    if (resource === 'competitions' && 'type' in item && !('status' in item)) form.reset({ ...defaults, name: item.name, season: item.season, type: item.type });
+    if ((resource === 'teams' || resource === 'opponents') && 'is_aimz' in item) form.reset({ ...defaults, name: item.name, code: item.squad_code ?? '', ageGroup: item.age_group ?? '', season: item.season ?? '', coach: item.coach ?? '', assistantCoach: item.assistant_coach ?? '', teamCompetitionId: item.competition_id ?? '', teamGroupId: item.competition_group_id ?? '', badgeStyle: item.badge_style ?? '' });
+    if (resource === 'competitions' && 'type' in item && !('status' in item)) form.reset({ ...defaults, name: item.name, season: item.season, type: item.type, ...knockoutFormValues(item) });
     if (resource === 'players' && 'position' in item) form.reset({ ...defaults, name: item.name, teamId: item.team_id, position: item.position, jersey: item.jersey_number?.toString() ?? '' });
     if (resource === 'matches' && 'status' in item) form.reset({ ...defaults, competitionId: item.competition_id, homeTeamId: item.home_team_id, awayTeamId: item.away_team_id, kickoff: item.kickoff_datetime, venue: item.venue, status: item.status, halfLength: String(item.half_length_minutes ?? 45), numHalves: String(item.num_halves ?? 2), halfTimeBreak: String(item.half_time_break_minutes ?? 15), hasExtraTime: item.has_extra_time ? 'true' : 'false', extraTimeLength: String(item.extra_time_half_length_minutes ?? 15) });
   };
@@ -175,24 +357,50 @@ export default function ManageScreen() {
     } catch (error) { showMessage('Upload failed', (error as Error).message); }
   };
 
-  return <Screen eyebrow="Administrator tools" scrollRef={pageRef} title="Manage academy">
-    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips} style={styles.chipBar}>{resources.map((item) => <Pressable key={item.value} onPress={() => switchResource(item.value)} style={({ pressed }) => [styles.chip, resource === item.value && styles.chipActive, pressed && styles.pressed]}><Text style={[styles.chipText, resource === item.value && styles.chipTextActive]}>{item.label}</Text></Pressable>)}</ScrollView>
+  return <Screen scrollRef={pageRef} title="Manage academy">
+    {resourceChips}
     {!appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}
-    <View style={styles.formCard}><Text style={styles.heading}>{editing ? 'Edit' : 'Add'} {resources.find((item) => item.value === resource)?.label.toLowerCase()}</Text>{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields control={form.control} errors={form.formState.errors} resource={resource} setValue={form.setValue} teams={teams.data?.items ?? []} competitions={competitions.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></View>
+    <View style={styles.formCard}><Text style={styles.heading}>{editing ? 'Edit' : 'Add'} {resources.find((item) => item.value === resource)?.label.toLowerCase()}</Text>{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields competitions={competitions.data?.items ?? []} control={form.control} editingId={editing && resource === 'competitions' ? editing.id : null} errors={form.formState.errors} players={players.data?.items ?? []} resource={resource} setValue={form.setValue} teams={teams.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></View>
     {query.isError ? <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} /> : <CollapsibleSection count={items.length} title={`Current ${resources.find((item) => item.value === resource)?.label.toLowerCase()}`}>
-      {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text></View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'status' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={item.status === 'scheduled' ? 'Start' : 'Score'} onPress={() => router.push(`/live/${item.id}`)} variant="secondary" /> : null}{appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <AppButton compact icon="camera" iconOnly label="Photo" onPress={() => uploadPhoto(item as Team | Player, resource === 'teams' ? 'team' : 'player')} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => remove(item)} variant="danger" /></View></View>)}</View>}
+      {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text></View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'status' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={!item.home_team?.is_aimz && !item.away_team?.is_aimz ? (item.status === 'finished' ? 'Edit final score' : 'Enter final score') : (item.status === 'scheduled' ? 'Start' : 'Score')} onPress={() => router.push({ pathname: !item.home_team?.is_aimz && !item.away_team?.is_aimz ? '/result/[id]' : '/live/[id]', params: { id: item.id } })} variant="secondary" /> : null}{resource === 'players' ? <AppButton compact icon="list" iconOnly label="Private roster details" onPress={() => router.push({ pathname: '/roster/[id]', params: { id: item.id } })} variant="secondary" /> : null}{appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <AppButton compact icon="camera" iconOnly label="Photo" onPress={() => uploadPhoto(item as Team | Player, resource === 'teams' ? 'team' : 'player')} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => remove(item)} variant="danger" /></View></View>)}</View>}
     </CollapsibleSection>}
   </Screen>;
 }
 
-function ResourceFields({ control, errors, resource, setValue, teams, competitions }: { control: any; errors: any; resource: Resource; setValue: any; teams: Team[]; competitions: Competition[] }) {
+
+/**
+ * Who an invitation is for, which every invitation now names. A player
+ * invitation is for one person; a parent may have several children here, so
+ * that choice is a list of toggles rather than a dropdown.
+ */
+function InvitePlayers({ control, players, setValue }: { control: any; players: Player[]; setValue: any }) {
+  const kind = useWatch({ control, name: 'inviteKind' }) as InviteKind;
+  const raw = (useWatch({ control, name: 'invitePlayerIds' }) as string) || '';
+  const styles = useThemedStyles(stylesheet);
+  const chosen = raw.split(',').filter(Boolean);
+  if (kind !== 'parent') {
+    return <><Controller control={control} name="invitePlayerIds" render={({ field }) => <ChoiceField label="Player" onChange={field.onChange} options={players.map((player) => ({ label: player.name, value: player.id }))} value={field.value} />} /><Text style={styles.pickerNote}>A player invitation can be used once, and links the new account to this roster record.</Text></>;
+  }
+  const toggle = (id: string) => setValue('invitePlayerIds', (chosen.includes(id) ? chosen.filter((value: string) => value !== id) : [...chosen, id]).join(','));
+  return <><Text style={styles.lockedLabel}>Children</Text>
+    <View style={styles.pickList}>{players.map((player) => {
+      const picked = chosen.includes(player.id);
+      return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: picked }} key={player.id} onPress={() => toggle(player.id)} style={({ pressed }) => [styles.pickRow, picked && styles.pickRowOn, pressed && styles.pressed]}>
+        <Text style={[styles.pickName, picked && styles.pickNameOn]}>{player.name}</Text>
+      </Pressable>;
+    })}</View>
+    <Text style={styles.pickerNote}>{chosen.length ? `${chosen.length} child${chosen.length === 1 ? '' : 'ren'} selected. ` : ''}A parent account sees each child's stats, and the schedule and announcements of every squad they are on.</Text></>;
+}
+
+function ResourceFields({ control, resource, setValue, teams, competitions, editingId, players }: { control: any; errors: any; resource: LegacyResource; setValue: any; teams: Team[]; competitions: Competition[]; editingId: string | null; players: Player[] }) {
   const styles = useThemedStyles(stylesheet);
   const selectedCompetition = useWatch({ control, name: 'competitionId' }) as string;
   // Only teams entered in the chosen competition can play in it. Either side
   // can be ours or theirs; the label says which.
-  const entered = teams.filter((item) => item.competition_id === selectedCompetition);
+  const entered = teams.filter((item) => item.competition_id === selectedCompetition && item.is_active);
   const teamOptions = entered.map((item) => ({ label: `${item.name} · ${item.is_aimz ? 'AIMZ' : 'Opponent'}`, value: item.id }));
   const [homeTeamId, awayTeamId] = useWatch({ control, name: ['homeTeamId', 'awayTeamId'] }) as [string, string];
+  const opponentOnly = Boolean(homeTeamId && awayTeamId && !teams.find((team) => team.id === homeTeamId)?.is_aimz && !teams.find((team) => team.id === awayTeamId)?.is_aimz);
 
   // A team picked before the competition changed may no longer be eligible.
   React.useEffect(() => {
@@ -201,15 +409,35 @@ function ResourceFields({ control, errors, resource, setValue, teams, competitio
     if (homeTeamId && !eligible.has(homeTeamId)) setValue('homeTeamId', '');
     if (awayTeamId && !eligible.has(awayTeamId)) setValue('awayTeamId', '');
   }, [resource, selectedCompetition, homeTeamId, awayTeamId, entered, setValue]);
-  if (resource === 'opponents') return <><Controller control={control} name="name" render={({ field }) => <FormField hint="The opposing club, as it should read on a match" label="Opponent name" onChangeText={field.onChange} placeholder="Cairo Stars Women" value={field.value} />} /><Controller control={control} name="teamCompetitionId" render={({ field }) => <ChoiceField label="Competition (optional)" onChange={(value) => field.onChange(value)} options={[{ label: 'Not entered in a league', value: '' }, ...competitions.filter((item) => item.type !== 'friendly').map((item) => ({ label: `${item.name} · ${item.season}`, value: item.id }))]} placeholder="Choose a competition" value={field.value} />} /></>;
-  if (resource === 'teams') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Team or squad name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="code" render={({ field }) => <FormField label="Squad code" onChangeText={field.onChange} placeholder="RTS S14" value={field.value} />} /><View style={styles.two}><Controller control={control} name="ageGroup" render={({ field }) => <FormField label="Age group" onChangeText={field.onChange} placeholder="U14" style={styles.flexButton} value={field.value} />} /><Controller control={control} name="season" render={({ field }) => <FormField label="Season" onChangeText={field.onChange} placeholder="2026/27" style={styles.flexButton} value={field.value} />} /></View><Controller control={control} name="teamCompetitionId" render={({ field }) => <ChoiceField label="Competition (optional)" onChange={(value) => field.onChange(value)} options={[{ label: 'Not entered in a league', value: '' }, ...competitions.filter((item) => item.type !== 'friendly').map((item) => ({ label: `${item.name} · ${item.season}`, value: item.id }))]} placeholder="Choose a competition" value={field.value} />} /><Controller control={control} name="coach" render={({ field }) => <FormField hint="Shown on the match lineup" label="Coach" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="assistantCoach" render={({ field }) => <FormField label="Assistant coach" onChangeText={field.onChange} value={field.value} />} /></>;
-  if (resource === 'competitions') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Competition name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="season" render={({ field }) => <FormField label="Season" onChangeText={field.onChange} placeholder="2026/27" value={field.value} />} /><Controller control={control} name="type" render={({ field }) => <ChoiceField label="Format" onChange={field.onChange} options={[{ label: 'League', value: 'league' }, { label: 'Tournament', value: 'tournament' }, { label: 'Friendly', value: 'friendly' }]} value={field.value} />} /></>;
-  if (resource === 'players') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Player name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="teamId" render={({ field }) => <ChoiceField label="Squad" onChange={field.onChange} options={teams.filter((item) => item.is_aimz).map((item) => ({ label: item.name, value: item.id }))} value={field.value} />} /><View style={styles.two}><Controller control={control} name="position" render={({ field }) => <FormField label="Position" onChangeText={field.onChange} style={styles.flexButton} value={field.value} />} /><Controller control={control} name="jersey" render={({ field }) => <FormField keyboardType="number-pad" label="Number" onChangeText={field.onChange} style={styles.flexButton} value={field.value} />} /></View></>;
-  if (resource === 'matches') return <><Controller control={control} name="competitionId" render={({ field }) => <ChoiceField label="Competition" onChange={field.onChange} options={competitions.map((item) => ({ label: `${item.name} · ${item.season}`, value: item.id }))} value={field.value} />} />{!selectedCompetition ? <Text style={styles.pickerNote}>Choose a competition to pick its teams.</Text> : entered.length < 2 ? <Text style={styles.pickerNote}>{entered.length === 0 ? 'No teams assigned to this competition yet' : 'Only one team is assigned to this competition'} — assign them under Squads or Opponents.</Text> : null}<Controller control={control} name="homeTeamId" render={({ field }) => <ChoiceField label="Home team" onChange={field.onChange} options={teamOptions} value={field.value} />} /><Controller control={control} name="awayTeamId" render={({ field }) => <ChoiceField label="Away team" onChange={field.onChange} options={teamOptions} value={field.value} />} /><Controller control={control} name="kickoff" render={({ field }) => <DateTimeField label="Kickoff (Egypt time)" onChange={field.onChange} value={field.value} />} /><Controller control={control} name="halfLength" render={({ field }) => <FormField hint="Minutes per half" inputMode="numeric" keyboardType="number-pad" label="Half length (minutes)" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="numHalves" render={({ field }) => <FormField hint="Two for standard football" inputMode="numeric" keyboardType="number-pad" label="Number of halves" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="halfTimeBreak" render={({ field }) => <FormField inputMode="numeric" keyboardType="number-pad" label="Half-time break (minutes)" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="hasExtraTime" render={({ field }) => <ChoiceField label="Extra time" onChange={field.onChange} options={[{ label: 'No extra time', value: 'false' }, { label: `Yes, ${EXTRA_TIME_PERIODS} periods`, value: 'true' }]} value={field.value} />} /><ExtraTimeLength control={control} /><MatchLengthSummary control={control} /><Controller control={control} name="venue" render={({ field }) => <FormField label="Venue" onChangeText={field.onChange} value={field.value} />} /></>;
-  return <><Controller control={control} name="label" render={({ field }) => <FormField label="Invite label" onChangeText={field.onChange} placeholder="Autumn intake" value={field.value} />} /><Controller control={control} name="code" render={({ field }) => <FormField autoCapitalize="characters" label="Invite code" onChangeText={field.onChange} placeholder="AIMZ-2026" value={field.value} />} /></>;
+  if (resource === 'opponents') return <><Controller control={control} name="name" render={({ field }) => <FormField hint="The opposing club, as it should read on a match" label="Opponent name" onChangeText={field.onChange} placeholder="Cairo Stars Women" value={field.value} />} /><Controller control={control} name="teamCompetitionId" render={({ field }) => <ChoiceField label="Competition (optional)" onChange={(value) => field.onChange(value)} options={[{ label: 'Not entered in a league', value: '' }, ...competitions.filter((item) => item.type !== 'friendly').map((item) => ({ label: `${item.name} · ${item.season}`, value: item.id }))]} placeholder="Choose a competition" value={field.value} />} /><TeamGroup competitions={competitions} control={control} /><BadgeChoice control={control} isAimz={false} /></>;
+  if (resource === 'teams') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Team or squad name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="code" render={({ field }) => <FormField label="Squad code" onChangeText={field.onChange} placeholder="RTS S14" value={field.value} />} /><View style={styles.two}><Controller control={control} name="ageGroup" render={({ field }) => <FormField containerStyle={styles.flexButton} label="Age group" onChangeText={field.onChange} placeholder="U14" value={field.value} />} /><Controller control={control} name="season" render={({ field }) => <FormField containerStyle={styles.flexButton} label="Season" onChangeText={field.onChange} placeholder="2026/27" value={field.value} />} /></View><Controller control={control} name="teamCompetitionId" render={({ field }) => <ChoiceField label="Competition (optional)" onChange={(value) => field.onChange(value)} options={[{ label: 'Not entered in a league', value: '' }, ...competitions.filter((item) => item.type !== 'friendly').map((item) => ({ label: `${item.name} · ${item.season}`, value: item.id }))]} placeholder="Choose a competition" value={field.value} />} /><TeamGroup competitions={competitions} control={control} /><Controller control={control} name="coach" render={({ field }) => <FormField hint="Shown on the match lineup" label="Coach" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="assistantCoach" render={({ field }) => <FormField label="Assistant coach" onChangeText={field.onChange} value={field.value} />} /><BadgeChoice control={control} isAimz /></>;
+  if (resource === 'competitions') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Competition name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="season" render={({ field }) => <FormField label="Season" onChangeText={field.onChange} placeholder="2026/27" value={field.value} />} /><Controller control={control} name="type" render={({ field }) => <ChoiceField label="Format" onChange={field.onChange} options={[{ label: 'League', value: 'league' }, { label: 'Knockout (groups and a bracket)', value: 'tournament' }, { label: 'Friendly', value: 'friendly' }]} value={field.value} />} /><KnockoutSize competitionId={editingId} control={control} teams={teams} /></>;
+  if (resource === 'players') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Player name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="teamId" render={({ field }) => <ChoiceField label="Squad" onChange={field.onChange} options={teams.filter((item) => item.is_aimz && item.is_active).map((item) => ({ label: item.name, value: item.id }))} value={field.value} />} /><View style={styles.two}><Controller control={control} name="position" render={({ field }) => <FormField containerStyle={styles.flexButton} label="Position" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="jersey" render={({ field }) => <FormField containerStyle={styles.flexButton} keyboardType="number-pad" label="Number" onChangeText={field.onChange} value={field.value} />} /></View></>;
+  if (resource === 'matches') return <><Controller control={control} name="competitionId" render={({ field }) => <ChoiceField label="Competition" onChange={field.onChange} options={competitions.map((item) => ({ label: `${item.name} · ${item.season}`, value: item.id }))} value={field.value} />} />{!selectedCompetition ? <Text style={styles.pickerNote}>Choose a competition to pick its teams.</Text> : entered.length < 2 ? <Text style={styles.pickerNote}>{entered.length === 0 ? 'No teams assigned to this competition yet' : 'Only one team is assigned to this competition'} — assign them under Squads or Opponents.</Text> : null}<Controller control={control} name="homeTeamId" render={({ field }) => <ChoiceField label="Home team" onChange={field.onChange} options={teamOptions} value={field.value} />} /><Controller control={control} name="awayTeamId" render={({ field }) => <ChoiceField label="Away team" onChange={field.onChange} options={teamOptions} value={field.value} />} /><Controller control={control} name="kickoff" render={({ field }) => <DateTimeField label="Kickoff (Egypt time)" onChange={field.onChange} value={field.value} />} />{opponentOnly ? <Text style={styles.pickerNote}>Opponent-only fixture: enter the final score after the match. Live clock, events, lineup and player stats are disabled.</Text> : <><Controller control={control} name="halfLength" render={({ field }) => <FormField hint="Minutes per half" inputMode="numeric" keyboardType="number-pad" label="Half length (minutes)" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="numHalves" render={({ field }) => <FormField hint="Two for standard football" inputMode="numeric" keyboardType="number-pad" label="Number of halves" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="halfTimeBreak" render={({ field }) => <FormField inputMode="numeric" keyboardType="number-pad" label="Half-time break (minutes)" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="hasExtraTime" render={({ field }) => <ChoiceField label="Extra time" onChange={field.onChange} options={[{ label: 'No extra time', value: 'false' }, { label: `Yes, ${EXTRA_TIME_PERIODS} periods`, value: 'true' }]} value={field.value} />} /><ExtraTimeLength control={control} /><MatchLengthSummary control={control} /></>}<Controller control={control} name="venue" render={({ field }) => <FormField label="Venue" onChangeText={field.onChange} value={field.value} />} /></>;
+  return <><Controller control={control} name="label" render={({ field }) => <FormField label="Invite label" onChangeText={field.onChange} placeholder="Autumn intake" value={field.value} />} /><Controller control={control} name="code" render={({ field }) => <FormField autoCapitalize="characters" label="Invite code" onChangeText={field.onChange} placeholder="AIMZ-2026" value={field.value} />} /><Controller control={control} name="inviteKind" render={({ field }) => <ChoiceField label="Invite type" onChange={(kind) => { field.onChange(kind); setValue('invitePlayerIds', ''); }} options={[{ label: 'Player', value: 'player' }, { label: 'Parent', value: 'parent' }]} value={field.value} />} /><InvitePlayers control={control} players={players} setValue={setValue} /></>;
 }
 
 function entityTitle(item: Entity) { if ('home_team_id' in item) return `${item.home_team?.name ?? 'Home'} vs ${item.away_team?.name ?? 'Away'}`; if ('position' in item) return item.name; if ('use_count' in item) return item.label; return item.name; }
-function entityMeta(item: Entity) { if ('home_team_id' in item) return `${item.status.toUpperCase()} · ${formatEgyptDateTime(item.kickoff_datetime)}`; if ('position' in item) return `${item.position} · #${item.jersey_number ?? '–'}`; if ('use_count' in item) return `${item.is_active ? 'Active' : 'Revoked'} · ${item.use_count} uses`; if ('is_aimz' in item) return item.squad_code ?? (item.is_aimz ? [item.age_group, item.squad_code, item.season].filter(Boolean).join(' · ') || 'AIMZ squad' : 'Opponent club'); return `${item.type} · ${item.season}`; }
+/**
+ * Which badge the team wears. Separate from the Squads/Opponents split, because
+ * a league of peer clubs is all "ours" for players and lineups while none of
+ * them should be wearing the AIMZ crest.
+ */
+function BadgeChoice({ control, isAimz }: { control: Control<Values>; isAimz: boolean }) {
+  return <Controller control={control} name="badgeStyle" render={({ field }) => <ChoiceField
+    label="Badge"
+    onChange={field.onChange}
+    options={[
+      { label: isAimz ? 'AIMZ crest (default for a squad)' : 'Generated shield (default for a club)', value: '' },
+      { label: 'AIMZ crest', value: 'aimz' },
+      { label: 'Generated shield with initials', value: 'generated' },
+    ]}
+    value={field.value}
+  />} />;
+}
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ pickerNote: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, color: colors.textSecondary, fontSize: theme.type.label, lineHeight: 20, padding: theme.spacing.md }, editingBanner: { alignItems: 'center', backgroundColor: colors.highlightedSurface, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs }, editingText: { color: colors.textPrimary, flex: 1, fontWeight: '800' }, summary: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, chipBar: { flexGrow: 0 }, chips: { alignItems: 'center', gap: theme.spacing.sm }, chip: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: colors.accent }, chipText: { color: colors.textSecondary, fontWeight: '800' }, chipTextActive: { color: colors.onAccent }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, formCard: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.lg }, heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs } });
+function entityMeta(item: Entity) { if ('home_team_id' in item) return `${item.status.toUpperCase()} · ${formatEgyptDateTime(item.kickoff_datetime)}`; if ('position' in item) return `${item.position} · #${item.jersey_number ?? '–'}`; if ('use_count' in item) { const who = item.players?.length ? item.players.map((player) => player.name).join(', ') : 'No one linked'; return `${item.kind === 'parent' ? 'Parent' : 'Player'} · ${who} · ${item.is_active ? 'Active' : 'Revoked'} · ${item.use_count} uses`; } if ('is_aimz' in item) return item.squad_code ?? (item.is_aimz ? [item.age_group, item.squad_code, item.season].filter(Boolean).join(' · ') || 'AIMZ squad' : 'Opponent club'); return `${item.type} · ${item.season}`; }
+
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ groupList: { gap: theme.spacing.md }, groupsHeading: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' }, groupCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md }, groupHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, groupTitle: { color: colors.textPrimary, fontWeight: '900' }, groupCount: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800' }, groupCountFull: { color: colors.accentSoft }, groupTeam: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.sm, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 44, paddingLeft: theme.spacing.md, paddingRight: theme.spacing.xs }, groupTeamName: { color: colors.textPrimary, flex: 1, fontWeight: '700' }, lockedField: { gap: theme.spacing.xs }, lockedLabel: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' }, lockedValue: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: colors.textMuted, minHeight: 52, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md }, pickerNote: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, color: colors.textSecondary, fontSize: theme.type.label, lineHeight: 20, padding: theme.spacing.md }, editingBanner: { alignItems: 'center', backgroundColor: colors.highlightedSurface, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs }, editingText: { color: colors.textPrimary, flex: 1, fontWeight: '800' }, summary: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, pickList: { gap: theme.spacing.xs }, pickRow: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, pickRowOn: { backgroundColor: colors.accent, borderColor: colors.accent }, pickName: { color: colors.textPrimary, flex: 1, fontWeight: '700' }, pickNameOn: { color: colors.onAccent, fontWeight: '900' }, /* The grid reaches past the page's own padding, for the width it buys the
+     longest of the labels. */
+  chips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -theme.spacing.md }, chipCell: { flexBasis: '25%', paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.xs }, chip: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.xs, paddingVertical: theme.spacing.xs }, chipActive: { backgroundColor: colors.accent }, chipText: { color: colors.textSecondary, fontSize: theme.type.caption, fontWeight: '800', lineHeight: theme.spacing.md, textAlign: 'center' }, chipTextActive: { color: colors.onAccent }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, formCard: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.lg }, heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, /* The card gaps its fields by `md`; the extra `sm` sets the submit row apart from the last field. Kept in step with `formActions` on the hub managers. */ actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs } });
