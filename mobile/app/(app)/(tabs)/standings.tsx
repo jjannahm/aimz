@@ -11,7 +11,7 @@ import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
-import { theme, type ThemeColors } from '@/src/theme';
+import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
@@ -162,7 +162,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   activeTab: { backgroundColor: colors.accent, borderColor: colors.accent },
   activeLabel: { color: colors.onAccent, fontWeight: '900' },
   tabLabel: { color: colors.textSecondary, fontWeight: '800' },
-  tab: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
+  tab: { ...noFocusRing, alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
   pressed: { opacity: 0.7 },
   form: { flexDirection: 'row', gap: 3, marginTop: 4 },
   formDot: { alignItems: 'center', borderRadius: 3, height: 14, justifyContent: 'center', width: 14 },

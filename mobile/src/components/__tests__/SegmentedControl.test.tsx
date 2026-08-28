@@ -42,6 +42,18 @@ describe('SegmentedControl', () => {
     }
   });
 
+  it('leaves the browser no focus ring to draw over a tab', async () => {
+    const screen = await render(<SegmentedControl onChange={jest.fn()} options={options} value="live" />);
+
+    // The ring is drawn with `outline-style: auto`, which ignores a width on
+    // its own, so the style has to be overruled alongside it.
+    for (const tab of screen.getAllByRole('tab')) {
+      const style = flattenView(tab);
+      expect(style.outlineStyle).toBe('solid');
+      expect(style.outlineWidth).toBe(0);
+    }
+  });
+
   it('clips an edge-to-edge active segment inside the one outer border', async () => {
     const screen = await render(<SegmentedControl label="Match filter" onChange={jest.fn()} options={options} value="live" />);
     const bar = flattenView(screen.getByLabelText('Match filter'));

@@ -1,3 +1,5 @@
+import type { ViewStyle } from 'react-native';
+
 export const palette = {
   navy: '#16225A',
   deepNavy: '#0F1A45',
@@ -137,3 +139,18 @@ export const theme = {
 } as const;
 
 export type Theme = typeof theme;
+
+/**
+ * Switches off the focus ring a browser draws on a pressable.
+ *
+ * React Native Web renders `accessibilityRole="button"` as a `<button>` and
+ * resets that element for us, but a `role="tab"` pressable is a plain div and
+ * keeps the platform ring — a pale halo outside the pill that reads as a stray
+ * second border for as long as the tab holds focus after a tap. A width of zero
+ * will not do it on its own: the ring is drawn with `outline-style: auto`,
+ * which ignores both a width and a colour, so the style has to be overruled
+ * too. Naming a drawn style at no width says that in terms React Native's own
+ * outline props take as well, which keeps this silent on iOS and Android —
+ * they parse `outlineStyle`, and know only `solid`, `dotted` and `dashed`.
+ */
+export const noFocusRing: ViewStyle = { outlineStyle: 'solid', outlineWidth: 0 };

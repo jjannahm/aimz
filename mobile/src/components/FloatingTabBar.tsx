@@ -3,7 +3,7 @@ import { Animated, Pressable, StyleSheet, Text, View, type LayoutRectangle, type
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TabIcon, type TabIconName } from '@/src/components/TabIcon';
-import { theme, type ThemeColors } from '@/src/theme';
+import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 /**
@@ -132,7 +132,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     width: '100%',
   },
   pill: { backgroundColor: colors.accent, borderRadius: theme.radius.pill, bottom: theme.spacing.xs, position: 'absolute', top: theme.spacing.xs },
-  tab: { alignItems: 'center', borderRadius: theme.radius.pill, flexDirection: 'row', flexGrow: 1, gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.sm },
+  tab: { ...noFocusRing, alignItems: 'center', borderRadius: theme.radius.pill, flexDirection: 'row', flexGrow: 1, gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.sm },
   // The selected tab keeps its label, so it asks for the room the pill fills.
   tabOn: { flexGrow: 0, paddingHorizontal: theme.spacing.md },
   label: { color: colors.onAccent, fontWeight: '900' },
