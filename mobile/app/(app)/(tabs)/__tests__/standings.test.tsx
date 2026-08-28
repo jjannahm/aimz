@@ -54,14 +54,14 @@ describe('StandingsScreen', () => {
   });
   afterEach(() => jest.clearAllMocks());
 
-  it('heads the screen with the competition name and season on separate lines', async () => {
+  it('names the competition once, in its tab, and not again below', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
-    expect(await screen.findByLabelText('Women Academy League, season 2026')).toBeTruthy();
-    expect(screen.getByText('Women Academy League')).toBeTruthy();
-    expect(screen.getByText('2026')).toBeTruthy();
-    expect(screen.queryByText('WA')).toBeNull();
-    // The old header ran the two together inside one pill.
-    expect(screen.queryByText('Women Academy League · 2026')).toBeNull();
+    // The selected tab already says which competition this is, so a card
+    // repeating the name and season under it was only spending vertical space.
+    expect(await screen.findByText('Women Academy League')).toBeTruthy();
+    expect(screen.getAllByText('Women Academy League')).toHaveLength(1);
+    expect(screen.queryByLabelText('Women Academy League, season 2026')).toBeNull();
+    expect(screen.queryByText('2026')).toBeNull();
   });
 
   // The gold edge used to be a left border, which is part of the box: it inset
@@ -81,10 +81,12 @@ describe('StandingsScreen', () => {
     }
   });
 
-  it('hides the switcher when only one competition is running', async () => {
+  it('still names the competition when there is no switcher to name it', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
-    await screen.findByText('Women Academy League');
+    expect(await screen.findByText('Women Academy League')).toBeTruthy();
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    // The name is all that is left; the season line went with the card.
+    expect(screen.queryByText('2026')).toBeNull();
   });
 
   it('offers a switcher and changes table when several competitions run', async () => {
@@ -98,7 +100,7 @@ describe('StandingsScreen', () => {
 
     fireEvent.press(screen.getByRole('tab', { name: 'Delta Cup' }));
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-2'));
-    expect(await screen.findByLabelText('Delta Cup, season 2026')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Delta Cup' }).props.accessibilityState.selected).toBe(true);
   });
 
   it('switches a knockout between its groups and bracket views', async () => {
@@ -165,7 +167,7 @@ describe('StandingsScreen — arriving from Manage', () => {
     jest.mocked(useLocalSearchParams).mockReturnValue({ competition: 'c-2' });
     const screen = await render(<StandingsScreen />, { wrapper });
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-2'));
-    expect(screen.getByLabelText('Delta Cup, season 2026')).toBeTruthy();
+    expect(screen.getByLabelText('Delta Cup').props.accessibilityState.selected).toBe(true);
   });
 
   it('falls back to the first competition when the route names none', async () => {
