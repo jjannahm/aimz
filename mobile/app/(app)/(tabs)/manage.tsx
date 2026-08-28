@@ -21,7 +21,7 @@ import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { appConfig } from '@/src/config';
 import { api, ApiError } from '@/src/lib/api';
-import { invalidateAfterWrite } from '@/src/lib/cache';
+import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -214,7 +214,7 @@ export default function ManageScreen() {
   /** Knockouts created in this sitting, whose next save completes their setup. */
   const [drawnUp, setDrawnUp] = React.useState<string[]>([]);
   const pageRef = React.useRef<ScrollView | null>(null);
-  const teams = useQuery({ queryKey: ['teams', 'admin'], queryFn: () => api.teams('?limit=100') });
+  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
   const players = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
   const matches = useQuery({ queryKey: ['matches', 'admin'], queryFn: () => api.matches('?limit=100') });
