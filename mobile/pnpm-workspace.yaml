@@ -4,19 +4,19 @@ allowBuilds:
   workerd: true
 minimumReleaseAgeExclude:
   - react-native-safe-area-context@5.9.1
-  - '@expo/cli@57.0.17 || 57.0.18 || 57.0.19'
-  - '@expo/fingerprint@0.20.9 || 0.20.10'
+  - '@expo/cli@57.0.17 || 57.0.18 || 57.0.19 || 57.0.20'
+  - '@expo/fingerprint@0.20.9 || 0.20.10 || 0.20.11'
   - '@expo/local-build-cache-provider@57.0.7 || 57.0.8'
-  - '@expo/metro-config@57.0.9 || 57.0.10 || 57.0.11'
+  - '@expo/metro-config@57.0.9 || 57.0.10 || 57.0.11 || 57.0.12'
   - '@expo/metro-runtime@57.0.12 || 57.0.13 || 57.0.14'
   - '@expo/prebuild-config@57.0.13 || 57.0.14 || 57.0.15'
   - '@expo/router-server@57.0.7 || 57.0.8'
   - expo-asset@57.0.13 || 57.0.14 || 57.0.15
-  - expo-constants@57.0.13 || 57.0.14 || 57.0.15
+  - expo-constants@57.0.13 || 57.0.14 || 57.0.15 || 57.0.16
   - expo-file-system@57.0.5 || 57.0.6
   - expo-modules-core@57.0.12 || 57.0.13 || 57.0.14
   - expo-modules-jsi@57.0.5 || 57.0.6
-  - expo@57.0.15 || 57.0.16 || 57.0.17
+  - expo@57.0.15 || 57.0.16 || 57.0.17 || 57.0.18
   - '@expo/ui@57.0.12 || 57.0.13 || 57.0.14'
   - expo-image-manipulator@57.0.12 || 57.0.13 || 57.0.14
   - expo-image-picker@57.0.12 || 57.0.13 || 57.0.14
@@ -34,3 +34,5 @@ minimumReleaseAgeExclude:
   - expo-haptics@57.0.2
   - expo-secure-store@57.0.2
   - jest-expo@57.0.5
+  - '@expo/env@2.4.3'
+  - expo-font@57.0.2

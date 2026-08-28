@@ -172,6 +172,9 @@ async function main() {
 
   // 3. Fixtures, so each league's table, top scorers and top assisters have
   // something varied to show.
+  // Read the fixture list again: the one loaded at the start still holds
+  // everything the deletions above have since removed.
+  const current = await call("/api/v1/matches?limit=300");
   const squads = new Map(teams.items.map((team) => [team.id, players.items.filter((player) => player.team_id === team.id)]));
   for (const league of leagues) {
     const entered = entrants.get(league.id) ?? [];
@@ -184,11 +187,21 @@ async function main() {
     console.log(`\n${league.name} (${league.season}) — ${entered.length} teams, ${fixtures.length} fixtures`);
     for (const [index, fixture] of fixtures.entries()) {
       const venue = `${VENUE} ${index + 1}`;
-      const already = matches.items.find((match) => match.competition_id === league.id && match.venue === venue);
-      if (already) { console.log(`  = ${fixture.home.name} v ${fixture.away.name} (already seeded)`); continue; }
+      const settled = current.items.find((match) => match.competition_id === league.id && match.venue === venue);
+      if (settled?.status === "finished") { console.log(`  = ${fixture.home.name} ${settled.home_score}-${settled.away_score} ${fixture.away.name} (already seeded)`); continue; }
       const [homeGoals, awayGoals] = SCORELINES[Math.floor(roll() * SCORELINES.length)];
       const kickoff = new Date(Date.now() - (fixtures.length - index) * 7 * 86_400_000).toISOString();
-      const match = await call("/api/v1/matches", { method: "POST", body: { competition_id: league.id, home_team_id: fixture.home.id, away_team_id: fixture.away.id, kickoff_datetime: kickoff, venue, status: "scheduled", half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15, has_extra_time: false, extra_time_half_length_minutes: 15 } });
+      // A fixture an earlier run left half-made is finished rather than doubled.
+      const match = settled ?? await call("/api/v1/matches", { method: "POST", body: { competition_id: league.id, home_team_id: fixture.home.id, away_team_id: fixture.away.id, kickoff_datetime: kickoff, venue, status: "scheduled", half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15, has_extra_time: false, extra_time_half_length_minutes: 15 } });
+
+      // Nobody from the academy is at a club-versus-club fixture to log a goal
+      // as it happens, so it is entered as a final score rather than played out.
+      if (!fixture.home.is_aimz && !fixture.away.is_aimz) {
+        await call(`/api/v1/matches/${match.id}/result`, { method: "POST", body: { home_score: homeGoals, away_score: awayGoals } });
+        console.log(`  + ${fixture.home.name} ${homeGoals}-${awayGoals} ${fixture.away.name}`);
+        continue;
+      }
+
       // The row's own flag is 0/1; a patch merges over it, so it is restated as
       // the boolean the API validates.
       const setStatus = (next) => call(`/api/v1/matches/${match.id}`, { method: "PATCH", body: { status: next, has_extra_time: false } });

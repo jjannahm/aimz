@@ -25,7 +25,7 @@ const SECTIONS: Section[] = [
   { key: 'awards', label: copy.awards },
 ];
 
-/** The academy-wide sections, plus whatever stats this account can see. */
+/** The academy-wide sections, plus the reader's own stats when they have any. */
 const sectionsFor = (linked: boolean): Section[] =>
   linked ? [...SECTIONS, { key: 'mine', label: copy.myStats }] : SECTIONS;
 
@@ -201,7 +201,9 @@ export default function PlayersScreen() {
   const [selected, setSelected] = useState<string>('teams');
   // An account with no roster record behind it has no stats of its own to show,
   // which is every administrator and any player not linked yet.
-  const sections = useMemo(() => sectionsFor(user?.role === 'parent' || Boolean(user?.player_id)), [user?.role, user?.player_id]);
+  // An administrator manages the academy rather than playing in it, so the tab
+  // is not theirs even when their own login happens to be linked to a player.
+  const sections = useMemo(() => sectionsFor(user?.role !== 'admin' && (user?.role === 'parent' || Boolean(user?.player_id))), [user?.role, user?.player_id]);
   const section = sections.find((item) => item.key === selected) ?? sections[0]!;
 
   return <Screen title="Players">
