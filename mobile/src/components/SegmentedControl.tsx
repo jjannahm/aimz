@@ -123,6 +123,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   },
   indicator: {
     backgroundColor: colors.accent,
+    borderRadius: theme.radius.pill,
     bottom: 0,
     left: 0,
     position: 'absolute',
