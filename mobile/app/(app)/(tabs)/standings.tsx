@@ -7,6 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
+import { SegmentedTabs } from '@/src/components/SegmentedTabs';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
@@ -62,6 +63,8 @@ function HeadToHead({ teamId, opponentId, onClose }: { teamId: string; opponentI
     </>}
   </View>;
 }
+
+const VIEWS = [{ label: 'Groups', value: 'groups' }, { label: 'Bracket', value: 'bracket' }] as const;
 
 export default function StandingsScreen() {
   const colors = useColors();
@@ -119,7 +122,7 @@ export default function StandingsScreen() {
       })}
     </ScrollView> : null}
     {competition ? <CompetitionHeader competition={competition} /> : null}
-    {knockout ? <View accessibilityRole="tablist" style={styles.viewToggle}>{([['groups', 'Groups'], ['bracket', 'Bracket']] as const).map(([value, label]) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: view === value }} key={value} onPress={() => setView(value)} style={({ pressed }) => [styles.viewTab, view === value && styles.activeTab, pressed && styles.pressed]}><Text style={[styles.tabLabel, view === value && styles.activeLabel]}>{label}</Text></Pressable>)}</View> : null}
+    {knockout ? <SegmentedTabs label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
     {comparing ? (comparing.opponentId
       ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
       : <View style={styles.h2h}><Text style={styles.h2hPrompt}>Pick another team to compare with {table.data?.find((row) => row.team.id === comparing.teamId)?.team.name ?? 'this team'}.</Text></View>) : null}
@@ -162,16 +165,14 @@ export default function StandingsScreen() {
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   tabBar: { flexGrow: 0 },
-  viewToggle: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', padding: theme.spacing.xs },
-  viewTab: { alignItems: 'center', borderRadius: theme.radius.sm, flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum },
   groups: { gap: theme.spacing.lg },
   group: { gap: theme.spacing.sm },
   groupName: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
   tabs: { gap: theme.spacing.sm },
-  tab: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
   activeTab: { backgroundColor: colors.accent, borderColor: colors.accent },
-  tabLabel: { color: colors.textSecondary, fontWeight: '800' },
   activeLabel: { color: colors.onAccent, fontWeight: '900' },
+  tabLabel: { color: colors.textSecondary, fontWeight: '800' },
+  tab: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
   headerCard: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 80, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   headerCopy: { flex: 1, gap: 2 },
   headerName: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' },
