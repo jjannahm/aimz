@@ -11,6 +11,8 @@
     "test:integration": "vitest run",
     "seed:mock-matches": "node scripts/seed-mock-matches.mjs",
     "seed:wepl-teams": "node scripts/seed-wepl-teams.mjs",
+    "sync:age-group-logos": "node scripts/sync-age-group-logos.mjs",
+    "restore:archived-teams": "node scripts/restore-archived-teams.mjs",
     "db:migrate:local": "wrangler d1 migrations apply aimz-staging-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply aimz-staging-db --remote",
     "typecheck": "tsc --noEmit",
