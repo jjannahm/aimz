@@ -1,4 +1,3 @@
-import type { PropsWithChildren } from 'react';
 import { useEffect, useRef, useState } from 'react';
 import {
   Animated,
@@ -23,11 +22,6 @@ type AnimatedTabPillProps = {
   style?: StyleProp<ViewStyle>;
   testID?: string;
 };
-
-type FadeThroughProps = PropsWithChildren<{
-  transitionKey: string | null | undefined;
-  testID?: string;
-}>;
 
 /**
  * A standalone tab whose selected colour grows from the bottom edge.
@@ -113,80 +107,6 @@ export function AnimatedTabPill({
   );
 }
 
-/**
- * Fades the old keyed content out, swaps it, then fades the new content in.
- * Live updates for the current key pass straight through without animating.
- */
-export function FadeThrough({ children, testID, transitionKey }: FadeThroughProps) {
-  const styles = useThemedStyles(stylesheet);
-  const reduceMotion = useReduceMotion();
-  const opacity = useRef(new Animated.Value(1)).current;
-  const [displayed, setDisplayed] = useState(() => ({ children, key: transitionKey }));
-  const latest = useRef({ children, key: transitionKey });
-  const generation = useRef(0);
-  /** The transition that has faded out but not yet reached its new content. */
-  const midFade = useRef(0);
-  latest.current = { children, key: transitionKey };
-
-  useEffect(() => {
-    if (displayed.key === transitionKey) {
-      // The key came back to what is already on screen before the fade-out
-      // finished, so no fade-in is coming to undo it. Left alone the content
-      // keeps whatever opacity the stopped animation reached — near zero, if it
-      // got far enough, which reads as an empty screen. Bumping the generation
-      // orphans the fade-out's own callback so it cannot revive the transition.
-      if (midFade.current) {
-        midFade.current = 0;
-        generation.current += 1;
-        opacity.stopAnimation();
-        opacity.setValue(1);
-      }
-      return undefined;
-    }
-
-    const currentGeneration = ++generation.current;
-    midFade.current = currentGeneration;
-    opacity.stopAnimation();
-
-    if (reduceMotion) {
-      midFade.current = 0;
-      setDisplayed(latest.current);
-      opacity.setValue(1);
-      return undefined;
-    }
-
-    const fadeOut = Animated.timing(opacity, {
-      duration: theme.motion.standard / 2,
-      easing: Easing.in(Easing.cubic),
-      toValue: 0,
-      useNativeDriver: true,
-    });
-    let fadeIn: Animated.CompositeAnimation | undefined;
-
-    fadeOut.start(({ finished }) => {
-      if (!finished || generation.current !== currentGeneration) return;
-      midFade.current = 0;
-      setDisplayed(latest.current);
-      opacity.setValue(0);
-      fadeIn = Animated.timing(opacity, {
-        duration: theme.motion.standard / 2,
-        easing: Easing.out(Easing.cubic),
-        toValue: 1,
-        useNativeDriver: true,
-      });
-      fadeIn.start();
-    });
-
-    return () => {
-      fadeOut.stop();
-      fadeIn?.stop();
-    };
-  }, [displayed.key, opacity, reduceMotion, transitionKey]);
-
-  const visibleChildren = displayed.key === transitionKey ? children : displayed.children;
-  return <Animated.View style={[styles.fadeContent, { opacity }]} testID={testID}>{visibleChildren}</Animated.View>;
-}
-
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   pill: {
     ...noFocusRing,
@@ -221,5 +141,4 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   labelCompact: { fontSize: theme.type.caption, lineHeight: theme.spacing.md },
   labelSelected: { color: colors.onAccent, fontWeight: '900' },
   pressed: { opacity: 0.7 },
-  fadeContent: { gap: theme.spacing.lg },
 });

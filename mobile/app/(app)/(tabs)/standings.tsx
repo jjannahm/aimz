@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
-import { AnimatedTabPill, FadeThrough } from '@/src/components/AnimatedTabPill';
+import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
@@ -110,7 +110,7 @@ export default function StandingsScreen() {
         return <AnimatedTabPill key={item.id} label={item.name} onPress={() => setSelected(item.id)} selected={active} style={styles.tab} testID={`competition-tab-${item.id}`} />;
       })}
     </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
-    <FadeThrough testID="standings-content" transitionKey={competitionId}>
+    <View style={styles.content} testID="standings-content">
       {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
       {comparing ? (comparing.opponentId
         ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
@@ -119,7 +119,7 @@ export default function StandingsScreen() {
         : !competitionId || !table.data?.length ? <EmptyState body="Finished matches will create the table automatically." title="No standings yet" />
         : knockout ? <View style={styles.groups}>{groupedRows.map((group) => <View key={group.name} style={styles.group}><Text style={styles.groupName}>{group.name}</Text>{tableFor(group.rows)}</View>)}</View>
         : tableFor(table.data)}
-    </FadeThrough>
+    </View>
   </Screen>;
 
   function tableFor(rows: StandingRow[]) {
@@ -154,6 +154,9 @@ export default function StandingsScreen() {
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  // The section the switcher swaps, which keeps the page's own rhythm between
+  // whatever it is showing.
+  content: { gap: theme.spacing.lg },
   tabBar: { flexGrow: 0 },
   soleCompetition: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900', paddingHorizontal: theme.spacing.xs },
   groups: { gap: theme.spacing.lg },
