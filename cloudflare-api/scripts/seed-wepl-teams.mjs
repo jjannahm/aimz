@@ -1,6 +1,6 @@
 /**
  * Sets up the team list: the fifteen clubs of the Egyptian Women's Premier
- * League, AIMZ itself, and the academy's age groups. The age groups wear the
+ * League (EWPL), AIMZ itself, and the academy's age groups. The age groups wear the
  * club logo and are not entered in the league.
  *
  * Teams it does not list are left alone unless --archive-others is passed.
@@ -43,7 +43,9 @@ const REPLACE_CRESTS = process.argv.includes("--replace-crests");
  */
 const ARCHIVE_OTHERS = process.argv.includes("--archive-others");
 
-const COMPETITION = { name: "Egyptian Women's Premier League", season: "2026/27", type: "league" };
+// The name is the lookup key: change it here and in the database together,
+// or a run creates a second competition and moves every club into it.
+const COMPETITION = { name: "EWPL", season: "2026/27", type: "league" };
 
 const MEDIA_TYPES = { ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" };
 /** `Wadi Degla` and `wadi-degla.png` should find each other. */
