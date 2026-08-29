@@ -28,7 +28,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0019_team_badge_style.sql');
+    expect(applied.results.at(-1)?.name).toBe('0021_positions_and_stat_team.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -68,8 +68,8 @@ describe('team hub authorization and roster privacy', () => {
     const admin = await seedUser('admin');
     const team = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U14', is_aimz: true }, admin.token))).json<{ id: string }>();
     const otherTeam = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U16', is_aimz: true }, admin.token))).json<{ id: string }>();
-    const player = await (await request('/api/v1/players', json('POST', { name: 'Mariam', team_id: team.id, position: 'Forward' }, admin.token))).json<{ id: string }>();
-    const otherPlayer = await (await request('/api/v1/players', json('POST', { name: 'Nadine', team_id: otherTeam.id, position: 'Keeper' }, admin.token))).json<{ id: string }>();
+    const player = await (await request('/api/v1/players', json('POST', { name: 'Mariam', team_id: team.id, position: 'ST' }, admin.token))).json<{ id: string }>();
+    const otherPlayer = await (await request('/api/v1/players', json('POST', { name: 'Nadine', team_id: otherTeam.id, position: 'GK' }, admin.token))).json<{ id: string }>();
     const playerUser = await seedUser('player', player.id);
     const otherPlayerUser = await seedUser('player', otherPlayer.id);
 
@@ -113,7 +113,7 @@ describe('team hub authorization and roster privacy', () => {
     expect(conflict.status).toBe(409);
     expect(await conflict.json()).toMatchObject({ detail: { code: 'player_already_linked' } });
 
-    const invitedPlayer = await (await request('/api/v1/players', json('POST', { name: 'Nour', team_id: team.id, position: 'Keeper' }, admin.token))).json<{ id: string }>();
+    const invitedPlayer = await (await request('/api/v1/players', json('POST', { name: 'Nour', team_id: team.id, position: 'GK' }, admin.token))).json<{ id: string }>();
     const invite = await request('/api/v1/admin/registration-invites', json('POST', { label: 'Nour personal', code: 'NOUR-PERSONAL', player_id: invitedPlayer.id, max_uses: 20 }, admin.token));
     expect(await invite.json()).toMatchObject({ player_id: invitedPlayer.id, max_uses: 1 });
     const secondInvite = await request('/api/v1/admin/registration-invites', json('POST', { label: 'Nour spare', code: 'NOUR-SPARE', player_id: invitedPlayer.id }, admin.token));
@@ -194,5 +194,87 @@ describe('team badges and media', () => {
     const fixture = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: club.id, kickoff_datetime: now, venue: 'Cairo', status: 'scheduled' }, admin.token))).json<{ id: string }>();
     const read = await (await request(`/api/v1/matches/${fixture.id}/live`, json('GET', undefined, admin.token))).json<{ match: { away_team: { badge_style: string | null; logo_url: string | null } } }>();
     expect(read.match.away_team).toMatchObject({ badge_style: null, logo_url: `/api/v1/media/${upload.object_key}` });
+  });
+});
+
+describe('statistics stay with the squad they were earned for', () => {
+  it("keeps a promoted player's record under her old age group, and bulk-imports a squad", async () => {
+    const admin = await seedUser('admin');
+    const under14 = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U14', is_aimz: true, age_group: 'U14' }, admin.token))).json<{ id: string }>();
+    const under16 = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U16', is_aimz: true, age_group: 'U16' }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: 'Cairo Stars', is_aimz: false }, admin.token))).json<{ id: string }>();
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: 'Youth League', season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+
+    // A whole squad in one request, which is the point of the bulk route.
+    const bulk = await request('/api/v1/players/bulk', json('POST', {
+      team_id: under14.id,
+      players: [
+        { name: 'Nour Hassan', position: 'ST', jersey_number: 9 },
+        { name: 'Salma Adel', position: 'GK', jersey_number: 1 },
+        { name: 'Habiba Tarek', position: 'LWB', jersey_number: 3 },
+      ],
+    }, admin.token));
+    expect(bulk.status).toBe(201);
+    const squadPlayers = await bulk.json<{ id: string; name: string; position: string }[]>();
+    expect(squadPlayers).toHaveLength(3);
+    const scorer = squadPlayers.find((player) => player.name === 'Nour Hassan')!;
+
+    // A clash anywhere in the batch writes none of it.
+    const clashing = await request('/api/v1/players/bulk', json('POST', {
+      team_id: under14.id,
+      players: [{ name: 'Farida Sami', position: 'CM', jersey_number: 8 }, { name: 'Malak Omar', position: 'CB', jersey_number: 9 }],
+    }, admin.token));
+    expect(clashing.status).toBe(409);
+    const afterClash = await (await request(`/api/v1/players?team_id=${under14.id}`, json('GET', undefined, admin.token))).json<{ total: number }>();
+    expect(afterClash.total).toBe(3);
+
+    // Free text is no longer a position.
+    const prose = await request('/api/v1/players', json('POST', { name: 'Yara Nabil', team_id: under14.id, position: 'Goalkeeper' }, admin.token));
+    expect(prose.status).toBe(422);
+
+    // She scores twice for the U14s.
+    const match = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: under14.id, away_team_id: opponent.id, kickoff_datetime: now, venue: 'AIMZ Ground', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    await request(`/api/v1/matches/${match.id}/lineup`, json('PUT', [{ player_id: scorer.id, team_id: under14.id, is_starter: true, position: 'ST' }], admin.token));
+    await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action: 'start_match' }, admin.token));
+    for (const minute of [12, 40]) {
+      const goal = await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'goal', minute, team_id: under14.id, player_id: scorer.id, client_operation_id: `u14-goal-${minute}` }, admin.token));
+      expect(goal.status).toBe(201);
+    }
+    await request(`/api/v1/matches/${match.id}/player-stats`, json('PUT', [{ player_id: scorer.id, appeared: true, minutes_played: 90 }], admin.token));
+    for (const action of ['halftime', 'start_second_half', 'finish_match']) {
+      await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action }, admin.token));
+    }
+
+    const asU14 = await (await request('/api/v1/stats/leaders?metric=goals&age_group=U14', json('GET', undefined, admin.token))).json<{ player: { id: string }; goals: number; team: { id: string } }[]>();
+    expect(asU14).toMatchObject([{ player: { id: scorer.id }, goals: 2, team: { id: under14.id } }]);
+
+    // She is promoted to the U16s in September.
+    expect((await request(`/api/v1/players/${scorer.id}`, json('PATCH', { team_id: under16.id }, admin.token))).status).toBe(200);
+
+    // Her U14 goals stay U14 goals, and do not follow her up an age group.
+    const stillU14 = await (await request('/api/v1/stats/leaders?metric=goals&age_group=U14', json('GET', undefined, admin.token))).json<{ player: { id: string }; goals: number; team: { id: string } }[]>();
+    expect(stillU14).toMatchObject([{ player: { id: scorer.id }, goals: 2, team: { id: under14.id } }]);
+    expect(await (await request('/api/v1/stats/leaders?metric=goals&age_group=U16', json('GET', undefined, admin.token))).json()).toEqual([]);
+
+    // The profile names the opponent for a match played with a squad she has
+    // left, and reports what she has reached along the way.
+    const profile = await (await request(`/api/v1/players/${scorer.id}/stats`, json('GET', undefined, admin.token))).json<{
+      goals: number;
+      seasons: string[];
+      milestones: { reached: { id: string }[] };
+      matches: { opponent: { id: string }; team: { id: string } }[];
+    }>();
+    expect(profile.goals).toBe(2);
+    expect(profile.seasons).toEqual(['2026/27']);
+    expect(profile.matches[0]?.opponent.id).toBe(opponent.id);
+    expect(profile.matches[0]?.team.id).toBe(under14.id);
+    expect(profile.milestones.reached.map((item) => item.id)).toEqual(expect.arrayContaining(['first-goal', 'first-appearance']));
+
+    // And her honours name the squad she won them with, marked final because
+    // every match in the competition has been played.
+    const honours = await (await request(`/api/v1/players/${scorer.id}/honours`, json('GET', undefined, admin.token))).json<{
+      honours: { metric: string; is_final: boolean; team: { id: string } }[];
+    }>();
+    expect(honours.honours.find((item) => item.metric === 'goals')).toMatchObject({ is_final: true, team: { id: under14.id } });
   });
 });

@@ -1,5 +1,6 @@
 import type { Context, Hono } from "hono";
 import { generationStatements, groupSizeOf, knockoutShape } from "./knockout";
+import { POSITION_CODES } from "./positions";
 import {
   ApiProblem,
   adminUser,
@@ -15,7 +16,7 @@ import {
   publicTeam,
   stringField,
 } from "./helpers";
-import type { CompetitionRow, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
+import type { CompetitionRow, JsonObject, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
 import { MatchPhaseTransitionError, transitionLegacyStatus } from "./match-clock";
 import { isOpponentOnly } from "./scoring-rules";
 
@@ -245,17 +246,72 @@ export function registerDomainRoutes(app: App): void {
   });
   app.post("/api/v1/players", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const now = nowIso();
-    const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: stringField(body, "position", { min: 1, max: 60 })!, jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, photo_key: stringField(body, "photo_key", { optional: true, nullable: true, max: 512 }) ?? null, date_of_birth: null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
+    const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: enumField(body, "position", POSITION_CODES), jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, photo_key: stringField(body, "photo_key", { optional: true, nullable: true, max: 512 }) ?? null, date_of_birth: null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
     await requireTeam(c.env, player.team_id);
     try { await c.env.DB.prepare("INSERT INTO players (id, name, team_id, position, jersey_number, photo_key, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, now, now).run(); }
     catch { throw new ApiProblem(409, "jersey_conflict", "That jersey number is already used by this team."); }
     return c.json(publicPlayer(player), 201);
   });
+
+  /**
+   * A whole squad in one go.
+   *
+   * Entering twenty players through the single-player form is the longest job in
+   * the app. Every row is validated before anything is written, and the writes
+   * go in one batch, so a jersey clash on row eighteen cannot leave seventeen
+   * players behind for an admin to find and clean up. Same shape as
+   * `PUT /players/:id/contacts`.
+   */
+  app.post("/api/v1/players/bulk", async (c) => {
+    await adminUser(c);
+    const body = await jsonObject(c);
+    const teamId = stringField(body, "team_id", { min: 1, max: 36 })!;
+    await requireTeam(c.env, teamId);
+    if (!Array.isArray(body.players) || !body.players.length) {
+      throw new ApiProblem(422, "validation_error", "Add at least one player.", [{ field: "players", message: "Add at least one player." }]);
+    }
+    if (body.players.length > 60) {
+      throw new ApiProblem(422, "validation_error", "Add up to 60 players at a time.", [{ field: "players", message: "Add up to 60 players at a time." }]);
+    }
+    const now = nowIso();
+    // Numbers already taken in this squad, so a clash is reported against the
+    // row that caused it rather than surfacing as an opaque constraint failure.
+    const existing = await c.env.DB.prepare("SELECT jersey_number FROM players WHERE team_id = ? AND jersey_number IS NOT NULL").bind(teamId).all<{ jersey_number: number }>();
+    const taken = new Set(existing.results.map((row) => row.jersey_number));
+    const players = body.players.map((value, index) => {
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        throw new ApiProblem(422, "validation_error", `Check row ${index + 1}.`, [{ field: `players.${index}`, message: "Each row must name a player." }]);
+      }
+      const item = value as JsonObject;
+      const jersey = numberField(item, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null;
+      if (jersey !== null && taken.has(jersey)) {
+        throw new ApiProblem(409, "jersey_conflict", `Number ${jersey} is already used in this squad.`, [{ field: `players.${index}.jersey_number`, message: `Number ${jersey} is already taken.` }]);
+      }
+      if (jersey !== null) taken.add(jersey);
+      return {
+        id: crypto.randomUUID(),
+        name: stringField(item, "name", { min: 2, max: 160 })!,
+        team_id: teamId,
+        position: enumField(item, "position", POSITION_CODES),
+        jersey_number: jersey,
+        photo_key: null,
+        date_of_birth: null,
+        is_active: 1,
+        created_at: now,
+        updated_at: now,
+      } satisfies PlayerRow;
+    });
+    await c.env.DB.batch(players.map((player) => c.env.DB
+      .prepare("INSERT INTO players (id, name, team_id, position, jersey_number, photo_key, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, now, now)));
+    return c.json(players.map(publicPlayer), 201);
+  });
+
   app.patch("/api/v1/players/:id", async (c) => {
     await adminUser(c); const body = await jsonObject(c);
     const current = await c.env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(c.req.param("id")).first<PlayerRow>(); if (!current) throw new ApiProblem(404, "player_not_found", "Player not found.");
     const teamId = stringField(body, "team_id", { optional: true, min: 1, max: 36 }) ?? current.team_id; await requireTeam(c.env, teamId);
-    const player: PlayerRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, team_id: teamId, position: stringField(body, "position", { optional: true, min: 1, max: 60 }) ?? current.position, jersey_number: body.jersey_number === undefined ? current.jersey_number : numberField(body, "jersey_number", { nullable: true, min: 0, max: 99 }) ?? null, photo_key: optionalNullableText(body, "photo_key", current.photo_key, 512), is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active, updated_at: nowIso() };
+    const player: PlayerRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, team_id: teamId, position: body.position === undefined ? current.position : enumField(body, "position", POSITION_CODES), jersey_number: body.jersey_number === undefined ? current.jersey_number : numberField(body, "jersey_number", { nullable: true, min: 0, max: 99 }) ?? null, photo_key: optionalNullableText(body, "photo_key", current.photo_key, 512), is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active, updated_at: nowIso() };
     try { await c.env.DB.prepare("UPDATE players SET name=?, team_id=?, position=?, jersey_number=?, photo_key=?, is_active=?, updated_at=? WHERE id=?").bind(player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, player.updated_at, player.id).run(); }
     catch { throw new ApiProblem(409, "jersey_conflict", "That jersey number is already used by this team."); }
     return c.json(publicPlayer(player));

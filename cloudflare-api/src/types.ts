@@ -219,6 +219,15 @@ export interface StatRow {
   id: string;
   match_id: string;
   player_id: string;
+  /**
+   * The squad she turned out for, stamped when the statistic is saved.
+   *
+   * Not read from `players.team_id`: that is where she is *now*, so promoting
+   * someone an age group would otherwise carry last season's record with her.
+   * Null only on rows that predate this column and had no lineup to recover it
+   * from — unknown, rather than attributed to the wrong squad.
+   */
+  team_id: string | null;
   appeared: number;
   minutes_played: number;
   goals: number;
@@ -265,6 +274,8 @@ export interface StandingAccumulator {
 /** One player's season, totalled across a competition's finished matches. */
 export interface AwardTotals {
   player_id: string;
+  /** The squad the award was earned with, not the one she is on today. */
+  team_id: string | null;
   motm: number;
   goals: number;
   assists: number;

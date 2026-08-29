@@ -5,6 +5,7 @@ import { recordAudit } from "./audit";
 import { describeEvent, eventCounter, isOpponentOnly, LOGGABLE_EVENTS, PENALTY_OUTCOMES, SUBSTITUTION_REASONS } from "./scoring-rules";
 import { getJoinedMatch, joinedMatch } from "./domain";
 import { MatchPhaseTransitionError, transitionMatchPhase } from "./match-clock";
+import { POSITION_CODES } from "./positions";
 import type { CompetitionRow, EventRow, LineupRow, MatchRow, PlayerRow, StatRow, TeamRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -29,6 +30,24 @@ function requireScorable(match: { home_is_aimz: number; away_is_aimz: number }):
   if (isOpponentOnly(match.home_is_aimz, match.away_is_aimz)) {
     throw new ApiProblem(409, "opponent_only_match", "This match is between two opponent teams. Enter the final score instead.");
   }
+}
+
+/**
+ * Which squad each player turned out for in one match.
+ *
+ * The lineup is the record of it, and answers first. Anyone with a statistic
+ * but no lineup entry — minutes saved for a match nobody entered a team sheet
+ * for — falls back to the squad they are on now, which is the best available
+ * answer at the moment it is written, and is then fixed for good.
+ */
+export async function squadsForMatch(env: Env, matchId: string): Promise<Map<string, string>> {
+  const [lineup, players] = await Promise.all([
+    env.DB.prepare("SELECT player_id, team_id FROM match_lineup_entries WHERE match_id = ?").bind(matchId).all<{ player_id: string; team_id: string }>(),
+    env.DB.prepare("SELECT p.id, p.team_id FROM players p JOIN matches m ON m.id = ? WHERE p.team_id IN (m.home_team_id, m.away_team_id)").bind(matchId).all<{ id: string; team_id: string }>(),
+  ]);
+  const squads = new Map(players.results.map((row) => [row.id, row.team_id]));
+  for (const row of lineup.results) squads.set(row.player_id, row.team_id);
+  return squads;
 }
 
 export function registerMatchRoutes(app: App): void {
@@ -259,7 +278,7 @@ export function registerMatchRoutes(app: App): void {
       const playerId = stringField(item, "player_id", { min: 1, max: 36 })!; const teamId = stringField(item, "team_id", { min: 1, max: 36 })!;
       if (teamId !== match.home_team_id && teamId !== match.away_team_id) throw new ApiProblem(422, "invalid_team", "Every lineup team must be part of this match.");
       await requirePlayerOnTeam(c.env, playerId, teamId);
-      const row: LineupRow = { id: crypto.randomUUID(), match_id: match.id, player_id: playerId, team_id: teamId, is_starter: booleanField(item, "is_starter", false) ? 1 : 0, is_captain: booleanField(item, "is_captain", false) ? 1 : 0, position: stringField(item, "position", { optional: true, nullable: true, max: 60 }) ?? null, jersey_number: numberField(item, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null };
+      const row: LineupRow = { id: crypto.randomUUID(), match_id: match.id, player_id: playerId, team_id: teamId, is_starter: booleanField(item, "is_starter", false) ? 1 : 0, is_captain: booleanField(item, "is_captain", false) ? 1 : 0, position: item.position == null ? null : enumField(item, "position", POSITION_CODES), jersey_number: numberField(item, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null };
       output.push(row); statements.push(c.env.DB.prepare("INSERT INTO match_lineup_entries (id, match_id, player_id, team_id, is_starter, is_captain, position, jersey_number) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.match_id, row.player_id, row.team_id, row.is_starter, row.is_captain, row.position, row.jersey_number));
     }
     statements.push(c.env.DB.prepare("UPDATE matches SET revision=revision+1, updated_at=? WHERE id=?").bind(nowIso(), match.id));
@@ -269,10 +288,15 @@ export function registerMatchRoutes(app: App): void {
 
   app.put("/api/v1/matches/:id/player-stats", async (c) => {
     const admin = await adminUser(c); const match = await getJoinedMatch(c.env, c.req.param("id")); requireScorable(match); const body = await jsonArray(c); const now = nowIso(); const statements = []; const playerIds: string[] = [];
+    // Which squad each player turned out for, taken from the lineup and falling
+    // back to the squad she is on now. Stamped on the statistic so a promotion
+    // to an older age group never carries this match's record with her.
+    const squadOf = await squadsForMatch(c.env, match.id);
     for (const item of body) {
       const playerId = stringField(item, "player_id", { min: 1, max: 36 })!; playerIds.push(playerId);
       const appeared = booleanField(item, "appeared") ? 1 : 0; const minutes = numberField(item, "minutes_played", { min: 0, max: 150 })!;
-      statements.push(c.env.DB.prepare(`INSERT INTO player_match_stats (id, match_id, player_id, appeared, minutes_played, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(match_id, player_id) DO UPDATE SET appeared=excluded.appeared, minutes_played=excluded.minutes_played, updated_at=excluded.updated_at`).bind(crypto.randomUUID(), match.id, playerId, appeared, minutes, now, now));
+      const teamId = squadOf.get(playerId) ?? null;
+      statements.push(c.env.DB.prepare(`INSERT INTO player_match_stats (id, match_id, player_id, team_id, appeared, minutes_played, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(match_id, player_id) DO UPDATE SET team_id=excluded.team_id, appeared=excluded.appeared, minutes_played=excluded.minutes_played, updated_at=excluded.updated_at`).bind(crypto.randomUUID(), match.id, playerId, teamId, appeared, minutes, now, now));
     }
     statements.push(c.env.DB.prepare("UPDATE matches SET revision=revision+1, updated_at=? WHERE id=?").bind(now, match.id));
     statements.push(recordAudit(c.env, admin, { action: "minutes_saved", entityType: "player_stats", entityId: match.id, matchId: match.id, summary: `Saved minutes for ${playerIds.length} players.` }));

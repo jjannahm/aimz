@@ -1,6 +1,16 @@
 import type { EventRow, LineupRow } from "./types";
 
 /**
+ * The goalkeeper's position code.
+ *
+ * Spelled here rather than imported: this file is unit tested directly, and a
+ * runtime relative import cannot be resolved by Node's type stripping. It is
+ * `GOALKEEPER` in ./positions, which owns the vocabulary, and a test in
+ * goalkeeping.test.ts holds the two together.
+ */
+const GOALKEEPER = "GK";
+
+/**
  * What a goalkeeper is answerable for in one match.
  *
  * These belong to the keeper who was on the pitch when it happened, which is
@@ -14,10 +24,15 @@ export interface GoalkeeperMatchStats {
   clean_sheet: number;
 }
 
-/** Positions are free text, so recognise a keeper the way the app's pitch does. */
+/**
+ * Whether this is the goalkeeper's position.
+ *
+ * Positions used to be free text, so this had to recognise a keeper from
+ * whatever prose had been typed, and agree with the app about it. They are a
+ * fixed vocabulary now, so it is simply the one code.
+ */
 export function isGoalkeeper(position: string | null): boolean {
-  const value = (position ?? "").trim().toLowerCase();
-  return value.startsWith("goal") || value === "gk";
+  return position === GOALKEEPER;
 }
 
 type Spell = { playerId: string; from: number; to: number | null };
