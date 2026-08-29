@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User } from '@/src/types/api';
+import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -213,6 +213,8 @@ export const api = {
     }),
   me: () => request<User>('/api/v1/users/me'),
   updateMe: (name: string) => request<User>('/api/v1/users/me', { method: 'PATCH', body: { name } }),
+  calendarFeed: () => request<CalendarFeed>('/api/v1/users/me/calendar'),
+  regenerateCalendarFeed: () => request<CalendarFeed>('/api/v1/users/me/calendar/regenerate', { method: 'POST', body: {} }),
   changePassword: (current_password: string, new_password: string) =>
     request<{ message: string }>('/api/v1/auth/password/change', {
       method: 'POST', body: { current_password, new_password },

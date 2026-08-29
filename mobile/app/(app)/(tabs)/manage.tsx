@@ -16,7 +16,9 @@ import { SeasonControls } from '@/src/components/manage/SeasonControls';
 import { ChoiceField } from '@/src/components/ChoiceField';
 import { CollapsibleSection } from '@/src/components/CollapsibleSection';
 import { DateTimeField } from '@/src/components/DateTimeField';
+import { FamilyIcon } from '@/src/components/FamilyIcon';
 import { FormField } from '@/src/components/FormField';
+import { PlayerPickerField } from '@/src/components/PlayerPickerField';
 import { PositionField } from '@/src/components/PositionField';
 import { BulkPlayerImport } from '@/src/components/manage/BulkPlayerImport';
 import { AnnouncementsManager, ScheduleManager } from '@/src/components/manage/HubManagers';
@@ -29,7 +31,7 @@ import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { confirmManageSave, confirmManageWrite, type ManageEntity } from '@/src/lib/manageToasts';
 import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
-import { useThemedStyles } from '@/src/theme/ThemeProvider';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { ADVANCE_PER_GROUP, describeCustomDraw, EXTRA_TIME_PERIODS, GROUP_SIZE, isKnockout, KNOCKOUT_TEAM_COUNTS, totalMatchMinutes } from '@/src/types/api';
 import type { BadgeStyle, Competition, InviteKind, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
 
@@ -209,6 +211,7 @@ function MatchLengthSummary({ control }: { control: Control<Values> }) {
 }
 
 export default function ManageScreen() {
+  const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const { user } = useAuth();
   const client = useQueryClient();
@@ -385,7 +388,7 @@ export default function ManageScreen() {
       {resource === 'players' ? <BulkPlayerImport teams={allTeams} /> : null}
       {resource === 'competitions' ? <SeasonControls competitions={competitions.data?.items ?? []} /> : null}
       {query.isError ? <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} /> : <CollapsibleSection count={items.length} title={`Current ${resources.find((item) => item.value === resource)?.label.toLowerCase()}`}>
-        {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text></View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'kickoff_datetime' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={!item.home_team?.is_aimz && !item.away_team?.is_aimz ? (item.status === 'finished' ? 'Edit final score' : 'Enter final score') : (item.status === 'scheduled' ? 'Start' : 'Score')} onPress={() => router.push({ pathname: !item.home_team?.is_aimz && !item.away_team?.is_aimz ? '/result/[id]' : '/live/[id]', params: { id: item.id } })} variant="secondary" /> : null}{resource === 'players' ? <AppButton compact icon="list" iconOnly label="Private roster details" onPress={() => router.push({ pathname: '/roster/[id]', params: { id: item.id } })} variant="secondary" /> : null}{appConfig.enableMedia && resource === 'teams' ? <AppButton compact icon="camera" iconOnly label="Photo" onPress={() => uploadPhoto(item as Team, 'team')} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => remove(item)} variant="danger" /></View></View>)}</View>}
+      {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text></View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'kickoff_datetime' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={!item.home_team?.is_aimz && !item.away_team?.is_aimz ? (item.status === 'finished' ? 'Edit final score' : 'Enter final score') : (item.status === 'scheduled' ? 'Start' : 'Score')} onPress={() => router.push({ pathname: !item.home_team?.is_aimz && !item.away_team?.is_aimz ? '/result/[id]' : '/live/[id]', params: { id: item.id } })} variant="secondary" /> : null}{resource === 'players' ? <AppButton compact icon={<FamilyIcon color={colors.textPrimary} />} iconOnly label="Private roster details" onPress={() => router.push({ pathname: '/roster/[id]', params: { id: item.id } })} variant="secondary" /> : null}{appConfig.enableMedia && resource === 'teams' ? <AppButton compact icon="camera" iconOnly label="Photo" onPress={() => uploadPhoto(item as Team, 'team')} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => remove(item)} variant="danger" /></View></View>)}</View>}
       </CollapsibleSection>}
     </View>
   </Screen>;
@@ -394,26 +397,28 @@ export default function ManageScreen() {
 
 /**
  * Who an invitation is for, which every invitation now names. A player
- * invitation is for one person; a parent may have several children here, so
- * that choice is a list of toggles rather than a dropdown.
+ * invitation is for one person; a parent may have several children here.
+ * Both use the same searchable control, in single- and multi-select modes.
  */
 function InvitePlayers({ control, players, setValue }: { control: any; players: Player[]; setValue: any }) {
   const kind = useWatch({ control, name: 'inviteKind' }) as InviteKind;
   const raw = (useWatch({ control, name: 'invitePlayerIds' }) as string) || '';
   const styles = useThemedStyles(stylesheet);
   const chosen = raw.split(',').filter(Boolean);
-  if (kind !== 'parent') {
-    return <><Controller control={control} name="invitePlayerIds" render={({ field }) => <ChoiceField label="Player" onChange={field.onChange} options={players.map((player) => ({ label: player.name, value: player.id }))} value={field.value} />} /><Text style={styles.pickerNote}>A player invitation can be used once, and links the new account to this roster record.</Text></>;
-  }
-  const toggle = (id: string) => setValue('invitePlayerIds', (chosen.includes(id) ? chosen.filter((value: string) => value !== id) : [...chosen, id]).join(','));
-  return <><Text style={styles.lockedLabel}>Children</Text>
-    <View style={styles.pickList}>{players.map((player) => {
-      const picked = chosen.includes(player.id);
-      return <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: picked }} key={player.id} onPress={() => toggle(player.id)} style={({ pressed }) => [styles.pickRow, picked && styles.pickRowOn, pressed && styles.pressed]}>
-        <Text style={[styles.pickName, picked && styles.pickNameOn]}>{player.name}</Text>
-      </Pressable>;
-    })}</View>
-    <Text style={styles.pickerNote}>{chosen.length ? `${chosen.length} child${chosen.length === 1 ? '' : 'ren'} selected. ` : ''}A parent account sees each child's stats, and the schedule and announcements of every squad they are on.</Text></>;
+  const parent = kind === 'parent';
+  return <>
+    <PlayerPickerField
+      label={parent ? 'Children' : 'Player'}
+      onChange={(playerIds) => setValue('invitePlayerIds', playerIds.join(','))}
+      placeholder={parent ? 'Choose children' : 'Choose a player'}
+      players={players}
+      selectedIds={chosen}
+      selectionMode={parent ? 'multiple' : 'single'}
+    />
+    <Text style={styles.pickerNote}>{parent
+      ? `${chosen.length ? `${chosen.length} child${chosen.length === 1 ? '' : 'ren'} selected. ` : ''}A parent account sees each child's stats, and the schedule and announcements of every squad they are on.`
+      : 'A player invitation can be used once, and links the new account to this roster record.'}</Text>
+  </>;
 }
 
 function ResourceFields({ control, resource, setValue, teams, competitions, editingId, players }: { control: any; errors: any; resource: LegacyResource; setValue: any; teams: Team[]; competitions: Competition[]; editingId: string | null; players: Player[] }) {
@@ -462,6 +467,6 @@ function BadgeChoice({ control, isAimz }: { control: Control<Values>; isAimz: bo
 
 function entityMeta(item: Entity) { if ('home_team_id' in item) return `${item.status.toUpperCase()} · ${formatEgyptDateTime(item.kickoff_datetime)}`; if ('position' in item) return `${item.position} · #${item.jersey_number ?? '–'}`; if ('use_count' in item) { const who = item.players?.length ? item.players.map((player) => player.name).join(', ') : 'No one linked'; return `${item.kind === 'parent' ? 'Parent' : 'Player'} · ${who} · ${item.is_active ? 'Active' : 'Revoked'} · ${item.use_count} uses`; } if ('is_aimz' in item) return item.squad_code ?? (item.is_aimz ? [item.age_group, item.squad_code, item.season].filter(Boolean).join(' · ') || 'AIMZ squad' : 'Opponent club'); return `${item.type} · ${item.season}`; }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ content: { gap: theme.spacing.lg }, groupList: { gap: theme.spacing.md }, groupsHeading: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' }, groupCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md }, groupHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, groupTitle: { color: colors.textPrimary, fontWeight: '900' }, groupCount: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800' }, groupCountFull: { color: colors.accentSoft }, groupTeam: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.sm, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 44, paddingLeft: theme.spacing.md, paddingRight: theme.spacing.xs }, groupTeamName: { color: colors.textPrimary, flex: 1, fontWeight: '700' }, lockedField: { gap: theme.spacing.xs }, lockedLabel: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' }, lockedValue: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: colors.textMuted, minHeight: 52, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md }, pickerNote: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, color: colors.textSecondary, fontSize: theme.type.label, lineHeight: 20, padding: theme.spacing.md }, editingBanner: { alignItems: 'center', backgroundColor: colors.highlightedSurface, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs }, editingText: { color: colors.textPrimary, flex: 1, fontWeight: '800' }, summary: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, pickList: { gap: theme.spacing.xs }, pickRow: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, pickRowOn: { backgroundColor: colors.accent, borderColor: colors.accent }, pickName: { color: colors.textPrimary, flex: 1, fontWeight: '700' }, pickNameOn: { color: colors.onAccent, fontWeight: '900' }, /* The grid reaches past the page's own padding, for the width it buys the
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ content: { gap: theme.spacing.lg }, groupList: { gap: theme.spacing.md }, groupsHeading: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' }, groupCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md }, groupHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, groupTitle: { color: colors.textPrimary, fontWeight: '900' }, groupCount: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800' }, groupCountFull: { color: colors.accentSoft }, groupTeam: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.sm, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 44, paddingLeft: theme.spacing.md, paddingRight: theme.spacing.xs }, groupTeamName: { color: colors.textPrimary, flex: 1, fontWeight: '700' }, lockedField: { gap: theme.spacing.xs }, lockedLabel: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' }, lockedValue: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: colors.textMuted, minHeight: 52, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md }, pickerNote: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, color: colors.textSecondary, fontSize: theme.type.label, lineHeight: 20, padding: theme.spacing.md }, editingBanner: { alignItems: 'center', backgroundColor: colors.highlightedSurface, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs }, editingText: { color: colors.textPrimary, flex: 1, fontWeight: '800' }, summary: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, /* The grid reaches past the page's own padding, for the width it buys the
      longest of the labels. */
   chips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -theme.spacing.md }, chipCell: { flexBasis: '25%', flexShrink: 1, minWidth: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.xs }, chip: { flex: 1, paddingVertical: theme.spacing.xs }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, formCard: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.lg }, heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, /* The card gaps its fields by `md`; the extra `sm` sets the submit row apart from the last field. Kept in step with `formActions` on the hub managers. */ actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs } });

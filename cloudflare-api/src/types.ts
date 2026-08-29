@@ -106,6 +106,13 @@ export interface PlayerRow {
   updated_at: string;
 }
 
+export interface CalendarTokenRow {
+  user_id: string;
+  token: string;
+  created_at: string;
+  first_fetched_at: string | null;
+}
+
 export interface TrainingRow {
   id: string;
   team_id: string;

@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import type { ReactNode } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, type ViewStyle } from 'react-native';
 
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 type Props = {
   label: string;
@@ -14,7 +16,7 @@ type Props = {
   disabled?: boolean;
   compact?: boolean;
   /** Glyph shown alongside — or instead of — the label. */
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IoniconName | ReactNode;
   /** Renders the icon alone in a square. `label` still names it for screen readers. */
   iconOnly?: boolean;
   /**
@@ -49,6 +51,9 @@ export function AppButton({
   const styles = useThemedStyles(stylesheet);
   const ink = tint ? tint.ink : inkFor(colors)[variant];
   const showIconOnly = iconOnly && icon !== undefined;
+  const renderedIcon = typeof icon === 'string'
+    ? <Ionicons accessibilityElementsHidden color={ink} name={icon as IoniconName} size={20} />
+    : icon;
   return (
     <Pressable
       accessibilityLabel={label}
@@ -70,10 +75,10 @@ export function AppButton({
       {loading ? (
         <ActivityIndicator color={ink} />
       ) : showIconOnly ? (
-        <Ionicons accessibilityElementsHidden color={ink} name={icon} size={20} />
+        renderedIcon
       ) : (
         <>
-          {icon ? <Ionicons accessibilityElementsHidden color={ink} name={icon} size={18} /> : null}
+          {renderedIcon}
           <Text style={[styles.label, styles[`${variant}Label`], tint ? { color: ink } : null]}>{label}</Text>
         </>
       )}
