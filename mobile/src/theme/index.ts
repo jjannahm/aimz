@@ -3,8 +3,9 @@ import type { ViewStyle } from 'react-native';
 export const palette = {
   ink: '#08080C',
   paper: '#F5F2EA',
-  lime: '#CBFF32',
-  olive: '#3F5700',
+  blue: '#3B82F6',
+  skyBlue: '#0EA2E7',
+  deepBlue: '#1E40AF',
   magenta: '#E1306C',
   orange: '#F77737',
   yellow: '#FCAF45',
@@ -13,14 +14,14 @@ export const palette = {
   red: '#EF4444',
 } as const;
 
-/** AIMZ editorial dark mode: warm ink, flat cards, and one high-energy accent. */
+/** AIMZ editorial dark mode: warm ink, flat cards, and the academy blue. */
 const dark = {
   background: '#08080C',
   surface: '#121216',
   surfaceRaised: '#1A1A20',
   border: '#2C2B32',
-  accent: '#CBFF32',
-  accentSoft: '#CBFF32',
+  accent: palette.blue,
+  accentSoft: palette.skyBlue,
   selectionSurface: '#1A1A20',
   onAccent: '#08080C',
   textPrimary: '#F5F2EA',
@@ -36,8 +37,8 @@ const dark = {
   errorSurface: '#7F1D1D',
   errorText: '#FCA5A5',
   onError: '#F8FAFC',
-  leaderSurface: '#202412',
-  leaderAccent: '#CBFF32',
+  leaderSurface: '#1A1A20',
+  leaderAccent: palette.blue,
   progressTrack: '#2C2B32',
   highlightedSurface: '#1A1A20',
 } as const;
@@ -52,8 +53,8 @@ export const lightColors: ThemeColors = {
   surface: '#FBFAF5',
   surfaceRaised: '#E6E2D8',
   border: '#CBC7BD',
-  accent: '#B8EB32',
-  accentSoft: '#3F5700',
+  accent: palette.blue,
+  accentSoft: palette.deepBlue,
   selectionSurface: '#E6E2D8',
   onAccent: '#08080C',
   textPrimary: '#111114',
@@ -69,8 +70,8 @@ export const lightColors: ThemeColors = {
   errorSurface: '#E7000A',
   errorText: '#991B1B',
   onError: '#FFFFFF',
-  leaderSurface: '#EDF7CD',
-  leaderAccent: '#3F5700',
+  leaderSurface: '#E7EDF6',
+  leaderAccent: palette.deepBlue,
   progressTrack: '#CBC7BD',
   highlightedSurface: '#E6E2D8',
 };
