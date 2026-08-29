@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render } from '@testing-library/react-native';
+import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import PlayerDetailScreen from '@/app/(app)/player/[id]';
@@ -102,18 +102,32 @@ describe('PlayerDetailScreen', () => {
     expect(screen.getByText(/AIMZ U14 · 90 min/u)).toBeTruthy();
   });
 
-  it('offers a season switcher once there is more than one season', async () => {
+  // The same control a player gets over their own stats, so both read the
+  // same way and say the same words.
+  it('reads every season until one is chosen', async () => {
     const screen = await render(<PlayerDetailScreen />, { wrapper });
-    expect(await screen.findByRole('tab', { name: 'Career' })).toBeTruthy();
-    await fireEvent.press(screen.getByRole('tab', { name: '2025/26' }));
-    expect(api.playerStats).toHaveBeenCalledWith('p-1', '2025/26');
+    expect(await screen.findByLabelText('Season All stats')).toBeTruthy();
+    expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
+
+    fireEvent.press(screen.getByTestId('season-picker'));
+    fireEvent.press(await screen.findByTestId('season-option-2025/26'));
+
+    await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-1', '2025/26'));
   });
 
-  it('leaves the switcher out for a player with a single season', async () => {
+  it('offers the filter to a player with a single season on record', async () => {
     jest.mocked(api.playerStats).mockResolvedValue(summary({ seasons: ['2026/27'] }));
     const screen = await render(<PlayerDetailScreen />, { wrapper });
     expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
-    expect(screen.queryByRole('tab', { name: 'Career' })).toBeNull();
+    expect(screen.getByTestId('season-picker')).toBeTruthy();
+  });
+
+  // Nothing to filter, so nothing is drawn.
+  it('leaves the filter out for a player with no season on record', async () => {
+    jest.mocked(api.playerStats).mockResolvedValue(summary({ seasons: [] }));
+    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('season-picker')).toBeNull();
   });
 
   it('explains the empty profile of someone who has not played yet', async () => {

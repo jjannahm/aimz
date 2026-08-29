@@ -11,10 +11,10 @@ export function LoadingState({ label = 'Loading' }: { label?: string }) {
   return <View accessibilityLiveRegion="polite" style={styles.box}><ActivityIndicator color={colors.accent} /><Text style={styles.body}>{label}</Text></View>;
 }
 
-export function EmptyState({ title, body }: { title: string; body: string }) {
+export function EmptyState({ title, body, icon = 'football-outline' }: { title: string; body: string; icon?: keyof typeof Ionicons.glyphMap }) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
-  return <View style={styles.box}><Ionicons color={colors.textMuted} name="football-outline" size={32} /><Text style={styles.title}>{title}</Text><Text style={styles.body}>{body}</Text></View>;
+  return <View style={styles.box}><Ionicons color={colors.textMuted} name={icon} size={32} /><Text style={styles.title}>{title}</Text><Text style={styles.body}>{body}</Text></View>;
 }
 
 export function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
