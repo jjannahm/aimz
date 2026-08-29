@@ -304,3 +304,57 @@ describe('LiveScoringScreen — who can be substituted', () => {
     expect(screen.queryByText('#9 Nour Hassan')).toBeNull();
   });
 });
+
+
+const onPitch = { id: 'p-on', name: 'Aya Nabil', team_id: 'home', position: 'Defender', jersey_number: 6, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' };
+const benched = { id: 'p-off', name: 'Hana Saleh', team_id: 'home', position: 'Forward', jersey_number: 18, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' };
+const named = (playerId: string, isStarter: boolean) => ({ player_id: playerId, team_id: 'home', is_starter: isStarter, is_captain: false, position: null, jersey_number: null });
+
+describe('LiveScoringScreen — who can be credited with an assist', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [onPitch, benched], total: 2, limit: 100, offset: 0 });
+    jest.mocked(api.live).mockResolvedValue({
+      ...snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:40:00.000Z' }),
+      lineup: [named(onPitch.id, true), named(benched.id, false)],
+    } as LiveMatchSnapshot);
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-20T18:40:00.000Z'));
+  });
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks(); });
+
+  // An assist can only come from someone who was actually playing, so the
+  // dropdown offers the pitch rather than the whole squad.
+  it('offers only the players on the pitch, not the rest of the squad', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Assisted by (optional)'));
+
+    expect(await screen.findByText(`#${onPitch.jersey_number} ${onPitch.name}`)).toBeTruthy();
+    expect(screen.queryByText(`#${benched.jersey_number} ${benched.name}`)).toBeNull();
+  });
+
+  // A goal cannot be scored by someone sitting on the bench either.
+  it('offers only the players on the pitch as the scorer', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Scorer'));
+
+    expect(await screen.findByText(`#${onPitch.jersey_number} ${onPitch.name}`)).toBeTruthy();
+    expect(screen.queryByText(`#${benched.jersey_number} ${benched.name}`)).toBeNull();
+  });
+
+  it('keeps a way to record a goal with no assist at all', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Assisted by (optional)'));
+
+    expect(await screen.findByText('No assist')).toBeTruthy();
+  });
+
+  // The empty rows used to read as if they were people; the muted placeholder
+  // says the same thing without sitting in the list of names.
+  it('drops the placeholder rows from the substitution pickers', async () => {
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByText('Sub'));
+    await screen.findByText('Coming on');
+
+    expect(screen.queryByText('Nobody on the bench')).toBeNull();
+    expect(screen.queryByText('Nobody on the pitch')).toBeNull();
+  });
+});
