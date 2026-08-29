@@ -11,6 +11,7 @@ import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
+import type { PressState } from '@/src/lib/pressState';
 import { oneDecimal, percent, playedMatches, summarise, type PlayedMatch, type TeamSummary } from '@/src/lib/teamRecord';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -83,7 +84,7 @@ function RecentColumn({ team, played }: { team: Team; played: PlayedMatch[] }) {
         accessibilityRole="button"
         key={entry.match.id}
         onPress={() => router.push({ pathname: '/match/[id]', params: { id: entry.match.id } })}
-        style={({ pressed, hovered }) => [styles.recentRow, hovered && styles.hovered, pressed && styles.pressed]}
+        style={({ pressed, hovered }: PressState) => [styles.recentRow, hovered && styles.hovered, pressed && styles.pressed]}
       >
         <View style={[styles.resultFlag, { backgroundColor: tint }]}><Text style={styles.resultLetter}>{entry.result}</Text></View>
         <Text numberOfLines={1} style={styles.recentOpponent}>{entry.opponent?.name ?? 'Opponent'}</Text>
@@ -174,7 +175,7 @@ export default function CompareTeamsScreen() {
             accessibilityRole="button"
             key={meeting.match_id}
             onPress={() => router.push({ pathname: '/match/[id]', params: { id: meeting.match_id } })}
-            style={({ pressed, hovered }) => [styles.meeting, hovered && styles.hovered, pressed && styles.pressed]}
+            style={({ pressed, hovered }: PressState) => [styles.meeting, hovered && styles.hovered, pressed && styles.pressed]}
           >
             <Text numberOfLines={1} style={styles.meetingTitle}>{meeting.home_team?.name} {meeting.home_score}–{meeting.away_score} {meeting.away_team?.name}</Text>
             <Text style={styles.meetingDate}>{formatEgyptDateTime(meeting.kickoff_datetime)}</Text>

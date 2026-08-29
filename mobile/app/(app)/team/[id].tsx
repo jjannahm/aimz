@@ -13,6 +13,7 @@ import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
+import type { PressState } from '@/src/lib/pressState';
 import { oneDecimal, ordinal, percent, playedMatches, summarise, upcomingMatches, type PlayedMatch } from '@/src/lib/teamRecord';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -48,7 +49,7 @@ function ResultRow({ entry }: { entry: PlayedMatch }) {
     accessibilityLabel={`${said} ${entry.scored} ${entry.conceded} against ${entry.opponent?.name ?? 'an opponent'}`}
     accessibilityRole="button"
     onPress={() => router.push({ pathname: '/match/[id]', params: { id: entry.match.id } })}
-    style={({ pressed, hovered }) => [styles.match, hovered && styles.hovered, pressed && styles.pressed]}
+    style={({ pressed, hovered }: PressState) => [styles.match, hovered && styles.hovered, pressed && styles.pressed]}
   >
     <View style={[styles.resultFlag, { backgroundColor: tint }]}><Text style={styles.resultLetter}>{entry.result}</Text></View>
     <TeamAvatar badgeStyle={entry.opponent?.badge_style} isAimz={Boolean(entry.opponent?.is_aimz)} logoUrl={entry.opponent?.logo_url ?? null} name={entry.opponent?.name ?? '?'} size={28} />
@@ -92,7 +93,7 @@ function Squad({ teamId }: { teamId: string }) {
         accessibilityRole="button"
         key={player.id}
         onPress={() => router.push({ pathname: '/player/[id]', params: { id: player.id } })}
-        style={({ pressed, hovered }) => [styles.player, Boolean(index) && styles.divided, hovered && styles.hovered, pressed && styles.pressed]}
+        style={({ pressed, hovered }: PressState) => [styles.player, Boolean(index) && styles.divided, hovered && styles.hovered, pressed && styles.pressed]}
       >
         <Text style={styles.shirt}>{player.jersey_number ?? '–'}</Text>
         <View style={styles.matchCopy}>
@@ -169,7 +170,7 @@ function HeadToHeadSection({ team, table }: { team: Team; table: StandingRow[] }
           accessibilityRole="button"
           key={meeting.match_id}
           onPress={() => router.push({ pathname: '/match/[id]', params: { id: meeting.match_id } })}
-          style={({ pressed, hovered }) => [styles.player, styles.divided, hovered && styles.hovered, pressed && styles.pressed]}
+          style={({ pressed, hovered }: PressState) => [styles.player, styles.divided, hovered && styles.hovered, pressed && styles.pressed]}
         >
           <View style={styles.matchCopy}>
             <Text numberOfLines={1} style={styles.matchTitle}>{meeting.home_team?.name} {meeting.home_score}–{meeting.away_score} {meeting.away_team?.name}</Text>

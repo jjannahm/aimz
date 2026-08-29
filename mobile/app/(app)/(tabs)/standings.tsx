@@ -16,6 +16,7 @@ import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { invalidateAfterWrite } from '@/src/lib/cache';
+import type { PressState } from '@/src/lib/pressState';
 import { showMessage } from '@/src/lib/platformAlert';
 import { isKnockout, type BracketSlot, type FormResult, type StandingRow } from '@/src/types/api';
 
@@ -163,7 +164,7 @@ export default function StandingsScreen() {
       </View>
       {rows.map((row: StandingRow, index: number) => <View key={row.team.id} style={[styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, comparing === row.team.id && styles.comparingRow]}>
         {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
-        <Pressable accessibilityHint="Opens this team's profile" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" onPress={() => router.push({ pathname: '/team/[id]', params: { id: row.team.id } })} style={({ pressed, hovered }) => [styles.rowTap, hovered && styles.hoveredRow, pressed && styles.pressed]}>
+        <Pressable accessibilityHint="Opens this team's profile" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" onPress={() => router.push({ pathname: '/team/[id]', params: { id: row.team.id } })} style={({ pressed, hovered }: PressState) => [styles.rowTap, hovered && styles.hoveredRow, pressed && styles.pressed]}>
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
           <TeamAvatar badgeStyle={row.team.badge_style} isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={32} />
