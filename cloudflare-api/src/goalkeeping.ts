@@ -67,6 +67,25 @@ function spellsFor(lineup: LineupRow[], events: EventRow[]): Spell[] {
 }
 
 /**
+ * Everyone who took the field: the starters, plus anyone brought on.
+ *
+ * This is what "appeared" means. `player_match_stats.appeared` is not it — that
+ * flag is only written when minutes are saved by hand, when an event names the
+ * player, or when goalkeeping is worked out, so a starter who did nothing
+ * notable has no row at all and reads as having never played.
+ *
+ * It lives beside the goalkeeping walk rather than in a file of its own because
+ * it is the same walk — a module that is unit tested cannot carry a runtime
+ * relative import, so the two cannot be split without duplicating it.
+ *
+ * A named substitute who never came on is excluded, which is the point: being
+ * on the team sheet is not the same as playing.
+ */
+export function playersWhoTookTheField(lineup: LineupRow[], events: EventRow[]): Set<string> {
+  return new Set(spellsFor(lineup, events).map((spell) => spell.playerId));
+}
+
+/**
  * The keeper on the pitch at a given minute.
  *
  * An event with no minute recorded is taken as having happened at the end,

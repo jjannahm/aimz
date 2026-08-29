@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { computeGoalkeeperStats, isGoalkeeper } from "./goalkeeping.ts";
+import { computeGoalkeeperStats, isGoalkeeper, playersWhoTookTheField } from "./goalkeeping.ts";
 import { GOALKEEPER, POSITIONS } from "./positions.ts";
 import type { EventRow, LineupRow } from "./types.ts";
 
@@ -82,4 +82,27 @@ test("keeps a named keeper who never came on off the record entirely", () => {
   const stats = computeGoalkeeperStats([named("gk", "GK"), named("bench", "GK", 0)], [happened({})], true);
   assert.equal(stats.get("gk")?.goals_conceded, 1);
   assert.equal(stats.has("bench"), false);
+});
+
+// The rule man-of-the-match eligibility is decided by. A quiet starter appeared,
+// even though nothing in the timeline ever names her.
+test("everyone who started took the field, whether or not they did anything", () => {
+  const onPitch = playersWhoTookTheField([named("gk", "GK"), named("quiet", "CB")], []);
+  assert.equal(onPitch.has("quiet"), true);
+  assert.equal(onPitch.size, 2);
+});
+
+test("a substitute counts once she comes on, and not before", () => {
+  const lineup = [named("starter", "ST"), named("bench", "ST", 0)];
+  assert.equal(playersWhoTookTheField(lineup, []).has("bench"), false, "named but never used");
+
+  const broughtOn = happened({ type: "substitution", minute: 60, player_id: "bench", secondary_player_id: "starter" });
+  const onPitch = playersWhoTookTheField(lineup, [broughtOn]);
+  assert.equal(onPitch.has("bench"), true);
+  // Being taken off does not undo having played.
+  assert.equal(onPitch.has("starter"), true);
+});
+
+test("nobody takes the field without a team sheet", () => {
+  assert.equal(playersWhoTookTheField([], []).size, 0);
 });

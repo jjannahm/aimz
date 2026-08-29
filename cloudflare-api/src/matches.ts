@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import { ApiProblem, adminUser, booleanField, enumField, jsonArray, jsonObject, nowIso, numberField, publicPlayer, publicStat, publicTeam, stringField } from "./helpers";
-import { computeGoalkeeperStats } from "./goalkeeping";
+import { computeGoalkeeperStats, playersWhoTookTheField } from "./goalkeeping";
 import { recordAudit } from "./audit";
 import { describeEvent, eventCounter, isOpponentOnly, LOGGABLE_EVENTS, PENALTY_OUTCOMES, SUBSTITUTION_REASONS } from "./scoring-rules";
 import { getJoinedMatch, joinedMatch } from "./domain";
@@ -30,6 +30,29 @@ function requireScorable(match: { home_is_aimz: number; away_is_aimz: number }):
   if (isOpponentOnly(match.home_is_aimz, match.away_is_aimz)) {
     throw new ApiProblem(409, "opponent_only_match", "This match is between two opponent teams. Enter the final score instead.");
   }
+}
+
+/**
+ * Whether this player took the field in this match.
+ *
+ * The team sheet is the record of who played, so it is asked first: a starter
+ * has appeared whether or not she scored, was booked, or had minutes typed in
+ * afterwards. `player_match_stats.appeared` is the second question rather than
+ * the first, because it is only written when minutes are saved by hand, when an
+ * event names the player, or when goalkeeping is worked out — so on its own it
+ * misses anyone who simply played an ordinary match, and it was the whole
+ * reason a quiet starter could not be given man of the match.
+ *
+ * Both are consulted: a match scored without a team sheet at all still has the
+ * saved minutes to go on.
+ */
+async function appearedInMatch(env: Env, matchId: string, playerId: string): Promise<boolean> {
+  const [lineup, events, recorded] = await Promise.all([
+    env.DB.prepare("SELECT * FROM match_lineup_entries WHERE match_id=?").bind(matchId).all<LineupRow>(),
+    env.DB.prepare("SELECT * FROM match_events WHERE match_id=?").bind(matchId).all<EventRow>(),
+    env.DB.prepare("SELECT id FROM player_match_stats WHERE match_id=? AND player_id=? AND appeared=1").bind(matchId, playerId).first(),
+  ]);
+  return playersWhoTookTheField(lineup.results, events.results).has(playerId) || Boolean(recorded);
 }
 
 /**
@@ -119,8 +142,7 @@ export function registerMatchRoutes(app: App): void {
     if (playerId) {
       const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(playerId).first<PlayerRow>();
       if (!player || (player.team_id !== match.home_team_id && player.team_id !== match.away_team_id)) throw new ApiProblem(422, "invalid_award_player", "That player did not play in this match.");
-      const appeared = await c.env.DB.prepare("SELECT id FROM player_match_stats WHERE match_id=? AND player_id=? AND appeared=1").bind(match.id, playerId).first();
-      if (!appeared) throw new ApiProblem(422, "player_did_not_appear", "Only a player who appeared can take the award.");
+      if (!(await appearedInMatch(c.env, match.id, playerId))) throw new ApiProblem(422, "player_did_not_appear", "Only a player who appeared can take the award.");
       name = player.name;
     }
     const updated = nowIso();

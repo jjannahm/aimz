@@ -78,6 +78,8 @@ export function BulkPlayerImport({ teams }: { teams: Team[] }) {
     onSuccess: async (created) => {
       setError(null);
       setText('');
+      // The one Manage confirmation that is not the shared wording: how many
+      // of twenty lines actually landed is the thing worth saying here.
       showToast(`Added ${created.length} ${created.length === 1 ? 'player' : 'players'}`);
       await invalidateAfterWrite(client, 'player');
     },

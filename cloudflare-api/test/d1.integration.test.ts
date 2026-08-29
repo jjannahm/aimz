@@ -278,3 +278,62 @@ describe('statistics stay with the squad they were earned for', () => {
     expect(honours.honours.find((item) => item.metric === 'goals')).toMatchObject({ is_final: true, team: { id: under14.id } });
   });
 });
+
+describe('man of the match eligibility', () => {
+  it('lets a starter who did nothing notable take the award', async () => {
+    const admin = await seedUser('admin');
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U14', is_aimz: true, age_group: 'U14' }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: 'Cairo Stars', is_aimz: false }, admin.token))).json<{ id: string }>();
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: 'Award League', season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const squadPlayers = await (await request('/api/v1/players/bulk', json('POST', {
+      team_id: squad.id,
+      players: [
+        { name: 'Nour Hassan', position: 'ST', jersey_number: 9 },
+        { name: 'Salma Adel', position: 'CB', jersey_number: 4 },
+        { name: 'Habiba Tarek', position: 'CM', jersey_number: 8 },
+        { name: 'Malak Omar', position: 'RW', jersey_number: 11 },
+      ],
+    }, admin.token))).json<{ id: string; name: string }[]>();
+    const scorer = squadPlayers.find((player) => player.name === 'Nour Hassan')!;
+    // The defender who played the whole match and never troubled the timeline.
+    const quiet = squadPlayers.find((player) => player.name === 'Salma Adel')!;
+    const bench = squadPlayers.find((player) => player.name === 'Habiba Tarek')!;
+    const unused = squadPlayers.find((player) => player.name === 'Malak Omar')!;
+
+    const match = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: opponent.id, kickoff_datetime: now, venue: 'AIMZ Ground', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    await request(`/api/v1/matches/${match.id}/lineup`, json('PUT', [
+      { player_id: scorer.id, team_id: squad.id, is_starter: true, position: 'ST' },
+      { player_id: quiet.id, team_id: squad.id, is_starter: true, position: 'CB' },
+      { player_id: bench.id, team_id: squad.id, is_starter: false, position: 'CM' },
+      { player_id: unused.id, team_id: squad.id, is_starter: false, position: 'RW' },
+    ], admin.token));
+
+    await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action: 'start_match' }, admin.token));
+    await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'goal', minute: 20, team_id: squad.id, player_id: scorer.id, client_operation_id: 'motm-goal-20' }, admin.token));
+    // A substitution brings the bench player on; nothing else is ever logged for her.
+    await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'substitution', minute: 60, team_id: squad.id, player_id: bench.id, secondary_player_id: scorer.id, client_operation_id: 'motm-sub-60' }, admin.token));
+    for (const action of ['halftime', 'start_second_half', 'finish_match']) {
+      await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action }, admin.token));
+    }
+
+    // No minutes were ever saved, so nothing wrote an `appeared` flag for her.
+    const stats = await (await request(`/api/v1/matches/${match.id}/player-stats`, json('GET', undefined, admin.token))).json<{ player_id: string }[]>();
+    expect(stats.some((stat) => stat.player_id === quiet.id)).toBe(false);
+
+    // She still played the whole match, so the award is hers to take.
+    const award = await request(`/api/v1/matches/${match.id}/man-of-the-match`, json('POST', { player_id: quiet.id }, admin.token));
+    expect(award.status).toBe(200);
+    expect(await award.json()).toMatchObject({ man_of_the_match_player_id: quiet.id });
+
+    // So is a substitute who came on and did nothing after that.
+    expect((await request(`/api/v1/matches/${match.id}/man-of-the-match`, json('POST', { player_id: bench.id }, admin.token))).status).toBe(200);
+
+    // The named substitute who never came on did not play, and is still refused.
+    const refused = await request(`/api/v1/matches/${match.id}/man-of-the-match`, json('POST', { player_id: unused.id }, admin.token));
+    expect(refused.status).toBe(422);
+    expect(await refused.json()).toMatchObject({ detail: { code: 'player_did_not_appear' } });
+
+    // And the scorer, who qualified before this fix, still does.
+    expect((await request(`/api/v1/matches/${match.id}/man-of-the-match`, json('POST', { player_id: scorer.id }, admin.token))).status).toBe(200);
+  });
+});

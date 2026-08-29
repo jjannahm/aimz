@@ -25,6 +25,7 @@ import { appConfig } from '@/src/config';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
+import { confirmManageSave, confirmManageWrite, type ManageEntity } from '@/src/lib/manageToasts';
 import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -247,6 +248,10 @@ export default function ManageScreen() {
   // Every admin write clears the views built on it, including derived ones
   // like standings, leaderboards and squad counts.
   const entityFor: Record<LegacyResource, Parameters<typeof invalidateAfterWrite>[1]> = { teams: 'team', opponents: 'team', players: 'player', competitions: 'competition', matches: 'match', invites: 'invite' };
+  // What each section is called when it confirms a write. Separate from
+  // `entityFor` on purpose: a squad and an opposing club share a cache and a
+  // table, but "Opponent created" is not "Squad created".
+  const nounFor: Record<LegacyResource, ManageEntity> = { teams: 'team', opponents: 'opponent', players: 'player', competitions: 'competition', matches: 'match', invites: 'invite' };
   const invalidate = async () => { await invalidateAfterWrite(client, entityFor[resource]); };
 
   const save = form.handleSubmit(async (values) => {
@@ -303,12 +308,15 @@ export default function ManageScreen() {
       if (stayOn) {
         setEditing(stayOn);
         form.reset({ ...defaults, name: stayOn.name, season: stayOn.season, type: stayOn.type, ...knockoutFormValues(stayOn) });
+        // Not a plain confirmation: the competition is only half set up, and
+        // this says what to do next rather than that the job is done.
         showToast('Groups drawn up — add teams below');
         return;
       }
+      const wasEditing = editing;
       setEditing(null); form.reset(defaults);
+      confirmManageSave(nounFor[resource], wasEditing);
       if (finished) {
-        showToast(drawnUp.includes(finished.id) ? 'Knockout competition created' : 'Groups updated');
         setDrawnUp((current) => current.filter((id) => id !== finished!.id));
         router.push({ pathname: '/(app)/(tabs)/standings', params: { competition: finished.id } });
       }
@@ -335,6 +343,7 @@ export default function ManageScreen() {
         if (resource === 'matches') await api.deleteMatch(item.id);
         if (resource === 'invites') await api.revokeInvite(item.id);
         await invalidate();
+        confirmManageWrite(nounFor[resource], 'deleted');
       } catch (error) {
         const problem = error as ApiError;
         // The API refuses to delete anything still referenced, so say what to do.
@@ -363,6 +372,7 @@ export default function ManageScreen() {
       if (!uploaded.ok) throw new Error('The storage service rejected the upload.');
       if (entity === 'team') await api.updateTeam(item.id, { ...(item as Team), logo_key: presign.object_key }); else await api.updatePlayer(item.id, { ...(item as Player), photo_key: presign.object_key });
       await invalidate();
+      confirmManageWrite('photo', 'saved');
     } catch (error) { showMessage('Upload failed', (error as Error).message); }
   };
 

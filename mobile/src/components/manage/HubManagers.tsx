@@ -11,7 +11,8 @@ import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime, toEgyptWallClock } from '@/src/lib/egyptTime';
-import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
+import { confirmManageSave, confirmManageWrite } from '@/src/lib/manageToasts';
+import { confirmAction, showMessage } from '@/src/lib/platformAlert';
 import { expandWeekly } from '@/src/lib/trainingSchedule';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -70,14 +71,14 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
       // the form card collapsing under the admin reads as the page jumping. The
       // repeat choice is what keeps that block mounted, so it is carried over.
       setDraft((current) => ({ ...freshSchedule(), recurrence: current.recurrence, weekdays: current.weekdays, endsOn: current.endsOn }));
-      showToast(wasEditing ? 'Session updated' : 'Training schedule saved');
+      if (wasEditing) confirmManageWrite('session', 'saved'); else confirmManageWrite('schedule', 'created');
     },
   });
   const remove = async (session: TrainingSession, scope: 'one' | 'series') => {
     try {
       await api.deleteTrainingSession(session.id, scope);
       await invalidateAfterWrite(client, 'training');
-      showToast(scope === 'series' ? 'Series deleted' : 'Session deleted');
+      confirmManageWrite(scope === 'series' ? 'series' : 'session', 'deleted');
     }
     catch (error) { showMessage('Session not deleted', (error as ApiError).message); }
   };
@@ -121,10 +122,10 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
       return editing ? api.updateAnnouncement(editing.id, payload) : api.createAnnouncement(payload);
     },
     onError: (error) => showMessage('Announcement not saved', (error as Error).message),
-    onSuccess: async () => { await invalidateAfterWrite(client, 'announcement'); setEditing(null); setDraft(blankAnnouncement); showToast('Announcement saved'); },
+    onSuccess: async () => { const wasEditing = editing; await invalidateAfterWrite(client, 'announcement'); setEditing(null); setDraft(blankAnnouncement); confirmManageSave('announcement', wasEditing); },
   });
   const beginEdit = (announcement: Announcement) => { setEditing(announcement); setDraft({ teamId: announcement.team_id ?? '', title: announcement.title, body: announcement.body, pinned: announcement.pinned }); };
-  const remove = (announcement: Announcement) => confirmAction('Delete this announcement?', 'Players will no longer see it.', 'Delete', async () => { try { await api.deleteAnnouncement(announcement.id); await invalidateAfterWrite(client, 'announcement'); showToast('Announcement deleted'); } catch (error) { showMessage('Announcement not deleted', (error as ApiError).message); } }, { destructive: true });
+  const remove = (announcement: Announcement) => confirmAction('Delete this announcement?', 'Players will no longer see it.', 'Delete', async () => { try { await api.deleteAnnouncement(announcement.id); await invalidateAfterWrite(client, 'announcement'); confirmManageWrite('announcement', 'deleted'); } catch (error) { showMessage('Announcement not deleted', (error as ApiError).message); } }, { destructive: true });
   return <View style={styles.stack}>
     <View style={styles.formCard}>
       <Text style={styles.heading}>{editing ? 'Edit announcement' : 'Post announcement'}</Text>
