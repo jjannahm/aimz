@@ -123,6 +123,7 @@ export default function StandingsScreen() {
     setComparing(null);
     router.push({ pathname: '/compare/[a]/[b]', params: { a: first, b: teamId } });
   };
+  const open = (teamId: string) => router.push({ pathname: '/team/[id]', params: { id: teamId } });
   const comparingName = table.data?.find((row) => row.team.id === comparing)?.team.name;
 
   return <Screen title="Standings">
@@ -151,20 +152,23 @@ export default function StandingsScreen() {
   function tableFor(rows: StandingRow[]) {
     return <View style={styles.table}>
       <View style={styles.tableHeader}>
-        <View style={styles.rowTap}>
+        <View style={styles.nameSide}>
           <Text style={styles.rankHeader}>#</Text>
           <Text style={[styles.team, styles.headerText]}>TEAM</Text>
-          <Text style={[styles.stat, styles.headerText]}>P</Text>
+        </View>
+        {/* Stands in for the compare control, so the columns above the rows are
+          * set back by exactly as much as the rows are. */}
+        <View accessibilityElementsHidden style={styles.compareSlot} />
+        <View style={styles.stats}>
+          <Text style={[styles.played, styles.headerText]}>P</Text>
+          <Text style={[styles.scores, styles.headerText]}>F:A</Text>
           <Text style={[styles.stat, styles.headerText]}>GD</Text>
           <Text style={[styles.pointsHeader, styles.headerText]}>PTS</Text>
         </View>
-        {/* Stands in for the compare control, so the columns above the rows
-          * are set back by exactly as much as the rows are. */}
-        <View accessibilityElementsHidden style={styles.compareSlot} />
       </View>
-      {rows.map((row: StandingRow, index: number) => <View key={row.team.id} style={[styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, comparing === row.team.id && styles.comparingRow]}>
+      {rows.map((row: StandingRow, index: number) => <View key={row.team.id} style={[styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, comparing === row.team.id && styles.comparingRow]} testID={`standings-row-${row.team.id}`}>
         {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
-        <Pressable accessibilityHint="Opens this team's profile" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" onPress={() => router.push({ pathname: '/team/[id]', params: { id: row.team.id } })} style={({ pressed, hovered }: PressState) => [styles.rowTap, hovered && styles.hoveredRow, pressed && styles.pressed]}>
+        <Pressable accessibilityHint="Opens this team's profile" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" onPress={() => open(row.team.id)} style={({ pressed, hovered }: PressState) => [styles.nameSide, hovered && styles.hoveredRow, pressed && styles.pressed]}>
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
           <TeamAvatar badgeStyle={row.team.badge_style} isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={32} />
@@ -177,13 +181,16 @@ export default function StandingsScreen() {
             <View style={styles.formRow}><FormStrip form={row.form ?? []} /></View>
           </View>
         </View>
-        <Text style={styles.stat}>{row.played}</Text>
-        <Text style={styles.stat}>{row.goal_difference > 0 ? '+' : ''}{row.goal_difference}</Text>
-        <View style={[styles.pointsBox, row.rank === 1 && styles.leaderPointsBox]}>
-          <Text style={[styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
-        </View>
         </Pressable>
         <CompareButton onPress={() => compare(row.team.id)} selected={comparing === row.team.id} teamName={row.team.name} />
+        <Pressable accessibilityHint="Opens this team's profile" accessibilityLabel={`${row.team.name}: played ${row.played}, ${row.goals_for} scored and ${row.goals_against} conceded, goal difference ${row.goal_difference}`} accessibilityRole="button" onPress={() => open(row.team.id)} style={({ pressed, hovered }: PressState) => [styles.stats, hovered && styles.hoveredRow, pressed && styles.pressed]}>
+          <Text style={styles.played}>{row.played}</Text>
+          <Text style={styles.scores}>{row.goals_for}:{row.goals_against}</Text>
+          <Text style={styles.stat}>{row.goal_difference > 0 ? '+' : ''}{row.goal_difference}</Text>
+          <View style={[styles.pointsBox, row.rank === 1 && styles.leaderPointsBox]}>
+            <Text style={[styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
+          </View>
+        </Pressable>
       </View>)}
     </View>;
   }
@@ -196,10 +203,15 @@ export default function StandingsScreen() {
  * around and the header cannot drift away from the values under it. Only the
  * team cell flexes, taking whatever is left.
  */
-const RANK_COLUMN = 22;
-const STAT_COLUMN = 34;
-const POINTS_COLUMN = 40;
-const COMPARE_COLUMN = 24;
+const RANK_COLUMN = 20;
+/** Two digits at most. */
+const PLAYED_COLUMN = 20;
+/** "12:10" at its widest. */
+const SCORES_COLUMN = 34;
+/** A sign and two digits. */
+const STAT_COLUMN = 26;
+const POINTS_COLUMN = 34;
+const COMPARE_COLUMN = 22;
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // The section the switcher swaps, which keeps the page's own rhythm between
@@ -220,8 +232,15 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // 44 points the drawing does not.
   // The row's own tap target. It holds every column, so the compare control
   // beside it is the only thing in the row that is not "open this team".
-  rowTap: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm },
+  // The team's side of the row, which is one tap target; the figures are
+  // another, and the compare control sits between them belonging to neither.
+  nameSide: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minWidth: 0 },
   compareSlot: { width: COMPARE_COLUMN },
+  // Four narrow columns held closer together than the row's own spacing, so
+  // the extra one costs the team name as little width as it can.
+  stats: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
+  played: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: PLAYED_COLUMN },
+  scores: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: SCORES_COLUMN },
   compare: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, height: COMPARE_COLUMN, justifyContent: 'center', width: COMPARE_COLUMN },
   compareOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   comparingRow: { borderColor: colors.accent },
