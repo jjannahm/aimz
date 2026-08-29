@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { useMyChildren } from '@/src/auth/useMyTeam';
 import { FlatCard } from '@/src/components/FlatCard';
 import { Screen } from '@/src/components/Screen';
+import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { SegmentedControl, type SegmentedOption } from '@/src/components/SegmentedControl';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
@@ -19,7 +20,7 @@ import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
 import { mediaUrl } from '@/src/lib/mediaUrl';
 import { positionName } from '@/src/lib/positions';
-import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
+import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AwardRank, Player, PlayerAward } from '@/src/types/api';
 
@@ -58,9 +59,7 @@ function MyStatsSection() {
     {children.length > 1 ? <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
       {children.map((child) => {
         const active = child.id === selected.id;
-        return <Pressable accessibilityLabel={child.name} accessibilityRole="tab" accessibilityState={{ selected: active }} key={child.id} onPress={() => setChildId(child.id)} style={({ pressed }) => [styles.chip, active && styles.chipActive, pressed && styles.pressed]}>
-          <Text style={[styles.chipText, active && styles.chipTextActive]}>{child.name}</Text>
-        </Pressable>;
+        return <AnimatedTabPill accessibilityLabel={child.name} key={child.id} label={child.name} onPress={() => setChildId(child.id)} selected={active} style={styles.chip} />;
       })}
     </ScrollView> : null}
     <PlayerStatsPanel playerId={selected.id} />
@@ -237,9 +236,7 @@ function AwardsSection() {
   const rows = awards.data?.player_awards ?? [];
   return <View style={styles.awardList}>
     {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
-      {eligible.map((item) => <Pressable accessibilityRole="tab" accessibilityState={{ selected: competition?.id === item.id }} key={item.id} onPress={() => setChosen(item.id)} style={({ pressed }) => [styles.chip, competition?.id === item.id && styles.chipActive, pressed && styles.pressed]}>
-        <Text style={[styles.chipText, competition?.id === item.id && styles.chipTextActive]}>{item.name}</Text>
-      </Pressable>)}
+      {eligible.map((item) => <AnimatedTabPill key={item.id} label={item.name} onPress={() => setChosen(item.id)} selected={competition?.id === item.id} style={styles.chip} testID={`award-competition-${item.id}`} />)}
     </ScrollView> : null}
     {awards.isLoading ? <LoadingState label="Loading awards" /> : rows.length === 0 ? <EmptyState body={copy.emptyAwards} title="No awards yet" /> : rows.map((award: PlayerAward) => <AwardRow award={award} competitionId={competition!.id} key={award.label} />)}
   </View>;
@@ -261,6 +258,6 @@ export default function PlayersScreen() {
     </Screen>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ chipBar: { flexGrow: 0 }, chips: { gap: theme.spacing.sm }, chip: { ...noFocusRing, alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: colors.surfaceRaised }, chipText: { color: colors.textSecondary, fontFamily: theme.font.semibold }, chipTextActive: { color: colors.textPrimary, fontFamily: theme.font.bold }, stack: { gap: theme.spacing.md }, back: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.touch.minimum, paddingRight: theme.spacing.md }, backText: { color: colors.accentSoft, fontFamily: theme.font.bold }, squadTitle: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, list: { overflow: 'hidden', paddingHorizontal: 0 },
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ chipBar: { flexGrow: 0 }, chips: { gap: theme.spacing.sm }, chip: { paddingHorizontal: theme.spacing.md }, stack: { gap: theme.spacing.md }, back: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.touch.minimum, paddingRight: theme.spacing.md }, backText: { color: colors.accentSoft, fontFamily: theme.font.bold }, squadTitle: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, list: { overflow: 'hidden', paddingHorizontal: 0 },
   row: { alignItems: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: theme.spacing.md, minHeight: theme.size.listRow, padding: theme.spacing.md },
   lastRow: { borderBottomWidth: 0 }, leaderRow: { alignItems: 'center', flexDirection: 'row' }, leaderPlayer: { flex: 1 }, rank: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], paddingLeft: theme.spacing.md, textAlign: 'center', width: 34 }, tally: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontSize: theme.type.heading, fontVariant: ['tabular-nums'] }, awardList: { gap: theme.spacing.sm }, awardOpen: { gap: theme.spacing.sm }, award: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.md, padding: theme.spacing.md }, awardLabel: { color: colors.textMuted, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 0.8, textTransform: 'uppercase' }, pressed: { opacity: 0.7 }, badge: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 }, badgeText: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.label }, number: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 }, photo: { borderRadius: 20, height: 40, width: 40 }, numberText: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.heading }, copy: { flex: 1 }, name: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontSize: theme.type.body }, position: { color: colors.textMuted, fontFamily: theme.font.regular, marginTop: 2 } });
