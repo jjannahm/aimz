@@ -1,29 +1,25 @@
 import { BlurView } from 'expo-blur';
-import type { PropsWithChildren } from 'react';
+import { useId, type PropsWithChildren } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { useAppTheme } from '@/src/theme/ThemeProvider';
 
 /**
  * The material the app's glass surfaces are made of.
  *
- * Neutral, not blue: what tints it is whatever it is laid over, which is the
- * whole point of the thing. `expo-blur` does the blurring on all three
- * platforms, so this is real translucency rather than a flat fill pretending.
- *
- * Two layers sit over the blur — a wash that lifts it off the page, and a
- * hairline along the top edge standing in for light catching the near side.
- * Both are white at single-figure opacity: any more and it stops reading as
- * glass and starts reading as a card.
+ * The blur supplies the translucency, while a broad wash, two diffuse pools of
+ * reflected light and a complete inner rim give the material depth. None of
+ * those cues is a hard highlight: the surface should read as one pane of glass,
+ * not as a flat card with a decorative line across it.
  *
  * Used where the glass look has been asked for — the hub, and a player's own
  * stats. The rest of the app keeps its flat surfaces.
  */
 
-/** Dark glass is lifted with white; on a pale page it has to be deepened instead. */
-const wash = { dark: 'rgba(255, 255, 255, 0.06)', light: 'rgba(255, 255, 255, 0.55)' } as const;
-const rim = { dark: 'rgba(255, 255, 255, 0.12)', light: 'rgba(15, 23, 42, 0.10)' } as const;
-const specular = { dark: 'rgba(255, 255, 255, 0.20)', light: 'rgba(255, 255, 255, 0.75)' } as const;
+const lightPool = { dark: 0.13, light: 0.44 } as const;
+const coolPool = { dark: 0.16, light: 0.09 } as const;
+const shadow = { dark: 0.34, light: 0.14 } as const;
 
 type Props = PropsWithChildren<{
   style?: StyleProp<ViewStyle>;
@@ -33,23 +29,65 @@ type Props = PropsWithChildren<{
   intensity?: number;
 }>;
 
-export function GlassSurface({ style, radius, intensity = 40, children }: Props) {
-  const { mode } = useAppTheme();
+export function GlassSurface({ style, radius, intensity = 58, children }: Props) {
+  const { colors, mode } = useAppTheme();
   const key = mode === 'light' ? 'light' : 'dark';
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const lightId = `glass-light-${id}`;
+  const coolId = `glass-cool-${id}`;
   return (
     // The blur clips to the radius only with overflow hidden, and only if the
     // radius is on the same view the blur is.
-    <BlurView intensity={intensity} style={[styles.surface, { borderColor: rim[key], borderRadius: radius }, style]} tint={key}>
-      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: wash[key] }]} />
-      <View pointerEvents="none" style={[styles.specular, { backgroundColor: specular[key] }]} />
+    <BlurView
+      intensity={intensity}
+      style={[
+        styles.surface,
+        {
+          backgroundColor: colors.glassSurface,
+          borderColor: colors.glassBorder,
+          borderRadius: radius,
+          shadowOpacity: shadow[key],
+        },
+        style,
+      ]}
+      tint={key}
+    >
+      <Svg height="100%" pointerEvents="none" style={styles.reflection} width="100%">
+        <Defs>
+          <RadialGradient cx="6%" cy="0%" id={lightId} r="92%">
+            <Stop offset="0" stopColor="#FFFFFF" stopOpacity={lightPool[key]} />
+            <Stop offset="0.7" stopColor="#FFFFFF" stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient cx="92%" cy="100%" id={coolId} r="82%">
+            <Stop offset="0" stopColor="#0EA2E7" stopOpacity={coolPool[key]} />
+            <Stop offset="0.76" stopColor="#0EA2E7" stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect fill={`url(#${lightId})`} height="100%" width="100%" />
+        <Rect fill={`url(#${coolId})`} height="100%" width="100%" />
+      </Svg>
+      <View
+        pointerEvents="none"
+        style={[
+          StyleSheet.absoluteFill,
+          styles.innerRim,
+          { borderColor: colors.glassHighlight, borderRadius: Math.max(0, radius - 1) },
+        ]}
+      />
       {children}
     </BlurView>
   );
 }
 
 const styles = StyleSheet.create({
-  surface: { borderWidth: StyleSheet.hairlineWidth, overflow: 'hidden' },
-  // Inset from the corners so the highlight fades out where the radius turns,
-  // rather than running flat into it.
-  specular: { height: StyleSheet.hairlineWidth, left: '8%', position: 'absolute', right: '8%', top: 0 },
+  surface: {
+    borderWidth: 1,
+    elevation: 8,
+    overflow: 'hidden',
+    shadowColor: '#000000',
+    shadowOffset: { height: 12, width: 0 },
+    shadowRadius: 28,
+  },
+  reflection: { bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
+  innerRim: { borderWidth: StyleSheet.hairlineWidth, opacity: 0.6 },
 });

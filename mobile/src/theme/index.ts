@@ -37,12 +37,11 @@ const dark = {
   // on top keeps reading the way it did off it, and the halo it throws.
   selectionSurface: 'rgba(59, 130, 246, 0.75)',
   selectionGlow: 'rgba(59, 130, 246, 0.9)',
-  // A card the page shows through: the accent at a tenth, so the navy behind it
-  // tints rather than disappears. The rim and the hairline along the top edge
-  // are what give it an edge to read against a dark page.
-  glassSurface: 'rgba(59, 130, 246, 0.12)',
-  glassBorder: 'rgba(255, 255, 255, 0.16)',
-  glassHighlight: 'rgba(255, 255, 255, 0.22)',
+  // A pane the page still shows through, with enough blue density and a full
+  // luminous rim to stay legible against the dark page.
+  glassSurface: 'rgba(59, 130, 246, 0.16)',
+  glassBorder: 'rgba(255, 255, 255, 0.24)',
+  glassHighlight: 'rgba(255, 255, 255, 0.28)',
   onAccent: '#0F172A',
   textPrimary: '#F8FAFC',
   textSecondary: '#CBD5E1',
@@ -92,9 +91,9 @@ export const lightColors: ThemeColors = {
   // theme's own accent darkens the card below the page it sits on, and muted
   // text then falls under AA on it — 3.67 against the 4.5 it needs. White at
   // this strength leaves the page showing through and clears AA on all four.
-  glassSurface: 'rgba(255, 255, 255, 0.45)',
-  glassBorder: 'rgba(15, 23, 42, 0.14)',
-  glassHighlight: 'rgba(255, 255, 255, 0.55)',
+  glassSurface: 'rgba(255, 255, 255, 0.52)',
+  glassBorder: 'rgba(15, 23, 42, 0.18)',
+  glassHighlight: 'rgba(255, 255, 255, 0.72)',
   onAccent: '#FAFAFA',
   textPrimary: '#060A12',
   textSecondary: '#334155',
