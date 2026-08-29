@@ -11,8 +11,8 @@ import { useAppTheme } from '@/src/theme/ThemeProvider';
  * pools — one warm-side blue high up, one cooler and lower — give the material
  * something to pick up as it passes over them.
  *
- * Deliberately near the threshold of noticing. Turned up even a little this
- * stops being depth and starts being decoration.
+ * They stay diffuse, but are strong enough to remain visible through a pane;
+ * otherwise even a real blur has nothing to refract and reads as a flat fill.
  */
 export function GlassBackdrop() {
   const { mode } = useAppTheme();
@@ -22,11 +22,11 @@ export function GlassBackdrop() {
       <Svg height="100%" width="100%">
         <Defs>
           <RadialGradient cx="22%" cy="12%" id="high" r="70%">
-            <Stop offset="0" stopColor="#3B82F6" stopOpacity={dark ? 0.16 : 0.1} />
+            <Stop offset="0" stopColor="#3B82F6" stopOpacity={dark ? 0.24 : 0.15} />
             <Stop offset="1" stopColor="#3B82F6" stopOpacity={0} />
           </RadialGradient>
           <RadialGradient cx="88%" cy="62%" id="low" r="60%">
-            <Stop offset="0" stopColor="#0EA2E7" stopOpacity={dark ? 0.09 : 0.07} />
+            <Stop offset="0" stopColor="#0EA2E7" stopOpacity={dark ? 0.15 : 0.1} />
             <Stop offset="1" stopColor="#0EA2E7" stopOpacity={0} />
           </RadialGradient>
         </Defs>
