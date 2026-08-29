@@ -4,7 +4,7 @@ import React from 'react';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AnnouncementsSection } from '@/src/components/myTeam/AnnouncementsSection';
 import { GlassBackdrop } from '@/src/components/GlassBackdrop';
-import { HubSwitcher } from '@/src/components/myTeam/HubSwitcher';
+import { GlassSwitcher } from '@/src/components/GlassSwitcher';
 import { ScheduleSection } from '@/src/components/myTeam/ScheduleSection';
 import { Screen } from '@/src/components/Screen';
 
@@ -18,7 +18,7 @@ export default function HubScreen() {
   return <Screen title="Hub">
     {/* Behind everything: what the hub's glass has to look through. */}
     <GlassBackdrop />
-    <HubSwitcher label="Hub section" onChange={setSelected} options={sections} value={selected} />
+    <GlassSwitcher label="Hub section" onChange={setSelected} options={sections} value={selected} />
     {selected === 'schedule' ? <ScheduleSection /> : <AnnouncementsSection />}
   </Screen>;
 }

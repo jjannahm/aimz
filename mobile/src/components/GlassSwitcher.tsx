@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, Text, View, type LayoutRectangle } from 'react-native';
 
 import { GlassSurface } from '@/src/components/GlassSurface';
 import { useReduceMotion } from '@/src/lib/useReduceMotion';
@@ -16,54 +16,59 @@ type Props<Value extends string> = {
 };
 
 /**
- * The hub's own switcher: a glass capsule with a lens sliding under whichever
- * section is open.
+ * A glass capsule with a lens sliding under whichever section is open.
  *
- * Its own rather than the shared control because only the hub is glass — the
- * rest of the app keeps flat surfaces, and one component cannot be both. The
- * lens takes an equal share of the capsule, so where it belongs is a matter of
- * the index and no tab has to report its own box.
+ * Kept apart from the shared `SegmentedControl` because only the screens asked
+ * for it are glass — the rest of the app keeps flat surfaces, and one component
+ * cannot be both.
+ *
+ * A tab grows from the width of its own name rather than taking a fixed share:
+ * an equal third of a phone cannot hold "Leaderboards" at any size worth
+ * reading, and it was being cut short. That makes the tabs different widths, so
+ * each reports its own box and the lens is animated onto whichever is open.
  */
-export function HubSwitcher<Value extends string>({ options, value, onChange, label }: Props<Value>) {
+export function GlassSwitcher<Value extends string>({ options, value, onChange, label }: Props<Value>) {
   const styles = useThemedStyles(stylesheet);
   const reduceMotion = useReduceMotion();
-  const slide = useRef(new Animated.Value(0)).current;
+  const [boxes, setBoxes] = useState<Record<number, LayoutRectangle>>({});
+  const left = useRef(new Animated.Value(0)).current;
+  const width = useRef(new Animated.Value(0)).current;
   const settled = useRef(false);
   const index = Math.max(0, options.findIndex((option) => option.value === value));
+  const box = boxes[index];
 
   useEffect(() => {
+    if (!box) return undefined;
     if (!settled.current || reduceMotion) {
-      slide.stopAnimation();
-      slide.setValue(index);
+      left.setValue(box.x);
+      width.setValue(box.width);
       settled.current = true;
       return undefined;
     }
-    const animation = Animated.spring(slide, { bounciness: 0, speed: 14, toValue: index, useNativeDriver: true });
+    // Off the native driver, which cannot carry a position and a width — the
+    // cost of a lens that fits its name rather than a fixed share.
+    const animation = Animated.parallel([
+      Animated.spring(left, { bounciness: 0, speed: 14, toValue: box.x, useNativeDriver: false }),
+      Animated.spring(width, { bounciness: 0, speed: 14, toValue: box.width, useNativeDriver: false }),
+    ]);
     animation.start();
     return () => animation.stop();
-  }, [index, reduceMotion, slide]);
-
-  const share = 100 / options.length;
+  }, [box?.x, box?.width, box, reduceMotion, left, width]);
   return (
     <GlassSurface intensity={45} radius={999} style={styles.capsule}>
       <View accessibilityLabel={label} accessibilityRole="tablist" style={styles.track}>
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            styles.lens,
-            // A share of the track wide, moved by whole shares. Translating a
-            // percentage of its own width is what keeps this on the native
-            // driver, where a left offset could not go.
-            { width: `${share}%`, transform: [{ translateX: slide.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }] },
-          ]}
-        />
-        {options.map((option) => {
+        {box ? <Animated.View pointerEvents="none" style={[styles.lens, { left, width }]} /> : null}
+        {options.map((option, position) => {
           const selected = option.value === value;
           return (
             <Pressable
               accessibilityRole="tab"
               accessibilityState={{ selected }}
               key={option.value}
+              onLayout={(event) => {
+                const next = event.nativeEvent.layout;
+                setBoxes((current) => current[position]?.width === next.width && current[position]?.x === next.x ? current : { ...current, [position]: next });
+              }}
               onPress={() => onChange(option.value)}
               style={({ pressed }) => [styles.tab, pressed && styles.pressed]}
             >
@@ -92,7 +97,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     position: 'absolute',
     top: 0,
   },
-  tab: { alignItems: 'center', flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.sm },
+  // Grows from its own name, so no label is squeezed into a share too small
+  // for it; the whole of it stays tappable either way.
+  tab: { alignItems: 'center', flexBasis: 'auto', flexGrow: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.sm },
   label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
   labelOn: { color: colors.textPrimary, fontWeight: '800' },
   pressed: { opacity: 0.7 },
