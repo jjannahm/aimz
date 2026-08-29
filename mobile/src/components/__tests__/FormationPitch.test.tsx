@@ -1,4 +1,4 @@
-import { render } from '@testing-library/react-native';
+import { fireEvent, render } from '@testing-library/react-native';
 
 import { arrangeByFormation, bucketFor, FormationPitch, inferFormation } from '@/src/components/FormationPitch';
 import { FORMATIONS, LINEUP_FORMATS, formationRows, outfieldCount, type Player } from '@/src/types/api';
@@ -140,5 +140,32 @@ describe('captain armband', () => {
   it('shows no armband when nobody is named', async () => {
     const screen = await render(<FormationPitch captainId={null} formation="1-1" starters={squad} />);
     expect(screen.queryByText('C')).toBeNull();
+  });
+});
+
+
+describe('FormationPitch shirts as buttons', () => {
+  const squad = [player('gk', 'Jana Kamal', 'Goalkeeper', 1), player('d0', 'Aya Nabil', 'Defender', 6)];
+
+  it('opens the player a shirt belongs to', async () => {
+    const onSelect = jest.fn();
+    const screen = await render(<FormationPitch formation="1-1" onSelect={onSelect} starters={squad} />);
+    fireEvent.press(screen.getByLabelText('Aya Nabil, open stats'));
+
+    expect(onSelect).toHaveBeenCalledWith('d0');
+  });
+
+  // The keeper is placed separately from the outfield rows, so prove it too.
+  it('opens the keeper as readily as an outfielder', async () => {
+    const onSelect = jest.fn();
+    const screen = await render(<FormationPitch formation="1-1" onSelect={onSelect} starters={squad} />);
+    fireEvent.press(screen.getByLabelText('Jana Kamal, open stats'));
+
+    expect(onSelect).toHaveBeenCalledWith('gk');
+  });
+
+  it('leaves shirts as plain shirts where there is nowhere to go', async () => {
+    const screen = await render(<FormationPitch formation="1-1" starters={squad} />);
+    expect(screen.queryByLabelText('Aya Nabil, open stats')).toBeNull();
   });
 });
