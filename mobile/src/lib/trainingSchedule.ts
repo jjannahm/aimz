@@ -35,3 +35,38 @@ export function groupSessionsByDate(sessions: TrainingSession[], now = new Date(
   }
   return [...groups.entries()].map(([dateKey, rows]) => ({ dateKey, date: new Date(rows[0]!.starts_at), isToday: dateKey === today, sessions: rows }));
 }
+
+export type TrainingMonthGroup = { monthKey: string; label: string; sessions: TrainingSession[] };
+
+/**
+ * The sessions to come, the soonest on its own and the rest gathered by month.
+ *
+ * A schedule reads as a calendar rather than a stack of cards, so the day is
+ * carried on each row and the month is said once above them — where grouping by
+ * date repeated the same date twice, as a heading and again inside the card.
+ */
+export function groupSessionsByMonth(sessions: TrainingSession[]): { next: TrainingSession | null; months: TrainingMonthGroup[] } {
+  const ordered = [...sessions].sort((left, right) => Date.parse(left.starts_at) - Date.parse(right.starts_at));
+  const [next = null, ...rest] = ordered;
+  const groups = new Map<string, TrainingSession[]>();
+  for (const session of rest) {
+    const when = toEgyptWallClock(new Date(session.starts_at));
+    const key = `${when.year}-${String(when.month).padStart(2, '0')}`;
+    groups.set(key, [...groups.get(key) ?? [], session]);
+  }
+  const months = [...groups.entries()].map(([monthKey, rows]) => ({
+    monthKey,
+    // Named without the year, which a schedule this short never spans twice.
+    label: new Intl.DateTimeFormat('en-EG', { timeZone: 'Africa/Cairo', month: 'long' }).format(new Date(rows[0]!.starts_at)),
+    sessions: rows,
+  }));
+  return { next, months };
+}
+
+/** "90" reads as "1 hr 30 min", which is how long a session is spoken of. */
+export function describeDuration(minutes: number): string {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} hr ${rest} min` : `${hours} hr`;
+}
