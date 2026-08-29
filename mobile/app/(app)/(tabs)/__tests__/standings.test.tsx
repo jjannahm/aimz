@@ -75,7 +75,9 @@ describe('StandingsScreen', () => {
   it('lays the leading row out on the same columns as the rest', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
     await screen.findByText('Giza Lions');
-    const rows = screen.getAllByRole('button').filter((node) => String(node.props.accessibilityLabel ?? '').includes('points'));
+    // The card, not the tap targets inside it: the card is what carries the
+    // border and padding the columns are measured from.
+    const rows = screen.getAllByTestId(/^standings-row-/u);
     expect(rows).toHaveLength(table.length);
     const boxes = rows.map((node) => StyleSheet.flatten(node.props.style) as ViewStyle);
     const leader = boxes[0]!;
