@@ -124,6 +124,42 @@ describe('PlayersScreen', () => {
     expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
   });
 
+  // The stats are read for every season until a season is chosen.
+  it('reads My Stats across all seasons until one is picked', async () => {
+    mockUser = { role: 'player', player_id: 'p-1' };
+    jest.mocked(api.playerStats).mockResolvedValue({
+      player: players[0]!, season: null, appearances: 9, minutes_played: 700,
+      goals: 5, assists: 3, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0,
+      seasons: ['2026/27', '2025/26'], milestones: { reached: [], streaks: [], next: [] }, matches: [],
+    });
+    jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+    const screen = await render(<PlayersScreen />, { wrapper });
+    fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+
+    expect(await screen.findByLabelText('Season All stats')).toBeTruthy();
+    expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
+
+    fireEvent.press(screen.getByTestId('season-picker'));
+    fireEvent.press(await screen.findByTestId('season-option-2025/26'));
+
+    await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-1', '2025/26'));
+  });
+
+  it('leaves the season control out for a player with no season on record', async () => {
+    mockUser = { role: 'player', player_id: 'p-1' };
+    jest.mocked(api.playerStats).mockResolvedValue({
+      player: players[0]!, season: null, appearances: 0, minutes_played: 0,
+      goals: 0, assists: 0, own_goals: 0, yellow_cards: 0, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0,
+      seasons: [], milestones: { reached: [], streaks: [], next: [] }, matches: [],
+    });
+    jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+    const screen = await render(<PlayersScreen />, { wrapper });
+    fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    await screen.findByText('Salma Nabil');
+
+    expect(screen.queryByTestId('season-picker')).toBeNull();
+  });
+
   // A parent reads each child on their own, rather than one merged view.
   it('lets a parent pick which child to read', async () => {
     mockUser = { role: 'parent', player_id: null };

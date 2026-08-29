@@ -325,7 +325,7 @@ describe('StandingsScreen — seasons', () => {
   it('reads the chosen season from its own competition', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
     fireEvent.press(await screen.findByTestId('season-picker'));
-    fireEvent.press(await screen.findByText('2025'));
+    fireEvent.press(await screen.findByTestId('season-option-2025'));
 
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-old'));
   });

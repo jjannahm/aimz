@@ -69,6 +69,23 @@ describe('MatchTimeline', () => {
     expect(screen.getByLabelText("45' Al Ahly U13, Own goal, AIMZ U13")).toBeTruthy();
   });
 
+  // A spot kick takes the same marker whether it went in or not, with its
+  // outcome set into the corner.
+  it('marks a scored penalty and a missed one apart', async () => {
+    const scored = await timeline([event({ player_id: 'p-home', is_penalty: true })]);
+    expect(scored.getAllByText('P')).toHaveLength(1);
+    expect(scored.getByText('Aya Nabil (pen)')).toBeTruthy();
+
+    const missed = await timeline([event({ id: 'e-miss', type: 'penalty_missed', player_id: 'p-home', penalty_outcome: 'saved' })]);
+    expect(missed.getAllByText('P')).toHaveLength(1);
+    expect(missed.getByText('Saved')).toBeTruthy();
+  });
+
+  it('leaves an ordinary goal its own mark', async () => {
+    const screen = await timeline([event({ player_id: 'p-home' })]);
+    expect(screen.queryByText('P')).toBeNull();
+  });
+
   it('stamps an event with no minute as full time', async () => {
     const screen = await timeline([event({ minute: null, player_id: 'p-home' })]);
     expect(screen.getByText('FT')).toBeTruthy();

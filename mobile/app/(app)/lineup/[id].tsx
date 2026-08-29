@@ -13,6 +13,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
+import { byPosition } from '@/src/lib/positions';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { FORMATIONS, LINEUP_FORMATS, type LineupFormat, type Player } from '@/src/types/api';
@@ -37,8 +38,10 @@ export default function LineupScreen() {
     const candidates = [match.home_team, match.away_team].filter((team) => team?.is_aimz);
     return candidates[0] ?? match.home_team ?? match.away_team ?? null;
   }, [match]);
+  // Read the way a team sheet is: keepers first, then out to the attack, and
+  // alphabetical within each line.
   const roster = useMemo<Player[]>(
-    () => playersQuery.data?.items.filter((player) => player.team_id === squad?.id) ?? [],
+    () => byPosition(playersQuery.data?.items.filter((player) => player.team_id === squad?.id) ?? []),
     [playersQuery.data, squad],
   );
 

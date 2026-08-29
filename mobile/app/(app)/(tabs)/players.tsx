@@ -12,6 +12,7 @@ import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { SegmentedControl, type SegmentedOption } from '@/src/components/SegmentedControl';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
+import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonFilter';
 import { SearchField } from '@/src/components/SearchField';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
@@ -39,6 +40,24 @@ const sectionsFor = (linked: boolean): Section[] =>
  * A parent's children, one tab each, so each child's stats are read on their
  * own. A player has only themselves here and is shown the panel directly.
  */
+/**
+ * One player's stats, with the season they are read for.
+ *
+ * The unfiltered read is what knows which seasons there are, so the filter
+ * keeps its own options once a season is chosen — keyed the way the panel keys
+ * its own unfiltered read, so the two share one fetch rather than making two.
+ */
+function MyStats({ playerId }: { playerId: string }) {
+  const styles = useThemedStyles(stylesheet);
+  const [season, setSeason] = useState(ALL_SEASONS);
+  const career = useQuery({ queryKey: ['player-stats', playerId, null], queryFn: () => api.playerStats(playerId), enabled: Boolean(playerId) });
+  const seasons = career.data?.seasons ?? [];
+  return <View style={styles.stack}>
+    <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />
+    <PlayerStatsPanel playerId={playerId} season={seasonQuery(season, seasons)} />
+  </View>;
+}
+
 function MyStatsSection() {
   const styles = useThemedStyles(stylesheet);
   const { user } = useAuth();
@@ -48,7 +67,7 @@ function MyStatsSection() {
     return user?.player_id
       // Behind the panel, so its glass has something to look through: a flat
       // page leaves translucency nothing to show and the cards read as fills.
-      ? <PlayerStatsPanel playerId={user.player_id} />
+      ? <MyStats playerId={user.player_id} />
       : <EmptyState body={copy.accountNotLinked} title="Account not linked" />;
   }
   if (isLoading) return <LoadingState label="Loading your children" />;
@@ -62,7 +81,7 @@ function MyStatsSection() {
         return <AnimatedTabPill accessibilityLabel={child.name} key={child.id} label={child.name} onPress={() => setChildId(child.id)} selected={active} style={styles.chip} />;
       })}
     </ScrollView> : null}
-    <PlayerStatsPanel playerId={selected.id} />
+    <MyStats playerId={selected.id} />
   </View>;
 }
 

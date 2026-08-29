@@ -33,12 +33,16 @@ export function SeasonPicker({ season, seasons, onChange, completed = false }: {
       testID="season-picker"
     >
       <Text style={styles.label}>{season}</Text>
-      <Ionicons accessibilityElementsHidden color={colors.textSecondary} name="chevron-down" size={14} />
+      <Ionicons accessibilityElementsHidden color={colors.onAccent} name="chevron-down" size={14} />
     </Pressable>
     <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible={open}>
-      <Pressable accessibilityLabel="Close season list" accessibilityRole="button" onPress={() => setOpen(false)} style={styles.scrim}>
-        {/* A press inside the sheet must not reach the scrim behind it. */}
-        <Pressable onPress={(event) => event.stopPropagation?.()} style={styles.sheet}>
+      {/* The scrim is a sibling of the sheet, laid under it, rather than its
+        * parent: a sheet inside a pressable scrim is a button inside a button,
+        * which is not valid on the web build. Drawn first, so the sheet is
+        * above it and a press on the sheet never reaches it. */}
+      <View style={styles.stage}>
+        <Pressable accessibilityLabel="Close season list" accessibilityRole="button" onPress={() => setOpen(false)} style={styles.scrim} />
+        <View style={styles.sheet}>
           <Text accessibilityRole="header" style={styles.sheetTitle}>Season</Text>
           <ScrollView style={styles.sheetList}>
             {seasons.map((option) => <Pressable
@@ -47,28 +51,31 @@ export function SeasonPicker({ season, seasons, onChange, completed = false }: {
               key={option}
               onPress={() => { setOpen(false); if (option !== season) onChange(option); }}
               style={({ pressed }) => [styles.option, pressed && styles.pressed]}
+              testID={`season-option-${option}`}
             >
               <Text style={[styles.optionText, option === season && styles.optionOn]}>{option}</Text>
               {option === season ? <Ionicons accessibilityElementsHidden color={colors.accent} name="checkmark" size={18} /> : null}
             </Pressable>)}
           </ScrollView>
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   </>;
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  // The accent, the way a selected tab and the dock's marker carry it.
   control: {
     ...noFocusRing,
-    alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border,
+    alignItems: 'center', backgroundColor: colors.accent, borderColor: colors.accent,
     borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs,
     minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md,
   },
-  label: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontVariant: ['tabular-nums'] },
+  label: { color: colors.onAccent, fontFamily: theme.font.semibold, fontVariant: ['tabular-nums'] },
   sole: { color: colors.textMuted, fontFamily: theme.font.medium, fontVariant: ['tabular-nums'] },
 
-  scrim: { alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.5)', flex: 1, justifyContent: 'center', padding: theme.spacing.lg },
+  stage: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: theme.spacing.lg },
+  scrim: { backgroundColor: 'rgba(0, 0, 0, 0.5)', bottom: 0, left: 0, position: 'absolute', right: 0, top: 0 },
   sheet: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, maxHeight: '70%', padding: theme.spacing.md, width: '100%', maxWidth: 320 },
   sheetTitle: { color: colors.textMuted, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 0.6, marginBottom: theme.spacing.xs, textTransform: 'uppercase' },
   sheetList: { flexGrow: 0 },

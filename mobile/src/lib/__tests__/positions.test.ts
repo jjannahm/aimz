@@ -1,4 +1,4 @@
-import { GOALKEEPER, isGoalkeeper, lineFor, matchPositions, POSITIONS, positionLabel, positionName } from '@/src/lib/positions';
+import { byPosition, GOALKEEPER, isGoalkeeper, lineFor, matchPositions, POSITIONS, positionLabel, positionName } from '@/src/lib/positions';
 
 describe('the position vocabulary', () => {
   it('matches the one the worker validates against', () => {
@@ -60,5 +60,40 @@ describe('matchPositions', () => {
 
   it('matches nothing rather than everything when there is no such position', () => {
     expect(matchPositions('zzz')).toEqual([]);
+  });
+});
+
+describe('byPosition', () => {
+  const player = (name: string, position: string | null) => ({ name, position });
+
+  it('reads a squad the way a team sheet does, back to front', () => {
+    const squad = [
+      player('Striker', 'ST'), player('Keeper', 'GK'),
+      player('Midfielder', 'CM'), player('Defender', 'CB'),
+    ];
+    expect(byPosition(squad).map((entry) => entry.name)).toEqual(['Keeper', 'Defender', 'Midfielder', 'Striker']);
+  });
+
+  it('sorts alphabetically within a line', () => {
+    const squad = [player('Zara', 'CB'), player('Amira', 'LB'), player('Mona', 'RWB')];
+    expect(byPosition(squad).map((entry) => entry.name)).toEqual(['Amira', 'Mona', 'Zara']);
+  });
+
+  // A wing-back is a defender because the vocabulary says so, not because of
+  // where "wing" happens to fall in the name.
+  it('places a wing-back with the defence and a wing with the attack', () => {
+    const squad = [player('Winger', 'LW'), player('WingBack', 'LWB')];
+    expect(byPosition(squad).map((entry) => entry.name)).toEqual(['WingBack', 'Winger']);
+  });
+
+  it('gives someone with no position the midfield, rather than dropping them', () => {
+    const squad = [player('Striker', 'ST'), player('Unknown', null), player('Keeper', 'GK')];
+    expect(byPosition(squad).map((entry) => entry.name)).toEqual(['Keeper', 'Unknown', 'Striker']);
+  });
+
+  it('leaves the list it was given alone', () => {
+    const squad = [player('Striker', 'ST'), player('Keeper', 'GK')];
+    byPosition(squad);
+    expect(squad.map((entry) => entry.name)).toEqual(['Striker', 'Keeper']);
   });
 });
