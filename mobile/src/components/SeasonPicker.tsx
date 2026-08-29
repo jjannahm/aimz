@@ -33,7 +33,7 @@ export function SeasonPicker({ season, seasons, onChange, completed = false }: {
       testID="season-picker"
     >
       <Text style={styles.label}>{season}</Text>
-      <Ionicons accessibilityElementsHidden color={colors.textSecondary} name="chevron-down" size={14} />
+      <Ionicons accessibilityElementsHidden color={colors.onAccent} name="chevron-down" size={14} />
     </Pressable>
     <Modal animationType="fade" onRequestClose={() => setOpen(false)} transparent visible={open}>
       {/* The scrim is a sibling of the sheet, laid under it, rather than its
@@ -64,13 +64,14 @@ export function SeasonPicker({ season, seasons, onChange, completed = false }: {
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  // The accent, the way a selected tab and the dock's marker carry it.
   control: {
     ...noFocusRing,
-    alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border,
+    alignItems: 'center', backgroundColor: colors.accent, borderColor: colors.accent,
     borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs,
     minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md,
   },
-  label: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontVariant: ['tabular-nums'] },
+  label: { color: colors.onAccent, fontFamily: theme.font.semibold, fontVariant: ['tabular-nums'] },
   sole: { color: colors.textMuted, fontFamily: theme.font.medium, fontVariant: ['tabular-nums'] },
 
   stage: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: theme.spacing.lg },
