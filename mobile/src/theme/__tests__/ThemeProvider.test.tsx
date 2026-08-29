@@ -40,7 +40,22 @@ describe('theme palettes', () => {
 
   it('uses the compact editorial core tokens in both modes', () => {
     expect(darkColors).toMatchObject({ background: '#08080C', surface: '#121216', surfaceRaised: '#1A1A20', border: '#2C2B32', accent: '#3B82F6', accentSoft: '#0EA2E7', leaderAccent: '#3B82F6', textPrimary: '#F5F2EA' });
-    expect(lightColors).toMatchObject({ background: '#F2F0E8', surface: '#FBFAF5', surfaceRaised: '#E6E2D8', border: '#CBC7BD', accent: '#3B82F6', accentSoft: '#1E40AF', leaderAccent: '#1E40AF' });
+    expect(lightColors).toMatchObject({
+      background: '#A6C4E8',
+      surface: '#F9FCFF',
+      surfaceRaised: '#E7EDF6',
+      border: '#D8DFE9',
+      accent: '#3B82F6',
+      accentSoft: '#1E40AF',
+      selectionSurface: '#E7EDF6',
+      onAccent: '#08080C',
+      textPrimary: '#060A12',
+      textSecondary: '#334155',
+      textMuted: '#4B5563',
+      leaderAccent: '#1E40AF',
+      progressTrack: '#D8DFE9',
+      highlightedSurface: '#E7EDF6',
+    });
     expect(Object.values(theme.spacing)).toEqual([4, 8, 12, 16, 24, 32, 48]);
   });
 

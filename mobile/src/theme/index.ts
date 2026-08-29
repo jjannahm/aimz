@@ -47,19 +47,19 @@ export type ThemeColors = Record<keyof typeof dark, string>;
 
 export const darkColors: ThemeColors = dark;
 
-/** Warm paper inverse of the editorial dark mode. */
+/** The original AIMZ light-blue atmosphere, applied to the compact flat UI. */
 export const lightColors: ThemeColors = {
-  background: '#F2F0E8',
-  surface: '#FBFAF5',
-  surfaceRaised: '#E6E2D8',
-  border: '#CBC7BD',
+  background: '#A6C4E8',
+  surface: '#F9FCFF',
+  surfaceRaised: '#E7EDF6',
+  border: '#D8DFE9',
   accent: palette.blue,
   accentSoft: palette.deepBlue,
-  selectionSurface: '#E6E2D8',
+  selectionSurface: '#E7EDF6',
   onAccent: '#08080C',
-  textPrimary: '#111114',
-  textSecondary: '#403E45',
-  textMuted: '#66636F',
+  textPrimary: '#060A12',
+  textSecondary: '#334155',
+  textMuted: '#4B5563',
   live: '#166534',
   liveSurface: '#DCFCE7',
   liveText: '#14532D',
@@ -72,8 +72,8 @@ export const lightColors: ThemeColors = {
   onError: '#FFFFFF',
   leaderSurface: '#E7EDF6',
   leaderAccent: palette.deepBlue,
-  progressTrack: '#CBC7BD',
-  highlightedSurface: '#E6E2D8',
+  progressTrack: '#D8DFE9',
+  highlightedSurface: '#E7EDF6',
 };
 
 export type ThemeMode = 'light' | 'dark';
