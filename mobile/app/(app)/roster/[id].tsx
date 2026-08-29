@@ -6,7 +6,6 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AppButton } from '@/src/components/AppButton';
 import { CloseButton } from '@/src/components/CloseButton';
-import { DateTimeField } from '@/src/components/DateTimeField';
 import { FormField } from '@/src/components/FormField';
 import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
@@ -27,6 +26,8 @@ export default function PrivateRosterDetailsScreen() {
   const client = useQueryClient();
   const player = useQuery({ queryKey: ['players', id], queryFn: async () => (await api.players('?limit=100')).items.find((item) => item.id === id) ?? null, enabled: Boolean(id) && user?.role === 'admin' });
   const details = useQuery({ queryKey: ['roster-details', id], queryFn: () => api.playerRosterDetails(id), enabled: Boolean(id) && user?.role === 'admin' });
+  // Kept, loaded and written back though it is no longer edited here, so that
+  // saving this screen cannot quietly erase a date already on the record.
   const [dateOfBirth, setDateOfBirth] = React.useState('');
   const [contacts, setContacts] = React.useState<ContactDraft[]>([]);
   React.useEffect(() => {
@@ -48,14 +49,12 @@ export default function PrivateRosterDetailsScreen() {
   if (player.isError || details.isError || !player.data) return <Screen action={<CloseButton />} title="Private roster details"><ErrorState message={player.data === null ? 'Player not found.' : ((player.error ?? details.error) as ApiError).message} onRetry={() => { player.refetch(); details.refetch(); }} /></Screen>;
   const update = (index: number, patch: Partial<ContactDraft>) => setContacts((current) => current.map((contact, contactIndex) => contactIndex === index ? { ...contact, ...patch } : contact));
   return <Screen action={<CloseButton />} title={player.data?.name ?? 'Private roster details'}>
-    <View style={styles.notice}><Text style={styles.noticeTitle}>Administrators only</Text><Text style={styles.noticeCopy}>Date of birth and guardian details never appear in player lists, statistics or player-facing screens.</Text></View>
-    <DateTimeField dateOnly label="Date of birth" onChange={setDateOfBirth} value={dateOfBirth} />
+    <View style={styles.notice}><Text style={styles.noticeTitle}>Administrators only</Text><Text style={styles.noticeCopy}>Guardian and contact details never appear in player lists, statistics or player-facing screens.</Text></View>
     <View style={styles.header}><Text style={styles.heading}>Guardian and contact details</Text><AppButton compact label="Add contact" onPress={() => setContacts((current) => [...current, blankContact()])} variant="secondary" /></View>
     {contacts.length === 0 ? <Text style={styles.empty}>No private contacts saved.</Text> : contacts.map((contact, index) => <View key={index} style={styles.card}>
       <View style={styles.header}><Text style={styles.contactTitle}>Contact {index + 1}</Text><AppButton compact icon="trash" iconOnly label={`Remove contact ${index + 1}`} onPress={() => setContacts((current) => current.filter((unused, contactIndex) => contactIndex !== index))} variant="danger" /></View>
       <FormField label="Name" onChangeText={(name) => update(index, { name })} value={contact.name} />
       <FormField label="Relationship" onChangeText={(relationship) => update(index, { relationship })} placeholder="Parent or guardian" value={contact.relationship} />
-      <FormField autoCapitalize="none" keyboardType="email-address" label="Email" onChangeText={(email) => update(index, { email })} value={contact.email} />
       <FormField keyboardType="phone-pad" label="Phone" onChangeText={(phone) => update(index, { phone })} value={contact.phone} />
     </View>)}
     <AppButton label="Save private details" loading={save.isPending} onPress={() => save.mutate()} />

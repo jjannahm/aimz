@@ -9,6 +9,7 @@ import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
 import { SeasonPicker } from '@/src/components/SeasonPicker';
+import { SettingsButton } from '@/src/components/SettingsButton';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { FormStrip } from '@/src/components/FormStrip';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
@@ -120,7 +121,10 @@ export default function StandingsScreen() {
   const pickedName = table.data?.find((row) => row.team.id === picking?.[0])?.team.name;
 
   const closed = competition?.status === 'completed';
-  return <Screen action={<SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} />} title="Standings">
+  // The header's own settings button sits left of a screen's action, which
+  // would put the gear between the title and the season. Here the two are
+  // given in the order they should read: the season, then settings on the edge.
+  return <Screen action={<><SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} /><SettingsButton /></>} hideSettings title="Standings">
     {closed ? <View style={styles.archived}>
       <Ionicons accessibilityElementsHidden color={colors.textMuted} name="lock-closed-outline" size={14} />
       <Text style={styles.archivedText}>{competition?.name} {competition?.season} has ended. This table is final.</Text>
