@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
 import { ApiProblem, adminUser, booleanField, enumField, jsonArray, jsonObject, nowIso, numberField, publicPlayer, publicStat, publicTeam, stringField } from "./helpers";
+import { computeGoalkeeperStats } from "./goalkeeping";
 import { recordAudit } from "./audit";
 import { describeEvent, eventCounter, isOpponentOnly, LOGGABLE_EVENTS, PENALTY_OUTCOMES, SUBSTITUTION_REASONS } from "./scoring-rules";
 import { getJoinedMatch, joinedMatch } from "./domain";
@@ -48,6 +49,9 @@ export function registerMatchRoutes(app: App): void {
       c.env.DB.prepare("UPDATE matches SET status=?, phase=?, phase_started_at=?, revision=revision+1, updated_at=? WHERE id=?").bind(clock.status, clock.phase, clock.phase_started_at, updated, match.id),
       recordAudit(c.env, admin, { action, entityType: "match", entityId: match.id, matchId: match.id, summary: `Match clock moved to ${clock.phase.replace(/_/gu, " ")}.` }),
     ]);
+    // A clean sheet is only settled at full time, so the tallies are rewritten
+    // when the whistle goes.
+    await c.env.DB.batch(await goalkeeperStatements(c.env, match.id, clock.status === "finished", updated));
     return c.json(joinedMatch(await getJoinedMatch(c.env, match.id)));
   });
 
@@ -89,7 +93,10 @@ export function registerMatchRoutes(app: App): void {
     if (match.status !== "finished") throw new ApiProblem(409, "match_not_finished", "Pick man of the match once the match has finished.");
     const body = await jsonObject(c);
     const playerId = stringField(body, "player_id", { optional: true, nullable: true, max: 36 }) ?? null;
-    let name = "No one";
+    // An opponent has no player record here, so the award can name their side
+    // instead. The two are exclusive: one award, one winner.
+    const isOpponent = booleanField(body, "is_opponent", false) && !playerId;
+    let name = isOpponent ? "An opponent player" : "No one";
     if (playerId) {
       const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(playerId).first<PlayerRow>();
       if (!player || (player.team_id !== match.home_team_id && player.team_id !== match.away_team_id)) throw new ApiProblem(422, "invalid_award_player", "That player did not play in this match.");
@@ -101,8 +108,8 @@ export function registerMatchRoutes(app: App): void {
     await c.env.DB.batch([
       // The live snapshot is cached on the revision, so it has to move or a
       // stale ETag would hide the award.
-      c.env.DB.prepare("UPDATE matches SET man_of_the_match_player_id=?, revision=revision+1, updated_at=? WHERE id=?").bind(playerId, updated, match.id),
-      recordAudit(c.env, admin, { action: "man_of_the_match_set", entityType: "match", entityId: match.id, matchId: match.id, summary: playerId ? `Named ${name} man of the match.` : "Cleared man of the match." }),
+      c.env.DB.prepare("UPDATE matches SET man_of_the_match_player_id=?, man_of_the_match_is_opponent=?, revision=revision+1, updated_at=? WHERE id=?").bind(playerId, isOpponent ? 1 : 0, updated, match.id),
+      recordAudit(c.env, admin, { action: "man_of_the_match_set", entityType: "match", entityId: match.id, matchId: match.id, summary: playerId || isOpponent ? `Named ${name} man of the match.` : "Cleared man of the match." }),
     ]);
     return c.json(joinedMatch(await getJoinedMatch(c.env, match.id)));
   });
@@ -181,7 +188,12 @@ export function registerMatchRoutes(app: App): void {
     }
     statements.push(scoreRecalculation(c.env, match.id, now));
     statements.push(recordAudit(c.env, admin, { action: "event_added", entityType: "match_event", entityId: event.id, matchId: match.id, summary: `Added ${describeEvent(event)}.` }));
-    try { await c.env.DB.batch(statements); }
+    try {
+      await c.env.DB.batch(statements);
+      // Read after the write: the keeper's tally is worked out from the timeline
+      // this event has just joined.
+      await c.env.DB.batch(await goalkeeperStatements(c.env, match.id, match.status === "finished", now));
+    }
     catch (error) {
       const existing = await c.env.DB.prepare("SELECT * FROM match_events WHERE client_operation_id = ?").bind(operationId).first<EventRow>();
       if (existing) return c.json(publicEvent(existing));
@@ -217,6 +229,7 @@ export function registerMatchRoutes(app: App): void {
       statRecalculation(c.env, match.id, event.updated_at),
       recordAudit(c.env, admin, { action: "event_corrected", entityType: "match_event", entityId: event.id, matchId: match.id, summary: `Corrected ${describeEvent(event)}.` }),
     ]);
+    await c.env.DB.batch(await goalkeeperStatements(c.env, match.id, match.status === "finished", event.updated_at));
     return c.json(publicEvent(event));
   });
 
@@ -233,6 +246,7 @@ export function registerMatchRoutes(app: App): void {
       statRecalculation(c.env, match.id, now),
       recordAudit(c.env, admin, { action: "event_removed", entityType: "match_event", entityId: c.req.param("eventId"), matchId: match.id, summary: "Removed an event from the timeline." }),
     ]);
+    await c.env.DB.batch(await goalkeeperStatements(c.env, match.id, match.status === "finished", now));
     return c.body(null, 204);
   });
 
@@ -280,6 +294,33 @@ function scoreRecalculation(env: Env, matchId: string, updated: string): D1Prepa
   const scored = (team: "home" | "away", other: "home" | "away") =>
     `(SELECT COUNT(*) FROM match_events e WHERE e.match_id=matches.id AND ((e.type='goal' AND e.team_id=matches.${team}_team_id) OR (e.type='own_goal' AND e.team_id=matches.${other}_team_id)))`;
   return env.DB.prepare(`UPDATE matches SET home_score=${scored("home", "away")}, away_score=${scored("away", "home")}, revision=revision+1, updated_at=? WHERE id=?`).bind(updated, matchId);
+}
+
+/**
+ * Write the goalkeeping tallies for a match.
+ *
+ * Unlike the outfield counters, these cannot be a single UPDATE: who conceded a
+ * goal depends on which keeper was on the pitch at the minute, which is a walk
+ * through the substitutions rather than something SQL can count in place. So
+ * the timeline is read, the answer is worked out, and the rows are written.
+ */
+async function goalkeeperStatements(env: Env, matchId: string, finished: boolean, updated: string): Promise<D1PreparedStatement[]> {
+  const [lineup, events] = await Promise.all([
+    env.DB.prepare("SELECT * FROM match_lineup_entries WHERE match_id=?").bind(matchId).all<LineupRow>(),
+    env.DB.prepare("SELECT * FROM match_events WHERE match_id=?").bind(matchId).all<EventRow>(),
+  ]);
+  const stats = computeGoalkeeperStats(lineup.results, events.results, finished);
+  // Everyone is cleared first, so a keeper who is corrected off the sheet, or
+  // moved out of goal, does not keep a tally they are no longer owed.
+  const statements = [env.DB.prepare("UPDATE player_match_stats SET goals_conceded=0, penalties_saved=0, clean_sheet=0, updated_at=? WHERE match_id=?").bind(updated, matchId)];
+  for (const [playerId, row] of stats) {
+    statements.push(env.DB.prepare(`
+      INSERT INTO player_match_stats (id, match_id, player_id, appeared, minutes_played, goals_conceded, penalties_saved, clean_sheet, created_at, updated_at)
+      VALUES (?, ?, ?, 1, 0, ?, ?, ?, ?, ?)
+      ON CONFLICT(match_id, player_id) DO UPDATE SET goals_conceded=excluded.goals_conceded, penalties_saved=excluded.penalties_saved, clean_sheet=excluded.clean_sheet, appeared=1, updated_at=excluded.updated_at
+    `).bind(crypto.randomUUID(), matchId, playerId, row.goals_conceded, row.penalties_saved, row.clean_sheet, updated, updated));
+  }
+  return statements;
 }
 
 function statRecalculation(env: Env, matchId: string, updated: string): D1PreparedStatement {

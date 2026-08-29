@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { GlassSurface } from '@/src/components/GlassSurface';
+import { isGoalkeeper } from '@/src/lib/positions';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
@@ -16,9 +17,26 @@ export function PlayerStatsPanel({ playerId }: { playerId: string }) {
   if (query.isLoading) return <LoadingState label="Loading player stats" />;
   if (query.isError || !query.data) return <ErrorState message={(query.error as ApiError)?.message ?? 'Player not found.'} onRetry={() => query.refetch()} />;
   const byId = new Map(matches.data?.items.map((match) => [match.id, match]));
+  // Goalkeeping is only shown to a keeper. On an outfielder these are three
+  // zeroes that say nothing, and they would crowd out the tallies that do.
+  const keeping = { clean_sheets: query.data.clean_sheets ?? 0, goals_conceded: query.data.goals_conceded ?? 0, penalties_saved: query.data.penalties_saved ?? 0 };
+  const keeps = isGoalkeeper(query.data.player.position) || keeping.clean_sheets > 0 || keeping.penalties_saved > 0 || keeping.goals_conceded > 0;
+  const tiles = [
+    { label: 'Appearances', value: query.data.appearances },
+    { label: 'Minutes', value: query.data.minutes_played },
+    { label: 'Goals', value: query.data.goals },
+    { label: 'Assists', value: query.data.assists },
+    { label: 'Yellow cards', value: query.data.yellow_cards },
+    { label: 'Red cards', value: query.data.red_cards },
+    ...(keeps ? [
+      { label: 'Clean sheets', value: keeping.clean_sheets },
+      { label: 'Goals conceded', value: keeping.goals_conceded },
+      { label: 'Penalties saved', value: keeping.penalties_saved },
+    ] : []),
+  ];
   return <>
     <GlassSurface radius={22} style={styles.profile}>{query.data.player.photo_url ? <Image accessibilityLabel={`${query.data.player.name} profile photo`} source={{ uri: mediaUrl(query.data.player.photo_url) }} style={styles.profilePhoto} /> : <View style={styles.number}><Text style={styles.numberText}>{query.data.player.jersey_number ?? '–'}</Text></View>}<View><Text style={styles.name}>{query.data.player.name}</Text><Text style={styles.position}>{query.data.player.position}</Text><Text style={styles.season}>{query.data.season ?? 'All recorded seasons'}</Text></View></GlassSurface>
-    <View style={styles.grid}>{[{ label: 'Appearances', value: query.data.appearances }, { label: 'Minutes', value: query.data.minutes_played }, { label: 'Goals', value: query.data.goals }, { label: 'Assists', value: query.data.assists }, { label: 'Yellow cards', value: query.data.yellow_cards }, { label: 'Red cards', value: query.data.red_cards }].map((item) => <GlassSurface key={item.label} radius={16} style={styles.stat}><Text style={styles.value}>{item.value}</Text><Text style={styles.label}>{item.label}</Text></GlassSurface>)}</View>
+    <View style={styles.grid}>{tiles.map((item) => <GlassSurface key={item.label} radius={16} style={styles.stat}><Text style={styles.value}>{item.value}</Text><Text style={styles.label}>{item.label}</Text></GlassSurface>)}</View>
     <Text style={styles.heading}>Match breakdown</Text>
     {query.data.matches.length === 0 ? <Text style={styles.empty}>No finished-match statistics yet.</Text> : query.data.matches.map((item) => {
       const match = byId.get(item.match_id);

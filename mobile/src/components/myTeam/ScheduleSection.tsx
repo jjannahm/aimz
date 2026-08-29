@@ -64,7 +64,9 @@ function SessionRow({ session, last }: { session: TrainingSession; last: boolean
     <Pressable accessibilityLabel={spoken(session)} accessibilityRole="button" onPress={() => open(session)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
       {/* The thread the dots hang on, drawn per row so it stops at the last. */}
       <View style={styles.thread}>
-        {last ? null : <View style={styles.threadLine} />}
+        {/* On the last row the line stops at its dot instead of vanishing, or
+          * the thread would end a whole row above the session it leads to. */}
+        <View style={[styles.threadLine, last && styles.threadLineLast]} />
         <View style={styles.dot} />
       </View>
       <View style={styles.rowDate}>
@@ -144,6 +146,8 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // which then sits on it. White rather than `border`, which on this glass is
   // the colour of the page behind it and so shows as nothing at all.
   threadLine: { backgroundColor: 'rgba(255, 255, 255, 0.16)', bottom: -theme.spacing.md, position: 'absolute', top: 0, width: 1 },
+  // Down to the middle of the dot: 22 to its top, and half of its 8 points.
+  threadLineLast: { bottom: undefined, height: 26 },
 
   rowDate: { alignItems: 'center', width: 40 },
   rowWeekday: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '700', letterSpacing: 0.6 },

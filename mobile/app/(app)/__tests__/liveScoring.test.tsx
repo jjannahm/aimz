@@ -26,7 +26,7 @@ const match = (over: Partial<Match> = {}): Match => ({
   id: 'match-1', competition_id: 'c-1', home_team_id: 'home', away_team_id: 'away',
   kickoff_datetime: '2026-08-20T18:30:00.000Z', venue: 'AIMZ Arena',
   status: 'live', phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z',
-  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null, man_of_the_match_player_id: null,
+  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null, man_of_the_match_player_id: null, man_of_the_match_is_opponent: false,
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15,
   created_at: '', updated_at: '',
@@ -356,5 +356,52 @@ describe('LiveScoringScreen — who can be credited with an assist', () => {
 
     expect(screen.queryByText('Nobody on the bench')).toBeNull();
     expect(screen.queryByText('Nobody on the pitch')).toBeNull();
+  });
+});
+
+
+describe('LiveScoringScreen — the penalty taker and the award', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [onPitch, benched], total: 2, limit: 100, offset: 0 });
+    jest.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-20T18:40:00.000Z'));
+  });
+  afterEach(() => { jest.clearAllMocks(); jest.restoreAllMocks(); });
+
+  const live = (over: Partial<Match> = {}) => jest.mocked(api.live).mockResolvedValue({
+    ...snapshot({ phase: 'first_half', phase_started_at: '2026-08-20T18:40:00.000Z', ...over }),
+    lineup: [named(onPitch.id, true), named(benched.id, false)],
+  } as LiveMatchSnapshot);
+
+  // A penalty is taken by someone who is playing, like a goal is scored by one.
+  it('offers only the players on the pitch as the penalty taker', async () => {
+    live();
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Penalty missed'));
+    fireEvent.press(await screen.findByText('Saved'));
+    fireEvent.press(await screen.findByLabelText('Taker'));
+
+    expect(await screen.findByText(`#${onPitch.jersey_number} ${onPitch.name}`)).toBeTruthy();
+    expect(screen.queryByText(`#${benched.jersey_number} ${benched.name}`)).toBeNull();
+  });
+
+  // The other side has no player records here, so the award names their side.
+  it('lets the award go to an opponent', async () => {
+    live({ status: 'finished', phase: 'finished', phase_started_at: null });
+    jest.mocked(api.setManOfTheMatch).mockResolvedValue(match({ status: 'finished' }));
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Player'));
+    fireEvent.press(await screen.findByText('Opponent player'));
+
+    await waitFor(() => expect(api.setManOfTheMatch).toHaveBeenCalledWith('match-1', null, true));
+  });
+
+  it('sends a named player as a player, not as an opponent', async () => {
+    live({ status: 'finished', phase: 'finished', phase_started_at: null });
+    jest.mocked(api.setManOfTheMatch).mockResolvedValue(match({ status: 'finished' }));
+    const screen = await render(<LiveScoringScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Player'));
+    fireEvent.press(await screen.findByText(`#${onPitch.jersey_number} ${onPitch.name}`));
+
+    await waitFor(() => expect(api.setManOfTheMatch).toHaveBeenCalledWith('match-1', onPitch.id, false));
   });
 });

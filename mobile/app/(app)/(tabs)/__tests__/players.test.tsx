@@ -75,7 +75,7 @@ describe('PlayersScreen', () => {
     mockUser = { role: 'player', player_id: 'p-1' };
     jest.mocked(api.playerStats).mockResolvedValue({
       player: players[0]!, season: '2026/27', appearances: 4, minutes_played: 300,
-      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, matches: [],
+      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0, matches: [],
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
@@ -95,7 +95,7 @@ describe('PlayersScreen', () => {
     ] });
     jest.mocked(api.playerStats).mockResolvedValue({
       player: players[1]!, season: '2026/27', appearances: 4, minutes_played: 300,
-      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, matches: [],
+      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0, matches: [],
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
