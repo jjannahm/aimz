@@ -129,7 +129,7 @@ export default function StandingsScreen() {
         <Text style={[styles.team, styles.headerText]}>TEAM</Text>
         <Text style={[styles.stat, styles.headerText]}>P</Text>
         <Text style={[styles.stat, styles.headerText]}>GD</Text>
-        <Text style={[styles.stat, styles.headerText]}>PTS</Text>
+        <Text style={[styles.pointsHeader, styles.headerText]}>PTS</Text>
       </View>
       {rows.map((row: StandingRow, index: number) => <Pressable accessibilityHint="Opens head-to-head records against the other teams" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" key={row.team.id} onPress={() => setOpponentsFor(row.team.id)} style={({ pressed }) => [styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, pressed && styles.pressed]}>
         {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
@@ -154,6 +154,17 @@ export default function StandingsScreen() {
     </View>;
   }
 }
+
+/**
+ * The table's columns, shared by the header and every row.
+ *
+ * Fixed rather than shared out, so a long team name cannot push the numbers
+ * around and the header cannot drift away from the values under it. Only the
+ * team cell flexes, taking whatever is left.
+ */
+const RANK_COLUMN = 22;
+const STAT_COLUMN = 34;
+const POINTS_COLUMN = 40;
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // The section the switcher swaps, which keeps the page's own rhythm between
@@ -183,9 +194,12 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   h2hEmpty: { color: colors.textMuted, fontFamily: theme.font.regular, lineHeight: 21 },
   h2hPrompt: { color: colors.textSecondary, fontFamily: theme.font.regular, lineHeight: 21 },
   table: { gap: 6 },
-  tableHeader: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 32, paddingHorizontal: theme.spacing.md },
+  // Each row is a bordered card, and with border-box that border eats a pixel
+  // of its content on both sides. The header carries the same border in nothing
+  // but air, so its cells sit in the same box as the values under them.
+  tableHeader: { alignItems: 'center', borderColor: 'transparent', borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 32, paddingHorizontal: theme.spacing.md },
   headerText: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, letterSpacing: 0.8 },
-  rankHeader: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, width: 22 },
+  rankHeader: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, width: RANK_COLUMN },
   row: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: theme.size.listRow, overflow: 'hidden', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs },
   altRow: { backgroundColor: colors.surface },
   aimzRow: { backgroundColor: colors.highlightedSurface },
@@ -196,7 +210,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // of the header, which has no border to match. The table clips it to the
   // rounded corner.
   leaderEdge: { backgroundColor: colors.leaderAccent, bottom: 0, left: 0, position: 'absolute', top: 0, width: 4 },
-  rank: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], width: 22 },
+  rank: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], width: RANK_COLUMN },
   leaderRank: { color: colors.leaderAccent },
   teamCell: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm },
   team: { flex: 1 },
@@ -204,8 +218,11 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   teamName: { color: colors.textPrimary, flexShrink: 1, fontFamily: theme.font.semibold },
   leaderName: { fontFamily: theme.font.bold },
   code: { color: colors.accentSoft, fontFamily: theme.font.medium, fontSize: theme.type.caption, marginTop: 2 },
-  stat: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: 34 },
-  pointsBox: { alignItems: 'center', backgroundColor: colors.textPrimary, borderRadius: theme.radius.sm, justifyContent: 'center', minHeight: 40, width: 40 },
+  stat: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: STAT_COLUMN },
+  // Centred over the badge below it, and the same width, so the label sits on
+  // the number rather than beside it.
+  pointsHeader: { textAlign: 'center', width: POINTS_COLUMN },
+  pointsBox: { alignItems: 'center', backgroundColor: colors.textPrimary, borderRadius: theme.radius.sm, justifyContent: 'center', minHeight: 40, width: POINTS_COLUMN },
   leaderPointsBox: { backgroundColor: colors.accent },
   points: { color: colors.background, fontFamily: theme.font.monoBold, textAlign: 'center' },
   leaderPoints: { color: colors.onAccent },

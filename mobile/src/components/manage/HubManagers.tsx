@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/src/components/AppButton';
 import { ChoiceField } from '@/src/components/ChoiceField';
+import { CollapsibleSection } from '@/src/components/CollapsibleSection';
 import { DateTimeField } from '@/src/components/DateTimeField';
 import { FormField } from '@/src/components/FormField';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
@@ -100,10 +101,12 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
       <FormField label="Notes (optional)" multiline onChangeText={(notes) => setDraft((current) => ({ ...current, notes }))} value={draft.notes} />
       <View style={styles.formActions}><AppButton label={editing ? 'Save occurrence' : 'Create schedule'} loading={save.isPending} onPress={() => save.mutate()} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); setDraft(freshSchedule()); }} variant="ghost" /> : null}</View>
     </View>
-    {sessions.isLoading ? <LoadingState /> : sessions.isError ? <ErrorState message={(sessions.error as ApiError).message} onRetry={() => sessions.refetch()} /> : sessions.data?.items.map((session) => <Pressable key={session.id} onPress={() => router.push({ pathname: '/training/[id]', params: { id: session.id } })} style={styles.card}>
-      <View style={styles.copy}><Text style={styles.title}>{session.team.name}</Text><Text style={styles.meta}>{formatEgyptDateTime(session.starts_at)} · {session.venue}</Text></View>
-      <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit occurrence" onPress={() => beginEdit(session)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete occurrence" onPress={() => confirmAction('Delete this session?', 'Only this occurrence will be removed.', 'Delete one', () => remove(session, 'one'), { destructive: true })} variant="danger" />{session.series_id ? <AppButton compact label="Delete series" onPress={() => confirmAction('Delete the full series?', 'Every occurrence in this series will be removed.', 'Delete series', () => remove(session, 'series'), { destructive: true })} variant="danger" /> : null}</View>
-    </Pressable>)}
+    {sessions.isError ? <ErrorState message={(sessions.error as ApiError).message} onRetry={() => sessions.refetch()} /> : <CollapsibleSection count={sessions.data?.items.length ?? 0} title="Current training sessions">
+      {sessions.isLoading ? <LoadingState /> : !sessions.data?.items.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{sessions.data.items.map((session) => <Pressable key={session.id} onPress={() => router.push({ pathname: '/training/[id]', params: { id: session.id } })} style={styles.card}>
+        <View style={styles.copy}><Text style={styles.title}>{session.team.name}</Text><Text style={styles.meta}>{formatEgyptDateTime(session.starts_at)} · {session.venue}</Text></View>
+        <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit occurrence" onPress={() => beginEdit(session)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete occurrence" onPress={() => confirmAction('Delete this session?', 'Only this occurrence will be removed.', 'Delete one', () => remove(session, 'one'), { destructive: true })} variant="danger" />{session.series_id ? <AppButton compact label="Delete series" onPress={() => confirmAction('Delete the full series?', 'Every occurrence in this series will be removed.', 'Delete series', () => remove(session, 'series'), { destructive: true })} variant="danger" /> : null}</View>
+      </Pressable>)}</View>}
+    </CollapsibleSection>}
   </View>;
 }
 
@@ -135,10 +138,12 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
       <ChoiceField label="Priority" onChange={(value) => setDraft((current) => ({ ...current, pinned: value === 'pinned' }))} options={[{ label: 'Standard', value: 'standard' }, { label: 'Pinned', value: 'pinned' }]} value={draft.pinned ? 'pinned' : 'standard'} />
       <View style={styles.formActions}><AppButton label={editing ? 'Save changes' : 'Publish'} loading={save.isPending} onPress={() => save.mutate()} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); setDraft(blankAnnouncement); }} variant="ghost" /> : null}</View>
     </View>
-    {announcements.isLoading ? <LoadingState /> : announcements.isError ? <ErrorState message={(announcements.error as ApiError).message} onRetry={() => announcements.refetch()} /> : announcements.data?.items.map((announcement) => <View key={announcement.id} style={styles.card}>
-      <View style={styles.copy}><Text style={styles.title}>{announcement.pinned ? 'Pinned · ' : ''}{announcement.title}</Text><Text style={styles.meta}>{announcement.team?.name ?? 'Whole academy'} · {announcement.author_name ?? 'Administrator'}</Text><Text style={styles.body}>{announcement.body}</Text></View>
-      <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(announcement)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete" onPress={() => remove(announcement)} variant="danger" /></View>
-    </View>)}
+    {announcements.isError ? <ErrorState message={(announcements.error as ApiError).message} onRetry={() => announcements.refetch()} /> : <CollapsibleSection count={announcements.data?.items.length ?? 0} title="Current announcements">
+      {announcements.isLoading ? <LoadingState /> : !announcements.data?.items.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{announcements.data.items.map((announcement) => <View key={announcement.id} style={styles.card}>
+        <View style={styles.copy}><Text style={styles.title}>{announcement.pinned ? 'Pinned · ' : ''}{announcement.title}</Text><Text style={styles.meta}>{announcement.team?.name ?? 'Whole academy'} · {announcement.author_name ?? 'Administrator'}</Text><Text style={styles.body}>{announcement.body}</Text></View>
+        <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(announcement)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete" onPress={() => remove(announcement)} variant="danger" /></View>
+      </View>)}</View>}
+    </CollapsibleSection>}
   </View>;
 }
 
@@ -147,6 +152,8 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   body: { color: colors.textSecondary, lineHeight: 21, marginTop: theme.spacing.sm },
   card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.md },
   copy: { flex: 1 },
+  empty: { color: colors.textMuted },
+  list: { gap: theme.spacing.sm },
   // Seven across, the way the date picker's calendar lays out its own week.
   // A gap would push the last day onto a second row, so the separation sits
   // inside each chip and the columns line up.
