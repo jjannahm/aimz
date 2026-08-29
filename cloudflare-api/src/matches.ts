@@ -35,16 +35,10 @@ function requireScorable(match: { home_is_aimz: number; away_is_aimz: number }):
 /**
  * Whether this player took the field in this match.
  *
- * The team sheet is the record of who played, so it is asked first: a starter
- * has appeared whether or not she scored, was booked, or had minutes typed in
- * afterwards. `player_match_stats.appeared` is the second question rather than
- * the first, because it is only written when minutes are saved by hand, when an
- * event names the player, or when goalkeeping is worked out — so on its own it
- * misses anyone who simply played an ordinary match, and it was the whole
- * reason a quiet starter could not be given man of the match.
- *
- * Both are consulted: a match scored without a team sheet at all still has the
- * saved minutes to go on.
+ * Derived from the team sheet rather than read from `appeared`, so that the
+ * award never depends on the recompute in `pitchStatements` having run first.
+ * The stored flag is consulted as well, because a match scored without a team
+ * sheet at all has only the minutes saved by hand to go on.
  */
 async function appearedInMatch(env: Env, matchId: string, playerId: string): Promise<boolean> {
   const [lineup, events, recorded] = await Promise.all([
@@ -91,9 +85,9 @@ export function registerMatchRoutes(app: App): void {
       c.env.DB.prepare("UPDATE matches SET status=?, phase=?, phase_started_at=?, revision=revision+1, updated_at=? WHERE id=?").bind(clock.status, clock.phase, clock.phase_started_at, updated, match.id),
       recordAudit(c.env, admin, { action, entityType: "match", entityId: match.id, matchId: match.id, summary: `Match clock moved to ${clock.phase.replace(/_/gu, " ")}.` }),
     ]);
-    // A clean sheet is only settled at full time, so the tallies are rewritten
-    // when the whistle goes.
-    await c.env.DB.batch(await goalkeeperStatements(c.env, match.id, clock.status === "finished", updated));
+    // Kickoff puts the starters on the pitch and full time settles a clean
+    // sheet, so both are rewritten whenever the clock moves.
+    await c.env.DB.batch(await pitchStatements(c.env, match.id, clock.status === "finished", updated));
     return c.json(joinedMatch(await getJoinedMatch(c.env, match.id)));
   });
 
@@ -231,9 +225,10 @@ export function registerMatchRoutes(app: App): void {
     statements.push(recordAudit(c.env, admin, { action: "event_added", entityType: "match_event", entityId: event.id, matchId: match.id, summary: `Added ${describeEvent(event)}.` }));
     try {
       await c.env.DB.batch(statements);
-      // Read after the write: the keeper's tally is worked out from the timeline
-      // this event has just joined.
-      await c.env.DB.batch(await goalkeeperStatements(c.env, match.id, match.status === "finished", now));
+      // Read after the write: who was on the pitch, and what the keeper is
+      // answerable for, are both worked out from the timeline this event has
+      // just joined.
+      await c.env.DB.batch(await pitchStatements(c.env, match.id, match.status === "finished", now));
     }
     catch (error) {
       const existing = await c.env.DB.prepare("SELECT * FROM match_events WHERE client_operation_id = ?").bind(operationId).first<EventRow>();
@@ -270,7 +265,7 @@ export function registerMatchRoutes(app: App): void {
       statRecalculation(c.env, match.id, event.updated_at),
       recordAudit(c.env, admin, { action: "event_corrected", entityType: "match_event", entityId: event.id, matchId: match.id, summary: `Corrected ${describeEvent(event)}.` }),
     ]);
-    await c.env.DB.batch(await goalkeeperStatements(c.env, match.id, match.status === "finished", event.updated_at));
+    await c.env.DB.batch(await pitchStatements(c.env, match.id, match.status === "finished", event.updated_at));
     return c.json(publicEvent(event));
   });
 
@@ -287,7 +282,7 @@ export function registerMatchRoutes(app: App): void {
       statRecalculation(c.env, match.id, now),
       recordAudit(c.env, admin, { action: "event_removed", entityType: "match_event", entityId: c.req.param("eventId"), matchId: match.id, summary: "Removed an event from the timeline." }),
     ]);
-    await c.env.DB.batch(await goalkeeperStatements(c.env, match.id, match.status === "finished", now));
+    await c.env.DB.batch(await pitchStatements(c.env, match.id, match.status === "finished", now));
     return c.body(null, 204);
   });
 
@@ -343,22 +338,62 @@ function scoreRecalculation(env: Env, matchId: string, updated: string): D1Prepa
 }
 
 /**
- * Write the goalkeeping tallies for a match.
+ * Write what the timeline says about who was on the pitch.
  *
- * Unlike the outfield counters, these cannot be a single UPDATE: who conceded a
- * goal depends on which keeper was on the pitch at the minute, which is a walk
- * through the substitutions rather than something SQL can count in place. So
- * the timeline is read, the answer is worked out, and the rows are written.
+ * Two things fall out of the same walk through the team sheet and the
+ * substitutions, so they are worked out together rather than reading it twice.
+ *
+ * **Who appeared.** An appearance used to be recorded only as a side effect of
+ * doing something — an event naming the player, minutes typed in by hand, or
+ * being the keeper — so a player who turned out every week and never scored
+ * counted nil appearances in the leaders table, the awards and her own profile.
+ * Taking the field is the appearance, and the team sheet is the record of it.
+ *
+ * **What the keeper is answerable for.** Unlike the outfield counters, these
+ * cannot be a single UPDATE: who conceded a goal depends on which keeper was on
+ * at the minute, which is the same walk rather than something SQL can count in
+ * place.
+ *
+ * Neither is written before kickoff. Every caller is a phase change or a
+ * timeline correction, so a named XI for a match that is never played records
+ * nothing.
  */
-async function goalkeeperStatements(env: Env, matchId: string, finished: boolean, updated: string): Promise<D1PreparedStatement[]> {
+async function pitchStatements(env: Env, matchId: string, finished: boolean, updated: string): Promise<D1PreparedStatement[]> {
   const [lineup, events] = await Promise.all([
     env.DB.prepare("SELECT * FROM match_lineup_entries WHERE match_id=?").bind(matchId).all<LineupRow>(),
     env.DB.prepare("SELECT * FROM match_events WHERE match_id=?").bind(matchId).all<EventRow>(),
   ]);
+  const onPitch = playersWhoTookTheField(lineup.results, events.results);
   const stats = computeGoalkeeperStats(lineup.results, events.results, finished);
-  // Everyone is cleared first, so a keeper who is corrected off the sheet, or
-  // moved out of goal, does not keep a tally they are no longer owed.
-  const statements = [env.DB.prepare("UPDATE player_match_stats SET goals_conceded=0, penalties_saved=0, clean_sheet=0, updated_at=? WHERE match_id=?").bind(updated, matchId)];
+
+  // Which squad each of them turned out for, from the sheet they are named on,
+  // or from the substitution that brought on someone who was not named at all.
+  const teamOf = new Map<string, string>();
+  for (const entry of lineup.results) teamOf.set(entry.player_id, entry.team_id);
+  for (const event of events.results) {
+    if (event.type === "substitution" && event.player_id && !teamOf.has(event.player_id)) teamOf.set(event.player_id, event.team_id);
+  }
+
+  const statements = [
+    // Everyone is cleared first, so a keeper who is corrected off the sheet, or
+    // moved out of goal, does not keep a tally they are no longer owed.
+    env.DB.prepare("UPDATE player_match_stats SET goals_conceded=0, penalties_saved=0, clean_sheet=0, updated_at=? WHERE match_id=?").bind(updated, matchId),
+    // Appearances are cleared the same way, but only for players the sheet
+    // actually governs: a substitution deleted in a correction should take the
+    // appearance with it. Anyone not named on the sheet is left alone, because
+    // for a match scored without one the minutes saved by hand are the only
+    // record there is, and this would erase it.
+    env.DB.prepare("UPDATE player_match_stats SET appeared=0, updated_at=? WHERE match_id=? AND player_id IN (SELECT player_id FROM match_lineup_entries WHERE match_id=?)").bind(updated, matchId, matchId),
+  ];
+
+  for (const playerId of onPitch) {
+    statements.push(env.DB.prepare(`
+      INSERT INTO player_match_stats (id, match_id, player_id, team_id, appeared, minutes_played, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 1, 0, ?, ?)
+      ON CONFLICT(match_id, player_id) DO UPDATE SET appeared=1, team_id=COALESCE(excluded.team_id, player_match_stats.team_id), updated_at=excluded.updated_at
+    `).bind(crypto.randomUUID(), matchId, playerId, teamOf.get(playerId) ?? null, updated, updated));
+  }
+
   for (const [playerId, row] of stats) {
     statements.push(env.DB.prepare(`
       INSERT INTO player_match_stats (id, match_id, player_id, appeared, minutes_played, goals_conceded, penalties_saved, clean_sheet, created_at, updated_at)

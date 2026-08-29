@@ -28,7 +28,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0021_positions_and_stat_team.sql');
+    expect(applied.results.at(-1)?.name).toBe('0022_backfill_appearances.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -316,9 +316,13 @@ describe('man of the match eligibility', () => {
       await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action }, admin.token));
     }
 
-    // No minutes were ever saved, so nothing wrote an `appeared` flag for her.
-    const stats = await (await request(`/api/v1/matches/${match.id}/player-stats`, json('GET', undefined, admin.token))).json<{ player_id: string }[]>();
-    expect(stats.some((stat) => stat.player_id === quiet.id)).toBe(false);
+    // Nobody typed in a minute and nothing in the timeline ever names her, but
+    // she started, so the appearance is recorded from the team sheet.
+    const stats = await (await request(`/api/v1/matches/${match.id}/player-stats`, json('GET', undefined, admin.token))).json<{ player_id: string; appeared: boolean; goals: number }[]>();
+    expect(stats.find((stat) => stat.player_id === quiet.id)).toMatchObject({ appeared: true, goals: 0 });
+    // And the substitute who came on, while the one who never did has none.
+    expect(stats.find((stat) => stat.player_id === bench.id)).toMatchObject({ appeared: true });
+    expect(stats.find((stat) => stat.player_id === unused.id)?.appeared ?? false).toBe(false);
 
     // She still played the whole match, so the award is hers to take.
     const award = await request(`/api/v1/matches/${match.id}/man-of-the-match`, json('POST', { player_id: quiet.id }, admin.token));
@@ -335,5 +339,112 @@ describe('man of the match eligibility', () => {
 
     // And the scorer, who qualified before this fix, still does.
     expect((await request(`/api/v1/matches/${match.id}/man-of-the-match`, json('POST', { player_id: scorer.id }, admin.token))).status).toBe(200);
+
+    // The same correction the award needed also fixes what she is worth in the
+    // tables: a player who turns out and never scores used to total nil
+    // appearances everywhere in the app.
+    const profile = await (await request(`/api/v1/players/${quiet.id}/stats`, json('GET', undefined, admin.token))).json<{ appearances: number; goals: number }>();
+    expect(profile).toMatchObject({ appearances: 1, goals: 0 });
+
+    // And she is in the running for the award that counts them.
+    const everPresent = await (await request(`/api/v1/competitions/${competition.id}/awards/appearances`, json('GET', undefined, admin.token))).json<{ player: { id: string }; value: number }[]>();
+    expect(everPresent.find((row) => row.player.id === quiet.id)).toMatchObject({ value: 1 });
+    // The substitute who never came on is in nobody's table.
+    expect(everPresent.some((row) => row.player.id === unused.id)).toBe(false);
+  });
+});
+
+describe('the appearance backfill', () => {
+  /**
+   * Rows exactly as they were before appearances were recorded from the team
+   * sheet: a finished match with a lineup and a timeline, and player_match_stats
+   * holding only the players who did something.
+   */
+  async function seedLegacyMatch() {
+    const ids = { match: crypto.randomUUID(), competition: crypto.randomUUID(), squad: crypto.randomUUID(), opponent: crypto.randomUUID() };
+    const player = (name: string, position: string) => ({ id: crypto.randomUUID(), name, position });
+    const scorer = player('Legacy Scorer', 'ST');
+    const quiet = player('Legacy Defender', 'CB');
+    const camyOn = player('Legacy Substitute', 'CM');
+    const unused = player('Legacy Bench', 'RW');
+
+    await testEnv.DB.batch([
+      testEnv.DB.prepare("INSERT INTO competitions (id, name, season, type, created_at, updated_at) VALUES (?, ?, '2025/26', 'league', ?, ?)").bind(ids.competition, `Legacy League ${ids.competition}`, now, now),
+      testEnv.DB.prepare("INSERT INTO teams (id, name, age_group, is_aimz, is_active, created_at, updated_at) VALUES (?, 'Legacy U14', 'U14', 1, 1, ?, ?)").bind(ids.squad, now, now),
+      testEnv.DB.prepare("INSERT INTO teams (id, name, is_aimz, is_active, created_at, updated_at) VALUES (?, 'Legacy Opponent', 0, 1, ?, ?)").bind(ids.opponent, now, now),
+      testEnv.DB.prepare("INSERT INTO matches (id, competition_id, home_team_id, away_team_id, kickoff_datetime, venue, status, phase, home_score, away_score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'Ground', 'finished', 'finished', 1, 0, ?, ?)").bind(ids.match, ids.competition, ids.squad, ids.opponent, now, now, now),
+    ]);
+    await testEnv.DB.batch([scorer, quiet, camyOn, unused].map((p) =>
+      testEnv.DB.prepare("INSERT INTO players (id, name, team_id, position, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)").bind(p.id, p.name, ids.squad, p.position, now, now)));
+    await testEnv.DB.batch([
+      ...[[scorer, 1], [quiet, 1], [camyOn, 0], [unused, 0]].map(([p, starter]) =>
+        testEnv.DB.prepare("INSERT INTO match_lineup_entries (id, match_id, player_id, team_id, is_starter, is_captain, position) VALUES (?, ?, ?, ?, ?, 0, ?)")
+          .bind(crypto.randomUUID(), ids.match, (p as typeof scorer).id, ids.squad, starter, (p as typeof scorer).position)),
+      testEnv.DB.prepare("INSERT INTO match_events (id, match_id, type, minute, team_id, player_id, is_penalty, client_operation_id, created_at, updated_at) VALUES (?, ?, 'goal', 20, ?, ?, 0, ?, ?, ?)")
+        .bind(crypto.randomUUID(), ids.match, ids.squad, scorer.id, `legacy-goal-${ids.match}`, now, now),
+      testEnv.DB.prepare("INSERT INTO match_events (id, match_id, type, minute, team_id, player_id, secondary_player_id, is_penalty, client_operation_id, created_at, updated_at) VALUES (?, ?, 'substitution', 60, ?, ?, ?, 0, ?, ?, ?)")
+        .bind(crypto.randomUUID(), ids.match, ids.squad, camyOn.id, scorer.id, `legacy-sub-${ids.match}`, now, now),
+      // Only the scorer has a statistic, which is exactly the state this fixes.
+      testEnv.DB.prepare("INSERT INTO player_match_stats (id, match_id, player_id, team_id, appeared, minutes_played, goals, created_at, updated_at) VALUES (?, ?, ?, ?, 1, 60, 1, ?, ?)")
+        .bind(crypto.randomUUID(), ids.match, scorer.id, ids.squad, now, now),
+    ]);
+    return { ids, scorer, quiet, camyOn, unused };
+  }
+
+  /** Runs the backfill migration again, over the legacy rows just inserted. */
+  async function runBackfill() {
+    const migrations = JSON.parse(testEnv.TEST_MIGRATIONS) as { name: string; queries: string[] }[];
+    const backfill = migrations.find((migration) => migration.name === '0022_backfill_appearances.sql');
+    expect(backfill, 'the backfill migration is in the chain').toBeTruthy();
+    for (const query of backfill!.queries) await testEnv.DB.prepare(query).run();
+  }
+
+  const appearances = async (matchId: string) => {
+    const rows = await testEnv.DB.prepare('SELECT player_id, appeared, minutes_played, team_id, goals FROM player_match_stats WHERE match_id=?').bind(matchId).all<{ player_id: string; appeared: number; minutes_played: number; team_id: string | null; goals: number }>();
+    return new Map(rows.results.map((row) => [row.player_id, row]));
+  };
+
+  it('records the appearance of everyone who played but did nothing notable', async () => {
+    const { ids, scorer, quiet, camyOn, unused } = await seedLegacyMatch();
+
+    // Before: only the scorer counts, which is the undercount being corrected.
+    const before = await appearances(ids.match);
+    expect(before.size).toBe(1);
+    expect(before.has(quiet.id)).toBe(false);
+
+    await runBackfill();
+
+    const after = await appearances(ids.match);
+    // The starter who never troubled the timeline.
+    expect(after.get(quiet.id)).toMatchObject({ appeared: 1, team_id: ids.squad });
+    // The substitute who came on.
+    expect(after.get(camyOn.id)).toMatchObject({ appeared: 1, team_id: ids.squad });
+    // The one who stayed on the bench did not play, and is not invented.
+    expect(after.has(unused.id)).toBe(false);
+    // The scorer's own record is untouched — not reset, not doubled.
+    expect(after.get(scorer.id)).toMatchObject({ appeared: 1, minutes_played: 60, goals: 1 });
+  });
+
+  it('invents no minutes for an appearance nobody typed a number into', async () => {
+    const { ids, quiet } = await seedLegacyMatch();
+    await runBackfill();
+    expect((await appearances(ids.match)).get(quiet.id)?.minutes_played).toBe(0);
+  });
+
+  it('can be run twice without doubling anything or colliding on an id', async () => {
+    const { ids } = await seedLegacyMatch();
+    await runBackfill();
+    const once = await appearances(ids.match);
+    await runBackfill();
+    const twice = await appearances(ids.match);
+    expect(twice.size).toBe(once.size);
+    expect([...twice.values()].every((row) => row.appeared === 1)).toBe(true);
+  });
+
+  it('leaves a match that never kicked off out of it', async () => {
+    const { ids, quiet } = await seedLegacyMatch();
+    await testEnv.DB.prepare("UPDATE matches SET status='scheduled', phase='not_started' WHERE id=?").bind(ids.match).run();
+    await runBackfill();
+    expect((await appearances(ids.match)).has(quiet.id)).toBe(false);
   });
 });
