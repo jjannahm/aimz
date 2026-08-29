@@ -12,6 +12,11 @@ jest.mock('@/src/auth/AuthProvider', () => ({
     user: { email: 'player@example.com', name: 'AIMZ Player', role: 'player' },
   }),
 }));
+jest.mock('@/src/components/CalendarSubscription', () => {
+  const React = jest.requireActual('react');
+  const { Text } = jest.requireActual('react-native');
+  return { CalendarSubscription: ({ placement }: { placement: string }) => React.createElement(Text, null, `Calendar ${placement}`) };
+});
 let mockParams: { from?: string } = {};
 jest.mock('expo-router', () => ({
   router: { back: jest.fn(), canGoBack: jest.fn(), push: jest.fn(), replace: jest.fn() },
@@ -32,6 +37,7 @@ describe('SettingsScreen header', () => {
 
     expect(screen.getByLabelText('Close')).toBeTruthy();
     expect(screen.queryByLabelText('Settings')).toBeNull();
+    expect(screen.getByText('Calendar settings')).toBeTruthy();
   });
 
   it('returns to the screen that opened settings', async () => {

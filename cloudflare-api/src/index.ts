@@ -4,6 +4,7 @@ import { registerAuditRoutes } from "./audit";
 import { registerAnnouncementRoutes } from "./announcements";
 import { registerAssignmentRoutes } from "./assignments";
 import { registerAuthRoutes } from "./auth";
+import { registerCalendarRoutes } from "./calendar";
 import { registerDomainRoutes } from "./domain";
 import { ApiProblem, errorResponse } from "./helpers";
 import { registerKnockoutRoutes } from "./knockout";
@@ -40,6 +41,7 @@ registerAnnouncementRoutes(app);
 registerAssignmentRoutes(app);
 registerRosterRoutes(app);
 registerMediaRoutes(app);
+registerCalendarRoutes(app);
 
 app.notFound((c) => errorResponse(c, new ApiProblem(404, "not_found", "The requested endpoint was not found.")));
 app.onError((error, c) => {
