@@ -11,12 +11,14 @@ import { Screen } from '@/src/components/Screen';
 import { SegmentedControl, type SegmentedOption } from '@/src/components/SegmentedControl';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
+import { SearchField } from '@/src/components/SearchField';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
 import { mediaUrl } from '@/src/lib/mediaUrl';
+import { positionName } from '@/src/lib/positions';
 import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AwardRank, Player, PlayerAward } from '@/src/types/api';
@@ -108,31 +110,67 @@ function TeamsSection() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const [openTeam, setOpenTeam] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
   const roster = useRoster();
+
+  // Everything is already in cache — useRoster reads every squad and every
+  // player — so searching is filtering, not fetching.
+  const hits = useMemo(() => {
+    const text = search.trim().toLowerCase();
+    if (!text) return [];
+    return roster.squads.flatMap(({ team, players }) => players
+      .filter((player) => [player.name, positionName(player.position), player.position, team.name, team.age_group ?? '', player.jersey_number === null ? '' : `#${player.jersey_number}`]
+        .some((field) => field.toLowerCase().includes(text)))
+      .map((player) => ({ player, team })));
+  }, [roster.squads, search]);
 
   if (roster.isLoading) return <LoadingState label="Loading squads" />;
   if (roster.isError) return <ErrorState message={roster.error?.message ?? 'Could not load squads.'} onRetry={roster.refetch} />;
   if (!roster.squads.length) return <EmptyState body="Squads added in Manage appear here automatically." title="No squads yet" />;
 
+  const searchBox = <SearchField
+    label="Search players and squads"
+    onChange={setSearch}
+    placeholder="Search a player, squad or position"
+    resultCount={hits.length}
+    value={search}
+  />;
+
+  // A search reaches across every squad at once, so it replaces the drill-down
+  // rather than filtering inside whichever squad happens to be open.
+  if (search.trim()) {
+    return <View style={styles.stack}>
+      {searchBox}
+      {hits.length ? <FlatCard radius={theme.radius.md} style={styles.list}>{hits.map(({ player, team }, index) => <PlayerRow
+        key={player.id}
+        last={index === hits.length - 1}
+        player={player}
+        spoken={`${positionName(player.position)}, ${team.name}`}
+        subtitle={`${team.name} · ${positionName(player.position)}`}
+      />)}</FlatCard> : <EmptyState body="Try part of a player's name, a squad, or a position." title="Nothing matches that" />}
+    </View>;
+  }
+
   const open = roster.squads.find((squad) => squad.team.id === openTeam);
   if (!open) {
-    return <FlatCard radius={theme.radius.md} style={styles.list}>{roster.squads.map((item, index) => {
+    return <View style={styles.stack}>{searchBox}<FlatCard radius={theme.radius.md} style={styles.list}>{roster.squads.map((item, index) => {
       const count = item.players.length;
       return <Pressable accessibilityLabel={`${item.team.name}, ${count} ${count === 1 ? 'player' : 'players'}`} accessibilityRole="button" key={item.team.id} onPress={() => setOpenTeam(item.team.id)} style={({ pressed }) => [styles.row, index === roster.squads.length - 1 && styles.lastRow, pressed && styles.pressed]}>
         <TeamAvatar badgeStyle={item.team.badge_style} isAimz={item.team.is_aimz} logoUrl={item.team.logo_url} name={item.team.name} size={40} />
         <View style={styles.copy}><Text style={styles.name}>{item.team.name}</Text><Text style={styles.position}>{item.team.age_group ? `${item.team.age_group} · ` : ''}{count} {count === 1 ? 'player' : 'players'}</Text></View>
         <Chevron />
       </Pressable>;
-    })}</FlatCard>;
+    })}</FlatCard></View>;
   }
 
   return <View style={styles.stack}>
+    {searchBox}
     <Pressable accessibilityLabel="Back to all teams" accessibilityRole="button" onPress={() => setOpenTeam(null)} style={({ pressed }) => [styles.back, pressed && styles.pressed]}>
       <Ionicons accessibilityElementsHidden color={colors.accentSoft} name="chevron-back" size={20} />
       <Text style={styles.backText}>All teams</Text>
     </Pressable>
     <Text accessibilityRole="header" style={styles.squadTitle}>{open.team.name}</Text>
-    {open.players.length ? <FlatCard radius={theme.radius.md} style={styles.list}>{open.players.map((item, index) => <PlayerRow key={item.id} last={index === open.players.length - 1} player={item} spoken={`${item.position}, number ${item.jersey_number ?? 'not assigned'}`} subtitle={item.position} />)}</FlatCard> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
+    {open.players.length ? <FlatCard radius={theme.radius.md} style={styles.list}>{open.players.map((item, index) => <PlayerRow key={item.id} last={index === open.players.length - 1} player={item} spoken={`${positionName(item.position)}, number ${item.jersey_number ?? 'not assigned'}`} subtitle={positionName(item.position)} />)}</FlatCard> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
   </View>;
 }
 

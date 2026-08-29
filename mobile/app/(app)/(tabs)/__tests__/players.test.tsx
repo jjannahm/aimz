@@ -24,15 +24,15 @@ const team = (id: string, name: string, age_group: string): Team => ({
   logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '',
 });
 
-const player = (id: string, name: string, team_id: string, jersey_number: number): Player => ({
-  id, name, team_id, position: 'Forward', jersey_number, photo_key: null, photo_url: null,
+const player = (id: string, name: string, team_id: string, jersey_number: number, position = 'ST'): Player => ({
+  id, name, team_id, position, jersey_number, photo_key: null, photo_url: null,
   is_active: true, created_at: '', updated_at: '',
 });
 
 const teams = [team('t-u9', 'AIMZ U9', 'U9'), team('t-u13', 'AIMZ U13', 'U13')];
 const players = [
   player('p-1', 'Salma Nabil', 't-u9', 7),
-  player('p-2', 'Mariam Adel', 't-u13', 9),
+  player('p-2', 'Mariam Adel', 't-u13', 9, 'GK'),
 ];
 const scorers: AwardRank[] = [
   { rank: 1, player: players[1]!, team: teams[1]!, value: 5, unit: 'goals', appearances: 4 },
@@ -71,11 +71,49 @@ describe('PlayersScreen', () => {
   });
   afterEach(() => { jest.clearAllMocks(); mockUser = { role: 'player', player_id: 'p-1' }; });
 
+  // Scrolling every squad to find one player is what this replaces.
+  it('finds a player across every squad at once', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    expect(await screen.findByText('AIMZ U9')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('search-input'), 'mariam');
+    // Found without opening the squad she is in.
+    expect(await screen.findByText('Mariam Adel')).toBeTruthy();
+    expect(screen.queryByText('Salma Nabil')).toBeNull();
+    // The squad is named on the row, because results cross squads.
+    expect(screen.getByText('AIMZ U13 · Goalkeeper')).toBeTruthy();
+  });
+
+  it('searches a squad name and a position as well as a player name', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await screen.findByText('AIMZ U9');
+
+    await fireEvent.changeText(screen.getByTestId('search-input'), 'U13');
+    expect(await screen.findByText('Mariam Adel')).toBeTruthy();
+
+    // The position's name, not the code that is stored.
+    await fireEvent.changeText(screen.getByTestId('search-input'), 'keeper');
+    expect(await screen.findByText('Mariam Adel')).toBeTruthy();
+    expect(screen.queryByText('Salma Nabil')).toBeNull();
+  });
+
+  it('says so when nothing matches, and gives the squads back when cleared', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await screen.findByText('AIMZ U9');
+
+    await fireEvent.changeText(screen.getByTestId('search-input'), 'zzzz');
+    expect(await screen.findByText('Nothing matches that')).toBeTruthy();
+
+    await fireEvent.press(screen.getByTestId('search-clear'));
+    expect(await screen.findByText('AIMZ U9')).toBeTruthy();
+    expect(screen.getByText('AIMZ U13')).toBeTruthy();
+  });
+
   it('shows the signed-in player their own stats under My Stats', async () => {
     mockUser = { role: 'player', player_id: 'p-1' };
     jest.mocked(api.playerStats).mockResolvedValue({
       player: players[0]!, season: '2026/27', appearances: 4, minutes_played: 300,
-      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0, matches: [],
+      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0,
+      seasons: ['2026/27'], milestones: { reached: [], streaks: [], next: [] }, matches: [],
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
@@ -83,7 +121,7 @@ describe('PlayersScreen', () => {
     expect(await screen.findByText('Salma Nabil')).toBeTruthy();
     expect(screen.getByText('Appearances')).toBeTruthy();
     expect(screen.getByText('Match breakdown')).toBeTruthy();
-    expect(api.playerStats).toHaveBeenCalledWith('p-1');
+    expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
   });
 
   // A parent reads each child on their own, rather than one merged view.
@@ -95,15 +133,16 @@ describe('PlayersScreen', () => {
     ] });
     jest.mocked(api.playerStats).mockResolvedValue({
       player: players[1]!, season: '2026/27', appearances: 4, minutes_played: 300,
-      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0, matches: [],
+      goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0,
+      seasons: ['2026/27'], milestones: { reached: [], streaks: [], next: [] }, matches: [],
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
     fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
     // The first child is read without choosing, and the other is offered.
-    await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-1'));
+    await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined));
     fireEvent.press(await screen.findByRole('tab', { name: 'Mariam Adel' }));
-    await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-2'));
+    await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-2', undefined));
   });
 
   // An administrator manages the academy rather than playing in it. The staging

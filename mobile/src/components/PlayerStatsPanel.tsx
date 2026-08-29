@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { FlatCard } from '@/src/components/FlatCard';
-import { isGoalkeeper } from '@/src/lib/positions';
+import { isGoalkeeper, positionName } from '@/src/lib/positions';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
@@ -10,13 +10,13 @@ import { mediaUrl } from '@/src/lib/mediaUrl';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
-export function PlayerStatsPanel({ playerId }: { playerId: string }) {
+export function PlayerStatsPanel({ playerId, season }: { playerId: string; season?: string }) {
   const styles = useThemedStyles(stylesheet);
-  const query = useQuery({ queryKey: ['player-stats', playerId], queryFn: () => api.playerStats(playerId), enabled: Boolean(playerId) });
-  const matches = useQuery({ queryKey: ['matches', 'player-stats', query.data?.player.team_id], queryFn: () => api.matches(`?team_id=${encodeURIComponent(query.data!.player.team_id)}&match_status=finished&limit=100`), enabled: Boolean(query.data?.player.team_id) });
+  // Undefined is the whole career, which is what every caller but the profile's
+  // season switcher wants. The key carries it so the two do not share a cache.
+  const query = useQuery({ queryKey: ['player-stats', playerId, season ?? null], queryFn: () => api.playerStats(playerId, season), enabled: Boolean(playerId) });
   if (query.isLoading) return <LoadingState label="Loading player stats" />;
   if (query.isError || !query.data) return <ErrorState message={(query.error as ApiError)?.message ?? 'Player not found.'} onRetry={() => query.refetch()} />;
-  const byId = new Map(matches.data?.items.map((match) => [match.id, match]));
   // Goalkeeping is only shown to a keeper. On an outfielder these are three
   // zeroes that say nothing, and they would crowd out the tallies that do.
   const keeping = { clean_sheets: query.data.clean_sheets ?? 0, goals_conceded: query.data.goals_conceded ?? 0, penalties_saved: query.data.penalties_saved ?? 0 };
@@ -35,14 +35,16 @@ export function PlayerStatsPanel({ playerId }: { playerId: string }) {
     ] : []),
   ];
   return <>
-    <FlatCard radius={theme.radius.lg} style={styles.profile}>{query.data.player.photo_url ? <Image accessibilityLabel={`${query.data.player.name} profile photo`} source={{ uri: mediaUrl(query.data.player.photo_url) }} style={styles.profilePhoto} /> : <View style={styles.number}><Text style={styles.numberText}>{query.data.player.jersey_number ?? '–'}</Text></View>}<View><Text style={styles.name}>{query.data.player.name}</Text><Text style={styles.position}>{query.data.player.position}</Text><Text style={styles.season}>{query.data.season ?? 'All recorded seasons'}</Text></View></FlatCard>
+    <FlatCard radius={theme.radius.lg} style={styles.profile}>{query.data.player.photo_url ? <Image accessibilityLabel={`${query.data.player.name} profile photo`} source={{ uri: mediaUrl(query.data.player.photo_url) }} style={styles.profilePhoto} /> : <View style={styles.number}><Text style={styles.numberText}>{query.data.player.jersey_number ?? '–'}</Text></View>}<View><Text style={styles.name}>{query.data.player.name}</Text><Text style={styles.position}>{positionName(query.data.player.position)}</Text><Text style={styles.season}>{query.data.season ?? 'All recorded seasons'}</Text></View></FlatCard>
     <View style={styles.grid}>{tiles.map((item) => <FlatCard key={item.label} radius={theme.radius.md} style={styles.stat}><Text style={styles.value}>{item.value}</Text><Text style={styles.label}>{item.label}</Text></FlatCard>)}</View>
     <Text style={styles.heading}>Match breakdown</Text>
-    {query.data.matches.length === 0 ? <Text style={styles.empty}>No finished-match statistics yet.</Text> : query.data.matches.map((item) => {
-      const match = byId.get(item.match_id);
-      const opponent = match?.home_team_id === query.data.player.team_id ? match.away_team : match?.home_team;
-      return <FlatCard key={item.id} radius={theme.radius.md} style={styles.match}><Text style={styles.matchTitle}>{opponent ? `vs ${opponent.name}` : `${item.minutes_played} minutes`}</Text>{match ? <Text style={styles.matchDate}>{formatEgyptDateTime(match.kickoff_datetime)}</Text> : null}<Text style={styles.matchMeta}>{item.minutes_played} min · {item.goals} goals · {item.assists} assists · {item.yellow_cards + item.red_cards} cards</Text></FlatCard>;
-    })}
+    {query.data.matches.length === 0 ? <Text style={styles.empty}>No finished-match statistics yet.</Text> : query.data.matches.map((item) => <FlatCard key={item.id} radius={theme.radius.md} style={styles.match}>
+      <Text style={styles.matchTitle}>{item.opponent ? `vs ${item.opponent.name}` : `${item.minutes_played} minutes`}</Text>
+      <Text style={styles.matchDate}>{formatEgyptDateTime(item.kickoff_datetime)}</Text>
+      {/* The squad she played for that day, which is not always the squad she is
+          on now — worth saying so once she has moved. */}
+      <Text style={styles.matchMeta}>{item.team && item.team.id !== query.data.player.team_id ? `${item.team.name} · ` : ''}{item.minutes_played} min · {item.goals} goals · {item.assists} assists · {item.yellow_cards + item.red_cards} cards</Text>
+    </FlatCard>)}
   </>;
 }
 
