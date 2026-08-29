@@ -5,6 +5,7 @@ import { StyleSheet } from 'react-native';
 
 import { ScheduleSection } from '@/src/components/myTeam/ScheduleSection';
 import { api } from '@/src/lib/api';
+import { darkColors } from '@/src/theme';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({ usePathname: () => '/', router: { push: jest.fn() } }));
@@ -16,7 +17,7 @@ const session = (id: string, startsAt: string) => ({
   duration_minutes: 90, venue: 'Palm', notes: null, created_at: '', updated_at: '',
 });
 
-const THREAD = 'rgba(255, 255, 255, 0.16)';
+const THREAD = darkColors.border;
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
