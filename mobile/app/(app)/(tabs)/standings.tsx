@@ -120,7 +120,7 @@ export default function StandingsScreen() {
   const pickedName = table.data?.find((row) => row.team.id === picking?.[0])?.team.name;
 
   const closed = competition?.status === 'completed';
-  return <Screen action={<SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} />} title="Standings">
+  return <Screen hideSettings action={<SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} />} title="Standings">
     {closed ? <View style={styles.archived}>
       <Ionicons accessibilityElementsHidden color={colors.textMuted} name="lock-closed-outline" size={14} />
       <Text style={styles.archivedText}>{competition?.name} {competition?.season} has ended. This table is final.</Text>
