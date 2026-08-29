@@ -77,9 +77,9 @@ export function MatchProgressRail({ clock }: { clock: MatchClockState }) {
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   row: { alignItems: 'center', flexDirection: 'row', gap: 6 },
-  label: { color: colors.liveText, fontSize: theme.type.caption, fontWeight: '900', letterSpacing: 0.6 },
+  label: { color: colors.liveText, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 0.6 },
   muted: { color: colors.textSecondary },
-  clock: { color: colors.liveText, fontSize: theme.type.caption, fontVariant: ['tabular-nums'], fontWeight: '900', minWidth: 38 },
+  clock: { color: colors.liveText, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, fontVariant: ['tabular-nums'], minWidth: 38 },
   dot: { backgroundColor: colors.live, borderRadius: 4, height: 7, width: 7 },
   rail: { backgroundColor: colors.progressTrack, flexDirection: 'row', height: 3, overflow: 'hidden' },
   progress: { backgroundColor: colors.live, height: 3 },

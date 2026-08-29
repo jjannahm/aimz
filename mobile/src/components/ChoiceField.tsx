@@ -2,14 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, type GestureResponderEvent } from 'react-native';
 
-import { theme, type ThemeColors } from '@/src/theme';
+import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Option = { label: string; value: string };
 type Anchor = { x: number; y: number; width: number; height: number };
 
 const MENU_GAP = theme.spacing.xs;
-const SCREEN_GUTTER = theme.spacing.md;
+const SCREEN_GUTTER = theme.size.phoneGutter;
 const OPTION_HEIGHT = 48;
 const MAX_MENU_HEIGHT = 280;
 
@@ -36,7 +36,7 @@ export function ChoiceField({ label, value, options, onChange, placeholder = 'Ch
   const styles = useThemedStyles(stylesheet);
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
-  const [fieldSize, setFieldSize] = useState({ height: 52, width: 0 });
+  const [fieldSize, setFieldSize] = useState<{ height: number; width: number }>({ height: theme.size.field, width: 0 });
   const triggerRef = useRef<View>(null);
   const initialOptionRef = useRef<View>(null);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
@@ -165,13 +165,13 @@ export function ChoiceField({ label, value, options, onChange, placeholder = 'Ch
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   group: { gap: theme.spacing.xs },
-  label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
-  field: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: 52, paddingHorizontal: theme.spacing.md },
+  label: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.label },
+  field: { ...noFocusRing, alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', justifyContent: 'space-between', minHeight: theme.size.field, paddingHorizontal: theme.spacing.md },
   fieldError: { borderColor: colors.error },
-  fieldOpen: { borderColor: colors.accent },
-  value: { color: colors.textPrimary, flex: 1, fontSize: theme.type.body, marginRight: theme.spacing.sm },
+  fieldOpen: { borderColor: colors.accent, borderWidth: 2 },
+  value: { color: colors.textPrimary, flex: 1, fontFamily: theme.font.regular, fontSize: theme.type.body, marginRight: theme.spacing.sm },
   placeholder: { color: colors.textMuted },
-  error: { color: colors.errorText, fontSize: theme.type.caption },
+  error: { color: colors.errorText, fontFamily: theme.font.regular, fontSize: theme.type.caption },
   pressed: { opacity: 0.7 },
   overlay: { flex: 1 },
   menu: { backgroundColor: colors.surfaceRaised, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, elevation: 12, overflow: 'hidden', position: 'absolute', shadowColor: colors.background, shadowOffset: { height: 8, width: 0 }, shadowOpacity: 0.45, shadowRadius: 14 },
@@ -180,6 +180,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   optionDivider: { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
   optionSelected: { backgroundColor: colors.highlightedSurface },
   optionPressed: { opacity: 0.72 },
-  optionText: { color: colors.textSecondary, flex: 1, fontSize: theme.type.body, fontWeight: '700', marginRight: theme.spacing.sm },
-  optionTextSelected: { color: colors.textPrimary },
+  optionText: { color: colors.textSecondary, flex: 1, fontFamily: theme.font.medium, fontSize: theme.type.body, marginRight: theme.spacing.sm },
+  optionTextSelected: { color: colors.textPrimary, fontFamily: theme.font.semibold },
 });

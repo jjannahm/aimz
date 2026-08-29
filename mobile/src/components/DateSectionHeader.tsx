@@ -23,10 +23,10 @@ export function DateSectionHeader({ date, isToday, matchCount }: Props) {
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  container: { alignItems: 'center', gap: 6 },
+  container: { alignItems: 'center', gap: theme.spacing.xs },
   labelRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, width: '100%' },
   rule: { backgroundColor: colors.border, flex: 1, height: StyleSheet.hairlineWidth },
   labelContainer: { paddingHorizontal: theme.spacing.sm, paddingVertical: 4 },
-  label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '800' },
-  count: { color: colors.textMuted, fontSize: theme.type.caption },
+  label: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.label, letterSpacing: 1, textTransform: 'uppercase' },
+  count: { color: colors.textMuted, fontFamily: theme.font.mono, fontSize: theme.type.caption },
 });

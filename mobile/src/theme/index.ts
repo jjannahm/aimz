@@ -1,11 +1,10 @@
 import type { ViewStyle } from 'react-native';
 
 export const palette = {
-  navy: '#16225A',
-  deepNavy: '#0F1A45',
-  accentBlue: '#3D9BE9',
-  lightBlue: '#6FC5F0',
-  white: '#FFFFFF',
+  ink: '#08080C',
+  paper: '#F5F2EA',
+  lime: '#CBFF32',
+  olive: '#3F5700',
   magenta: '#E1306C',
   orange: '#F77737',
   yellow: '#FCAF45',
@@ -14,38 +13,19 @@ export const palette = {
   red: '#EF4444',
 } as const;
 
-/**
- * Azure Pro, the app's dark theme.
- *
- * Values are the theme's own shadcn tokens converted to sRGB. `surface` matching
- * `background` is deliberate: Azure Pro sets `--card` equal to `--background`, so
- * its cards read as outlined rather than raised. Where a role has no token in the
- * theme — the status colours, mostly — the AIMZ hue is kept and checked for
- * contrast against this background.
- */
+/** AIMZ editorial dark mode: warm ink, flat cards, and one high-energy accent. */
 const dark = {
-  background: '#020817',
-  surface: '#020817',
-  surfaceRaised: '#1E293B',
-  // `surfaceRaised` with the page left showing through, for a surface that is
-  // frosted rather than laid on top. Only the web build blurs what is behind it.
-  surfaceGlass: 'rgba(30, 41, 59, 0.72)',
-  border: '#1E293B',
-  accent: '#3B82F6',
-  accentSoft: '#0EA2E7',
-  // The accent laid *over* a surface rather than replacing it, so whatever sits
-  // on top keeps reading the way it did off it, and the halo it throws.
-  selectionSurface: 'rgba(59, 130, 246, 0.75)',
-  selectionGlow: 'rgba(59, 130, 246, 0.9)',
-  // A pane the page still shows through, with enough blue density and a full
-  // luminous rim to stay legible against the dark page.
-  glassSurface: 'rgba(59, 130, 246, 0.16)',
-  glassBorder: 'rgba(255, 255, 255, 0.24)',
-  glassHighlight: 'rgba(255, 255, 255, 0.28)',
-  onAccent: '#0F172A',
-  textPrimary: '#F8FAFC',
-  textSecondary: '#CBD5E1',
-  textMuted: '#94A3B8',
+  background: '#08080C',
+  surface: '#121216',
+  surfaceRaised: '#1A1A20',
+  border: '#2C2B32',
+  accent: '#CBFF32',
+  accentSoft: '#CBFF32',
+  selectionSurface: '#1A1A20',
+  onAccent: '#08080C',
+  textPrimary: '#F5F2EA',
+  textSecondary: '#C4C0C8',
+  textMuted: '#94909A',
   live: '#22C55E',
   liveSurface: '#14532D',
   liveText: '#86EFAC',
@@ -56,48 +36,29 @@ const dark = {
   errorSurface: '#7F1D1D',
   errorText: '#FCA5A5',
   onError: '#F8FAFC',
-  leaderSurface: '#4A3A12',
-  leaderAccent: '#FCAF45',
-  progressTrack: '#1E293B',
-  highlightedSurface: '#1E293B',
+  leaderSurface: '#202412',
+  leaderAccent: '#CBFF32',
+  progressTrack: '#2C2B32',
+  highlightedSurface: '#1A1A20',
 } as const;
 
 export type ThemeColors = Record<keyof typeof dark, string>;
 
 export const darkColors: ThemeColors = dark;
 
-/**
- * Vercel remix, the app's light theme.
- *
- * The saturated pale blue really is the theme's `--background`; near-white is its
- * `--card`, so screens sit on blue and cards float on top. Text and status hues
- * are darkened from the published tokens where the raw value could not clear
- * WCAG AA against that blue — `textMuted` most of all, which the theme leaves at
- * 3.07:1.
- */
+/** Warm paper inverse of the editorial dark mode. */
 export const lightColors: ThemeColors = {
-  background: '#A6C4E8',
-  surface: '#F9FCFF',
-  surfaceRaised: '#E7EDF6',
-  surfaceGlass: 'rgba(231, 237, 246, 0.72)',
-  border: '#D8DFE9',
-  accent: '#101723',
-  accentSoft: '#1E40AF',
-  // This theme's own accent is near-black, so the selection takes its blue from
-  // `accentSoft` — a wash of the accent itself would read as grey.
-  selectionSurface: 'rgba(30, 64, 175, 0.6)',
-  selectionGlow: 'rgba(30, 64, 175, 0.55)',
-  // The same card on a pale page frosts white rather than blue. A wash of this
-  // theme's own accent darkens the card below the page it sits on, and muted
-  // text then falls under AA on it — 3.67 against the 4.5 it needs. White at
-  // this strength leaves the page showing through and clears AA on all four.
-  glassSurface: 'rgba(255, 255, 255, 0.52)',
-  glassBorder: 'rgba(15, 23, 42, 0.18)',
-  glassHighlight: 'rgba(255, 255, 255, 0.72)',
-  onAccent: '#FAFAFA',
-  textPrimary: '#060A12',
-  textSecondary: '#334155',
-  textMuted: '#4B5563',
+  background: '#F2F0E8',
+  surface: '#FBFAF5',
+  surfaceRaised: '#E6E2D8',
+  border: '#CBC7BD',
+  accent: '#B8EB32',
+  accentSoft: '#3F5700',
+  selectionSurface: '#E6E2D8',
+  onAccent: '#08080C',
+  textPrimary: '#111114',
+  textSecondary: '#403E45',
+  textMuted: '#66636F',
   live: '#166534',
   liveSurface: '#DCFCE7',
   liveText: '#14532D',
@@ -108,10 +69,10 @@ export const lightColors: ThemeColors = {
   errorSurface: '#E7000A',
   errorText: '#991B1B',
   onError: '#FFFFFF',
-  leaderSurface: '#FEF3C7',
-  leaderAccent: '#A16207',
-  progressTrack: '#D8DFE9',
-  highlightedSurface: '#E7EDF6',
+  leaderSurface: '#EDF7CD',
+  leaderAccent: '#3F5700',
+  progressTrack: '#CBC7BD',
+  highlightedSurface: '#E6E2D8',
 };
 
 export type ThemeMode = 'light' | 'dark';
@@ -133,16 +94,16 @@ export const theme = {
   spacing: {
     xs: 4,
     sm: 8,
-    md: 16,
-    lg: 24,
-    xl: 32,
-    xxl: 48,
-    xxxl: 64,
+    md: 12,
+    lg: 16,
+    xl: 24,
+    xxl: 32,
+    xxxl: 48,
   },
   radius: {
-    sm: 10,
-    md: 14,
-    lg: 20,
+    sm: 8,
+    md: 12,
+    lg: 18,
     pill: 999,
   },
   type: {
@@ -150,8 +111,33 @@ export const theme = {
     label: 14,
     body: 16,
     heading: 22,
-    display: 30,
-    score: 36,
+    display: 28,
+    score: 34,
+  },
+  font: {
+    regular: 'SpaceGrotesk_400Regular',
+    medium: 'SpaceGrotesk_500Medium',
+    semibold: 'SpaceGrotesk_600SemiBold',
+    bold: 'SpaceGrotesk_700Bold',
+    mono: 'JetBrainsMono_500Medium',
+    monoBold: 'JetBrainsMono_700Bold',
+  },
+  typography: {
+    caption: { fontFamily: 'SpaceGrotesk_500Medium', fontSize: 12, lineHeight: 16 },
+    label: { fontFamily: 'SpaceGrotesk_600SemiBold', fontSize: 14, lineHeight: 18 },
+    body: { fontFamily: 'SpaceGrotesk_400Regular', fontSize: 16, lineHeight: 24 },
+    heading: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 22, lineHeight: 27 },
+    display: { fontFamily: 'SpaceGrotesk_700Bold', fontSize: 28, lineHeight: 34 },
+    numeric: { fontFamily: 'JetBrainsMono_500Medium', fontVariant: ['tabular-nums'] },
+    numericBold: { fontFamily: 'JetBrainsMono_700Bold', fontVariant: ['tabular-nums'] },
+  },
+  size: {
+    cardPadding: 12,
+    field: 48,
+    listRow: 60,
+    phoneGutter: 16,
+    tabletGutter: 24,
+    sectionGap: 16,
   },
   touch: {
     minimum: 44,

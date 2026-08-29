@@ -119,9 +119,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     minHeight: theme.touch.minimum,
     overflow: 'hidden',
   },
-  pillSelected: { borderColor: colors.accent },
+  pillSelected: { borderColor: colors.border },
   fill: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.surfaceRaised,
     bottom: 0,
     left: 0,
     position: 'absolute',
@@ -132,13 +132,12 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   label: {
     color: colors.textSecondary,
     fontSize: theme.type.body,
-    fontWeight: '800',
-    letterSpacing: -0.4,
+    fontFamily: theme.font.semibold,
     position: 'relative',
     textAlign: 'center',
     zIndex: 1,
   },
   labelCompact: { fontSize: theme.type.caption, lineHeight: theme.spacing.md },
-  labelSelected: { color: colors.onAccent, fontWeight: '900' },
+  labelSelected: { color: colors.textPrimary, fontFamily: theme.font.bold },
   pressed: { opacity: 0.7 },
 });

@@ -42,12 +42,12 @@ export function CollapsibleCard({ children, onCollapse, summary, title }: Props)
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  action: { color: colors.accentSoft, flexShrink: 0, fontSize: theme.type.label, fontWeight: '800' },
-  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, padding: theme.spacing.lg },
+  action: { color: colors.accentSoft, flexShrink: 0, fontFamily: theme.font.bold, fontSize: theme.type.label },
+  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, padding: theme.size.cardPadding },
   content: { gap: theme.spacing.md, paddingTop: theme.spacing.lg },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.md, justifyContent: 'space-between', minHeight: theme.touch.minimum },
   headerCopy: { flex: 1, gap: theme.spacing.xs },
-  heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' },
+  heading: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading },
   pressed: { opacity: 0.7 },
-  summary: { color: colors.textMuted, fontSize: theme.type.label },
+  summary: { color: colors.textMuted, fontFamily: theme.font.regular, fontSize: theme.type.label },
 });

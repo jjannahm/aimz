@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
-import { GlassSurface } from '@/src/components/GlassSurface';
+import { FlatCard } from '@/src/components/FlatCard';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { toEgyptWallClock } from '@/src/lib/egyptTime';
@@ -34,7 +34,7 @@ function NextTraining({ session }: { session: TrainingSession }) {
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>NEXT TRAINING</Text>
       <Pressable accessibilityLabel={spoken(session)} accessibilityRole="button" onPress={() => open(session)} style={({ pressed }) => pressed && styles.pressed}>
-        <GlassSurface intensity={55} radius={22} style={styles.feature}>
+        <FlatCard radius={theme.radius.lg} style={styles.feature}>
           <View style={styles.featureTop}>
             <View>
               <Text style={styles.featureDay}>{weekday.format(when).toUpperCase()} {dayNumber.format(when)}</Text>
@@ -49,7 +49,7 @@ function NextTraining({ session }: { session: TrainingSession }) {
             </View>
             <Ionicons accessibilityElementsHidden color={colors.textMuted} name="chevron-forward" size={20} />
           </View>
-        </GlassSurface>
+        </FlatCard>
       </Pressable>
     </View>
   );
@@ -103,16 +103,14 @@ export function ScheduleSection() {
       {months.map((month) => (
         <View key={month.monthKey} style={styles.section}>
           <Text accessibilityRole="header" style={styles.sectionLabel}>{month.label.toUpperCase()}</Text>
-          {/* One surface for the month, with the rows ruled inside it: a blur
-            * apiece would cost as many as there are sessions. */}
-          <GlassSurface radius={20} style={styles.monthCard}>
+          <FlatCard radius={theme.radius.md} style={styles.monthCard}>
             {month.sessions.map((session, index) => (
               <View key={session.id}>
                 {index ? <View style={styles.rule} /> : null}
                 <SessionRow last={index === month.sessions.length - 1} session={session} />
               </View>
             ))}
-          </GlassSurface>
+          </FlatCard>
         </View>
       ))}
     </View>
@@ -123,39 +121,35 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   screen: { gap: theme.spacing.lg },
   section: { gap: theme.spacing.sm },
   // Said once, quietly, above what it names.
-  sectionLabel: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '700', letterSpacing: 1.1 },
+  sectionLabel: { color: colors.textMuted, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 1.2 },
 
   feature: { gap: theme.spacing.md, padding: theme.spacing.md },
   featureTop: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' },
-  featureDay: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '800', letterSpacing: -0.4 },
-  featureMonth: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '700', letterSpacing: 1 },
-  featureTime: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '700' },
+  featureDay: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.heading, letterSpacing: -0.4 },
+  featureMonth: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, letterSpacing: 1 },
+  featureTime: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.body },
   featureFoot: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
   featureCopy: { flex: 1, gap: 2 },
 
   monthCard: { paddingHorizontal: theme.spacing.md },
-  // 64 points tall with the padding: a schedule, not a stack of cards.
-  row: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 64, paddingVertical: theme.spacing.sm },
+  row: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: theme.size.listRow, paddingVertical: theme.spacing.xs },
   rule: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginLeft: 34, opacity: 0.6 },
 
   thread: { alignItems: 'center', alignSelf: 'stretch', width: 10 },
-  // The blue is a mark on the thread, not a fill behind the row.
   dot: { backgroundColor: colors.accent, borderRadius: 4, height: 8, marginTop: 22, width: 8 },
   // Runs the height of the row and on across the padding into the next, so the
-  // thread reads as one line rather than a stub per row. Drawn before the dot,
-  // which then sits on it. White rather than `border`, which on this glass is
-  // the colour of the page behind it and so shows as nothing at all.
-  threadLine: { backgroundColor: 'rgba(255, 255, 255, 0.16)', bottom: -theme.spacing.md, position: 'absolute', top: 0, width: 1 },
+  // thread reads as one line rather than a stub per row. Drawn before the dot.
+  threadLine: { backgroundColor: colors.border, bottom: -theme.spacing.md, position: 'absolute', top: 0, width: 1 },
   // Down to the middle of the dot: 22 to its top, and half of its 8 points.
   threadLineLast: { bottom: undefined, height: 26 },
 
   rowDate: { alignItems: 'center', width: 40 },
-  rowWeekday: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '700', letterSpacing: 0.6 },
-  rowDay: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '700', letterSpacing: -0.5 },
+  rowWeekday: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, letterSpacing: 0.6 },
+  rowDay: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.heading, letterSpacing: -0.5 },
   rowCopy: { flex: 1, gap: 2 },
-  rowTime: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
+  rowTime: { color: colors.textSecondary, fontFamily: theme.font.monoBold, fontSize: theme.type.caption },
 
-  venue: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '700' },
-  meta: { color: colors.textMuted, fontSize: theme.type.label },
+  venue: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontSize: theme.type.body },
+  meta: { color: colors.textMuted, fontFamily: theme.font.regular, fontSize: theme.type.label },
   pressed: { opacity: 0.6 },
 });

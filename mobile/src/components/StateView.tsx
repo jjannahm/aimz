@@ -25,6 +25,6 @@ export function ErrorState({ message, onRetry }: { message: string; onRetry: () 
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   box: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.xl },
-  title: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '800', textAlign: 'center' },
+  title: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading, textAlign: 'center' },
   body: { color: colors.textSecondary, fontSize: theme.type.body, lineHeight: 23, textAlign: 'center' },
 });

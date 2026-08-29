@@ -65,17 +65,17 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // then paints over whatever follows it. A row that wants two fields to share
   // its width passes `containerStyle` instead.
   group: { gap: theme.spacing.xs, minWidth: 0 },
-  label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
-  inputShell: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', minHeight: 52, minWidth: 0, overflow: 'hidden', width: '100%' },
+  label: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.label },
+  inputShell: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', minHeight: theme.size.field, minWidth: 0, overflow: 'hidden', width: '100%' },
   inputFocused: { borderColor: colors.accent, borderWidth: 2 },
   // A single-line input is centred in the shell; a taller one fills it.
   multilineShell: { alignItems: 'stretch' },
-  input: { color: colors.textPrimary, flex: 1, fontSize: theme.type.body, minHeight: 50, minWidth: 0, paddingHorizontal: theme.spacing.md },
+  input: { color: colors.textPrimary, flex: 1, fontFamily: theme.font.regular, fontSize: theme.type.body, minHeight: theme.size.field - 2, minWidth: 0, paddingHorizontal: theme.spacing.md },
   webInput: { outlineColor: 'transparent', outlineWidth: 0 },
   multiline: { minHeight: 96, paddingTop: theme.spacing.md, textAlignVertical: 'top' },
   inputError: { borderColor: colors.error, borderWidth: 2 },
   reveal: { alignItems: 'center', height: 44, justifyContent: 'center', marginRight: theme.spacing.xs, width: 44 },
   pressed: { opacity: 0.65 },
-  error: { color: colors.errorText, fontSize: theme.type.caption },
-  hint: { color: colors.textMuted, fontSize: theme.type.caption },
+  error: { color: colors.errorText, fontFamily: theme.font.regular, fontSize: theme.type.caption },
+  hint: { color: colors.textMuted, fontFamily: theme.font.regular, fontSize: theme.type.caption },
 });

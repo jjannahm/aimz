@@ -35,4 +35,4 @@ export default function RegisterScreen() {
     <Text style={styles.footer}>Already registered? <Link href="/(auth)/login" style={styles.link}>Sign in</Link></Text>
   </AuthShell>;
 }
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ form: { gap: theme.spacing.md }, error: { backgroundColor: colors.errorSurface, borderRadius: theme.radius.sm, color: colors.errorText, padding: theme.spacing.md }, link: { color: colors.accentSoft, fontWeight: '800' }, footer: { color: colors.textSecondary, textAlign: 'center' } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ form: { gap: theme.spacing.md }, error: { backgroundColor: colors.errorSurface, borderRadius: theme.radius.sm, color: colors.errorText, fontFamily: theme.font.regular, padding: theme.spacing.md }, link: { color: colors.accentSoft, fontFamily: theme.font.bold }, footer: { color: colors.textSecondary, fontFamily: theme.font.regular, textAlign: 'center' } });

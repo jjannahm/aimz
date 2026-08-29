@@ -163,7 +163,7 @@ function Clearance() {
 describe('useDockClearance', () => {
   it('asks a page to clear the rail and the gap below it', async () => {
     const screen = await render(<Clearance />);
-    expect(screen.getByTestId('clearance').props.children).toBe(96);
+    expect(screen.getByTestId('clearance').props.children).toBe(84);
   });
 
   // The dock rests on the home indicator's inset, so the name floating above it
@@ -174,6 +174,6 @@ describe('useDockClearance', () => {
         <Clearance />
       </SafeAreaInsetsContext.Provider>,
     );
-    expect(screen.getByTestId('clearance').props.children).toBe(114);
+    expect(screen.getByTestId('clearance').props.children).toBe(106);
   });
 });

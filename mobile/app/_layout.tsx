@@ -1,4 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import { SpaceGrotesk_400Regular } from '@expo-google-fonts/space-grotesk/400Regular';
+import { SpaceGrotesk_500Medium } from '@expo-google-fonts/space-grotesk/500Medium';
+import { SpaceGrotesk_600SemiBold } from '@expo-google-fonts/space-grotesk/600SemiBold';
+import { SpaceGrotesk_700Bold } from '@expo-google-fonts/space-grotesk/700Bold';
+import { JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono/500Medium';
+import { JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono/700Bold';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -18,6 +24,15 @@ import { ThemeProvider, useAppTheme } from '@/src/theme/ThemeProvider';
 // `public/fonts` is copied to the deploy root verbatim, which gives web a stable
 // URL; native keeps using the bundled asset.
 const iconFont = Platform.OS === 'web' ? { ionicons: '/fonts/Ionicons.ttf' } : Ionicons.font;
+const appFonts = {
+  ...iconFont,
+  SpaceGrotesk_400Regular,
+  SpaceGrotesk_500Medium,
+  SpaceGrotesk_600SemiBold,
+  SpaceGrotesk_700Bold,
+  JetBrainsMono_500Medium,
+  JetBrainsMono_700Bold,
+};
 
 export default function RootLayout() {
   return (
@@ -35,8 +50,8 @@ function ThemedRoot() {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: { queries: { retry: 1, staleTime: 20_000 } },
   }));
-  const [iconsLoaded, iconError] = useFonts(iconFont);
-  if (!iconsLoaded && !iconError) return <View style={{ backgroundColor: colors.background, flex: 1 }} />;
+  const [fontsLoaded, fontError] = useFonts(appFonts);
+  if (!fontsLoaded && !fontError) return <View style={{ backgroundColor: colors.background, flex: 1 }} />;
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
