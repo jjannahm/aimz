@@ -184,3 +184,67 @@ describe('StandingsScreen — arriving from Manage', () => {
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-1'));
   });
 });
+
+
+describe('StandingsScreen — opening a team, and comparing two', () => {
+  beforeEach(() => {
+    jest.mocked(api.competitions).mockResolvedValue({ items: [league], total: 1, limit: 100, offset: 0 });
+    jest.mocked(api.standings).mockResolvedValue(table);
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  const push = () => jest.mocked(require('expo-router').router.push);
+
+  it('opens a team when its row is tapped', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Giza Lions, 9 points'));
+
+    expect(push()).toHaveBeenCalledWith({ pathname: '/team/[id]', params: { id: 't-1' } });
+  });
+
+  // The whole point of the split: the compare control must not open the team.
+  it('does not open the team when its compare control is pressed', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
+
+    expect(push()).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Select another team to compare with Giza Lions/u)).toBeTruthy();
+  });
+
+  it('lets the same control put a team back down', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
+    fireEvent.press(await screen.findByLabelText('Giza Lions selected to compare'));
+
+    await waitFor(() => expect(screen.queryByText(/Select another team to compare/u)).toBeNull());
+    expect(push()).not.toHaveBeenCalled();
+  });
+
+  it('compares only once a second compare control is pressed', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
+    fireEvent.press(await screen.findByLabelText('Compare AIMZ U18 Women'));
+
+    expect(push()).toHaveBeenCalledWith({ pathname: '/compare/[a]/[b]', params: { a: 't-1', b: 't-2' } });
+  });
+
+  // Tapping a row mid-comparison is still a row tap, at every stage.
+  it('still opens a team tapped while a comparison is waiting on its second', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
+    fireEvent.press(await screen.findByLabelText('AIMZ U18 Women, 6 points'));
+
+    expect(push()).toHaveBeenCalledWith({ pathname: '/team/[id]', params: { id: 't-2' } });
+    expect(push()).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/compare/[a]/[b]' }));
+    // And the comparison is still waiting, rather than having been taken over.
+    expect(screen.getByText(/Select another team to compare with Giza Lions/u)).toBeTruthy();
+  });
+
+  it('offers a way out of comparison without choosing anyone', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
+    fireEvent.press(await screen.findByLabelText('Cancel comparison'));
+
+    await waitFor(() => expect(screen.queryByText(/Select another team to compare/u)).toBeNull());
+  });
+});

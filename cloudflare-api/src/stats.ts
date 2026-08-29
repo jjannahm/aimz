@@ -164,6 +164,35 @@ export function registerStatsRoutes(app: App): void {
     return c.json(ranked.map((row, index) => ({ rank: index + 1, player: publicPlayer(playerMap.get(row.player_id) ?? null), team: publicTeam(teamMap.get(row.team_id ?? playerMap.get(row.player_id)?.team_id ?? "") ?? null), goals: row.goals, assists: row.assists, yellow_cards: row.yellow_cards, red_cards: row.red_cards, appearances: row.appearances })));
   });
 
+  /**
+   * Every player on one squad with their season totals, in a single query.
+   *
+   * The team profile lists a squad beside its numbers. Asking for each
+   * player's stats one at a time would be a request per shirt, so the whole
+   * squad is aggregated here instead. A player who has not played yet still
+   * appears, at nought, because a squad list that hides them is not a squad.
+   */
+  app.get("/api/v1/teams/:id/squad-stats", async (c) => {
+    const teamId = c.req.param("id");
+    const team = await c.env.DB.prepare("SELECT id FROM teams WHERE id=?").bind(teamId).first();
+    if (!team) throw new ApiProblem(404, "team_not_found", "Team not found.");
+    const result = await c.env.DB.prepare(`
+      SELECT p.id AS player_id,
+        COALESCE(SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END), 0) AS appearances,
+        COALESCE(SUM(s.minutes_played), 0) AS minutes_played,
+        COALESCE(SUM(s.goals), 0) AS goals,
+        COALESCE(SUM(s.assists), 0) AS assists,
+        COALESCE(SUM(s.clean_sheet), 0) AS clean_sheets,
+        COALESCE(SUM(s.goals_conceded), 0) AS goals_conceded
+      FROM players p
+      LEFT JOIN player_match_stats s ON s.player_id = p.id
+      LEFT JOIN matches m ON m.id = s.match_id AND m.status = 'finished'
+      WHERE p.team_id = ? AND (s.id IS NULL OR m.id IS NOT NULL)
+      GROUP BY p.id
+    `).bind(teamId).all<{ player_id: string; appearances: number; minutes_played: number; goals: number; assists: number; clean_sheets: number; goals_conceded: number }>();
+    return c.json(result.results);
+  });
+
   app.get("/api/v1/players/:id/stats", async (c) => {
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>(); if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
     const season = new URL(c.req.url).searchParams.get("season"); const values: unknown[] = [player.id]; const where = season ? " AND cp.season=?" : ""; if (season) values.push(season);

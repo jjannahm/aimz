@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
@@ -9,28 +9,16 @@ import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
+import { FormStrip } from '@/src/components/FormStrip';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { invalidateAfterWrite } from '@/src/lib/cache';
+import type { PressState } from '@/src/lib/pressState';
 import { showMessage } from '@/src/lib/platformAlert';
 import { isKnockout, type BracketSlot, type FormResult, type StandingRow } from '@/src/types/api';
-
-// A five-match strip under the team name: the row is too tight for another column.
-function FormStrip({ form }: { form: FormResult[] }) {
-  const styles = useThemedStyles(stylesheet);
-  const colors = useColors();
-  if (!form.length) return null;
-  const tint: Record<FormResult, string> = { W: colors.live, D: colors.textMuted, L: colors.error };
-  const spoken = form.map((result) => ({ W: 'won', D: 'drew', L: 'lost' })[result]).join(', ');
-  return <View accessibilityLabel={`Recent form: ${spoken}`} style={styles.form}>
-    {form.map((result, index) => <View key={index} style={[styles.formDot, { backgroundColor: tint[result] }]}>
-      <Text accessibilityElementsHidden style={styles.formLetter}>{result}</Text>
-    </View>)}
-  </View>;
-}
 
 function HeadToHead({ teamId, opponentId, onClose }: { teamId: string; opponentId: string; onClose: () => void }) {
   const styles = useThemedStyles(stylesheet);
@@ -53,6 +41,31 @@ function HeadToHead({ teamId, opponentId, onClose }: { teamId: string; opponentI
       </View>)}
     </>}
   </View>;
+}
+
+/**
+ * The only way into a comparison.
+ *
+ * It sits inside the row, which opens the team, so the press is stopped here:
+ * on native the responder system already keeps it, and on web the click would
+ * otherwise carry on up to the row. Small on the page and 44 points to the
+ * finger, which is what `hitSlop` buys without drawing anything bigger.
+ */
+function CompareButton({ onPress, selected, teamName }: { onPress: () => void; selected: boolean; teamName: string }) {
+  const styles = useThemedStyles(stylesheet);
+  const colors = useColors();
+  return <Pressable
+    accessibilityHint="Selects this team to compare, without opening it"
+    accessibilityLabel={selected ? `${teamName} selected to compare` : `Compare ${teamName}`}
+    accessibilityRole="button"
+    accessibilityState={{ selected }}
+    hitSlop={12}
+    onPress={(event) => { event.stopPropagation?.(); onPress(); }}
+    style={({ pressed }) => [styles.compare, selected && styles.compareOn, pressed && styles.pressed]}
+    testID={`compare-${teamName}`}
+  >
+    <Ionicons color={selected ? colors.onAccent : colors.textMuted} name={selected ? 'checkmark' : 'swap-horizontal'} size={14} />
+  </Pressable>;
 }
 
 const VIEWS = [{ label: 'Groups', value: 'groups' }, { label: 'Bracket', value: 'bracket' }] as const;
@@ -97,10 +110,20 @@ export default function StandingsScreen() {
     }
     return [...groups.values()];
   }, [table.data]);
-  // Tapping a team picks it, then a second team compares the two.
-  const [comparing, setComparing] = useState<{ teamId: string; opponentId: string | null } | null>(null);
-  const setOpponentsFor = (teamId: string) => setComparing((current) =>
-    current === null || current.teamId === teamId ? { teamId, opponentId: null } : { teamId: current.teamId, opponentId: teamId });
+  /**
+   * Comparison is its own action, reached only through the compare control on a
+   * row. Tapping the row itself opens the team, at every stage — the two never
+   * stand in for one another.
+   */
+  const [comparing, setComparing] = useState<string | null>(null);
+  const compare = (teamId: string) => {
+    if (comparing === teamId) { setComparing(null); return; }
+    if (comparing === null) { setComparing(teamId); return; }
+    const first = comparing;
+    setComparing(null);
+    router.push({ pathname: '/compare/[a]/[b]', params: { a: first, b: teamId } });
+  };
+  const comparingName = table.data?.find((row) => row.team.id === comparing)?.team.name;
 
   return <Screen title="Standings">
     {/* Only worth a switcher when more than one competition is running. */}
@@ -112,9 +135,12 @@ export default function StandingsScreen() {
     </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
     <View style={styles.content} testID="standings-content">
       {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
-      {comparing ? (comparing.opponentId
-        ? <HeadToHead onClose={() => setComparing(null)} opponentId={comparing.opponentId} teamId={comparing.teamId} />
-        : <View style={styles.h2h}><Text style={styles.h2hPrompt}>Pick another team to compare with {table.data?.find((row) => row.team.id === comparing.teamId)?.team.name ?? 'this team'}.</Text></View>) : null}
+      {comparing ? <View style={styles.compareBar}>
+        <Text style={styles.comparePrompt}>Select another team to compare with {comparingName ?? 'this team'}.</Text>
+        <Pressable accessibilityLabel="Cancel comparison" accessibilityRole="button" onPress={() => setComparing(null)} style={({ pressed }) => [styles.compareCancel, pressed && styles.pressed]}>
+          <Text style={styles.compareCancelText}>Cancel</Text>
+        </Pressable>
+      </View> : null}
       {competitions.isLoading || table.isLoading ? <LoadingState label="Calculating table" /> : competitions.isError || table.isError ? <ErrorState message={(competitions.error as ApiError | null)?.message ?? (table.error as ApiError | null)?.message ?? 'Could not load standings.'} onRetry={() => { competitions.refetch(); table.refetch(); }} /> : knockout && view === 'bracket' ? (bracket.data?.rounds.length ? <BracketView bracket={bracket.data} busy={draw.isPending || pickWinner.isPending} onAdvance={user?.role === 'admin' ? (round) => draw.mutate(round) : undefined} onPickWinner={user?.role === 'admin' ? (slot, teamId) => pickWinner.mutate({ slot, teamId }) : undefined} /> : <EmptyState body="The bracket appears once the competition is drawn." title="No bracket yet" />)
         : !competitionId || !table.data?.length ? <EmptyState body="Finished matches will create the table automatically." title="No standings yet" />
         : knockout ? <View style={styles.groups}>{groupedRows.map((group) => <View key={group.name} style={styles.group}><Text style={styles.groupName}>{group.name}</Text>{tableFor(group.rows)}</View>)}</View>
@@ -125,14 +151,20 @@ export default function StandingsScreen() {
   function tableFor(rows: StandingRow[]) {
     return <View style={styles.table}>
       <View style={styles.tableHeader}>
-        <Text style={styles.rankHeader}>#</Text>
-        <Text style={[styles.team, styles.headerText]}>TEAM</Text>
-        <Text style={[styles.stat, styles.headerText]}>P</Text>
-        <Text style={[styles.stat, styles.headerText]}>GD</Text>
-        <Text style={[styles.pointsHeader, styles.headerText]}>PTS</Text>
+        <View style={styles.rowTap}>
+          <Text style={styles.rankHeader}>#</Text>
+          <Text style={[styles.team, styles.headerText]}>TEAM</Text>
+          <Text style={[styles.stat, styles.headerText]}>P</Text>
+          <Text style={[styles.stat, styles.headerText]}>GD</Text>
+          <Text style={[styles.pointsHeader, styles.headerText]}>PTS</Text>
+        </View>
+        {/* Stands in for the compare control, so the columns above the rows
+          * are set back by exactly as much as the rows are. */}
+        <View accessibilityElementsHidden style={styles.compareSlot} />
       </View>
-      {rows.map((row: StandingRow, index: number) => <Pressable accessibilityHint="Opens head-to-head records against the other teams" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" key={row.team.id} onPress={() => setOpponentsFor(row.team.id)} style={({ pressed }) => [styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, pressed && styles.pressed]}>
+      {rows.map((row: StandingRow, index: number) => <View key={row.team.id} style={[styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, comparing === row.team.id && styles.comparingRow]}>
         {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
+        <Pressable accessibilityHint="Opens this team's profile" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" onPress={() => router.push({ pathname: '/team/[id]', params: { id: row.team.id } })} style={({ pressed, hovered }: PressState) => [styles.rowTap, hovered && styles.hoveredRow, pressed && styles.pressed]}>
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
           <TeamAvatar badgeStyle={row.team.badge_style} isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={32} />
@@ -142,7 +174,7 @@ export default function StandingsScreen() {
               {row.rank === 1 ? <Ionicons accessibilityLabel="First place" color={colors.leaderAccent} name="trophy" size={16} /> : null}
             </View>
             {row.team.squad_code ? <Text numberOfLines={1} style={styles.code}>{row.team.squad_code}</Text> : null}
-            <FormStrip form={row.form ?? []} />
+            <View style={styles.formRow}><FormStrip form={row.form ?? []} /></View>
           </View>
         </View>
         <Text style={styles.stat}>{row.played}</Text>
@@ -150,7 +182,9 @@ export default function StandingsScreen() {
         <View style={[styles.pointsBox, row.rank === 1 && styles.leaderPointsBox]}>
           <Text style={[styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
         </View>
-      </Pressable>)}
+        </Pressable>
+        <CompareButton onPress={() => compare(row.team.id)} selected={comparing === row.team.id} teamName={row.team.name} />
+      </View>)}
     </View>;
   }
 }
@@ -165,6 +199,7 @@ export default function StandingsScreen() {
 const RANK_COLUMN = 22;
 const STAT_COLUMN = 34;
 const POINTS_COLUMN = 40;
+const COMPARE_COLUMN = 24;
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // The section the switcher swaps, which keeps the page's own rhythm between
@@ -180,9 +215,21 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // reset included — so this only spaces the label inside it.
   tab: { paddingHorizontal: theme.spacing.md },
   pressed: { opacity: 0.7 },
-  form: { flexDirection: 'row', gap: 3, marginTop: 4 },
-  formDot: { alignItems: 'center', borderRadius: 3, height: 14, justifyContent: 'center', width: 14 },
-  formLetter: { color: colors.background, fontFamily: theme.font.bold, fontSize: 9 },
+  formRow: { marginTop: 4 },
+  // Small enough to stay out of the table's way; `hitSlop` gives the finger the
+  // 44 points the drawing does not.
+  // The row's own tap target. It holds every column, so the compare control
+  // beside it is the only thing in the row that is not "open this team".
+  rowTap: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm },
+  compareSlot: { width: COMPARE_COLUMN },
+  compare: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, height: COMPARE_COLUMN, justifyContent: 'center', width: COMPARE_COLUMN },
+  compareOn: { backgroundColor: colors.accent, borderColor: colors.accent },
+  comparingRow: { borderColor: colors.accent },
+  hoveredRow: { backgroundColor: colors.surfaceRaised },
+  compareBar: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  comparePrompt: { color: colors.textSecondary, flex: 1, lineHeight: 20 },
+  compareCancel: { minHeight: theme.touch.minimum, justifyContent: 'center' },
+  compareCancelText: { color: colors.accentSoft, fontFamily: theme.font.bold },
   h2h: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
   h2hHeader: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   h2hTitle: { color: colors.textPrimary, flex: 1, fontFamily: theme.font.bold },

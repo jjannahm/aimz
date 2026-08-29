@@ -207,6 +207,17 @@ export type HeadToHeadMeeting = {
   result: FormResult;
 };
 
+/** One squad member's season totals, aggregated by the API in a single query. */
+export type SquadStat = {
+  player_id: string;
+  appearances: number;
+  minutes_played: number;
+  goals: number;
+  assists: number;
+  clean_sheets: number;
+  goals_conceded: number;
+};
+
 export type HeadToHead = {
   team: Team;
   opponent: Team;
