@@ -72,7 +72,48 @@ export type PlayerMatchStat = Schema['PlayerMatchStatRead'];
 // Optional so a response cached before the goalkeeping fields existed still
 // types, and the app reads them through a zero.
 export type GoalkeeperTotals = { goals_conceded?: number; penalties_saved?: number; clean_sheets?: number };
-export type PlayerSeasonSummary = Schema['PlayerSeasonSummary'] & GoalkeeperTotals;
+
+/** What a player reached, and when. */
+export type Milestone = { id: string; label: string; kickoff_datetime: string; match_id: string };
+/** A run still going as of her last match. */
+export type Streak = { id: string; label: string; count: number };
+/** The next mark on a track she is already on: "2 more appearances to 50". */
+export type NextMilestone = { id: string; label: string; current: number; target: number; remaining: number };
+export type MilestoneSummary = { reached: Milestone[]; streaks: Streak[]; next: NextMilestone[] };
+
+/**
+ * One match on a player's record, with its match joined in.
+ *
+ * `team` is the squad she turned out for that day, which is not necessarily the
+ * squad she is on now — that is the whole point of it being on the statistic.
+ */
+export type PlayerMatchLine = PlayerMatchStat & GoalkeeperTotals & {
+  kickoff_datetime: string;
+  competition: { id: string; name: string; season: string };
+  team: Team | null;
+  opponent: Team | null;
+  man_of_the_match: boolean;
+};
+
+export type PlayerSeasonSummary = Omit<Schema['PlayerSeasonSummary'], 'matches'> & GoalkeeperTotals & {
+  /** Every season she has a record in, newest first. */
+  seasons: string[];
+  milestones: MilestoneSummary;
+  matches: PlayerMatchLine[];
+};
+
+/** One thing a player has won, and whether the season it came from is settled. */
+export type Honour = {
+  competition: Competition;
+  metric: AwardMetric;
+  label: string;
+  value: number;
+  unit: string;
+  team: Team | null;
+  /** False while the competition still has matches to play. */
+  is_final: boolean;
+};
+export type PlayerHonours = { player: Player; honours: Honour[] };
 
 export type Page<T> = { items: T[]; total: number; limit: number; offset: number };
 

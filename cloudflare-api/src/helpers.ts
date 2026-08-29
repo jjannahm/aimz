@@ -136,6 +136,23 @@ export function publicStat(stat: StatRow): Record<string, unknown> {
   return { ...stat, appeared: Boolean(stat.appeared) };
 }
 
+/**
+ * Whole years old today, or null when no birth date is on file.
+ *
+ * The birth date itself stays behind the admin-only roster routes; the age is
+ * what a squad list or a profile actually needs, and it identifies a child far
+ * less precisely.
+ */
+export function ageFromBirthDate(dateOfBirth: string | null, today = new Date()): number | null {
+  if (!dateOfBirth) return null;
+  const born = new Date(`${dateOfBirth}T00:00:00.000Z`);
+  if (Number.isNaN(born.getTime())) return null;
+  let age = today.getUTCFullYear() - born.getUTCFullYear();
+  const month = today.getUTCMonth() - born.getUTCMonth();
+  if (month < 0 || (month === 0 && today.getUTCDate() < born.getUTCDate())) age -= 1;
+  return age >= 0 && age < 130 ? age : null;
+}
+
 export function publicPlayer(player: PlayerRow | null): Record<string, unknown> | null {
   if (!player) return null;
   return {
@@ -146,6 +163,7 @@ export function publicPlayer(player: PlayerRow | null): Record<string, unknown> 
     jersey_number: player.jersey_number,
     photo_key: player.photo_key,
     is_active: Boolean(player.is_active),
+    age: ageFromBirthDate(player.date_of_birth),
     created_at: player.created_at,
     updated_at: player.updated_at,
     photo_url: mediaPath(player.photo_key),

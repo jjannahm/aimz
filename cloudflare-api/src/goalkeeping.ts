@@ -1,6 +1,16 @@
 import type { EventRow, LineupRow } from "./types";
 
 /**
+ * The goalkeeper's position code.
+ *
+ * Spelled here rather than imported: this file is unit tested directly, and a
+ * runtime relative import cannot be resolved by Node's type stripping. It is
+ * `GOALKEEPER` in ./positions, which owns the vocabulary, and a test in
+ * goalkeeping.test.ts holds the two together.
+ */
+const GOALKEEPER = "GK";
+
+/**
  * What a goalkeeper is answerable for in one match.
  *
  * These belong to the keeper who was on the pitch when it happened, which is
@@ -14,10 +24,15 @@ export interface GoalkeeperMatchStats {
   clean_sheet: number;
 }
 
-/** Positions are free text, so recognise a keeper the way the app's pitch does. */
+/**
+ * Whether this is the goalkeeper's position.
+ *
+ * Positions used to be free text, so this had to recognise a keeper from
+ * whatever prose had been typed, and agree with the app about it. They are a
+ * fixed vocabulary now, so it is simply the one code.
+ */
 export function isGoalkeeper(position: string | null): boolean {
-  const value = (position ?? "").trim().toLowerCase();
-  return value.startsWith("goal") || value === "gk";
+  return position === GOALKEEPER;
 }
 
 type Spell = { playerId: string; from: number; to: number | null };
@@ -49,6 +64,25 @@ function spellsFor(lineup: LineupRow[], events: EventRow[]): Spell[] {
   return [...state.entries()]
     .filter(([, value]) => value.from !== null)
     .map(([playerId, value]) => ({ playerId, from: value.from ?? 0, to: value.to }));
+}
+
+/**
+ * Everyone who took the field: the starters, plus anyone brought on.
+ *
+ * This is what "appeared" means. `player_match_stats.appeared` is not it — that
+ * flag is only written when minutes are saved by hand, when an event names the
+ * player, or when goalkeeping is worked out, so a starter who did nothing
+ * notable has no row at all and reads as having never played.
+ *
+ * It lives beside the goalkeeping walk rather than in a file of its own because
+ * it is the same walk — a module that is unit tested cannot carry a runtime
+ * relative import, so the two cannot be split without duplicating it.
+ *
+ * A named substitute who never came on is excluded, which is the point: being
+ * on the team sheet is not the same as playing.
+ */
+export function playersWhoTookTheField(lineup: LineupRow[], events: EventRow[]): Set<string> {
+  return new Set(spellsFor(lineup, events).map((spell) => spell.playerId));
 }
 
 /**

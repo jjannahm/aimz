@@ -27,13 +27,21 @@ describe('formation catalogue', () => {
 });
 
 describe('bucketFor', () => {
-  it('reads the free-text positions the roster actually uses', () => {
-    expect(bucketFor('Goalkeeper')).toBe('GK');
-    expect(bucketFor('Defender')).toBe('DEF');
-    expect(bucketFor('Right Back')).toBe('DEF');
-    expect(bucketFor('Midfielder')).toBe('MID');
-    expect(bucketFor('Forward')).toBe('FWD');
-    expect(bucketFor('Winger')).toBe('FWD');
+  it('puts every position in the vocabulary on its own line', () => {
+    expect(bucketFor('GK')).toBe('GK');
+    expect(bucketFor('CB')).toBe('DEF');
+    expect(bucketFor('RB')).toBe('DEF');
+    expect(bucketFor('CM')).toBe('MID');
+    expect(bucketFor('ST')).toBe('FWD');
+    expect(bucketFor('LW')).toBe('FWD');
+  });
+
+  // The old free-text heuristic tested "back" before "wing", so a wing-back
+  // landed in defence by luck of clause ordering. Now it is looked up.
+  it('puts a wing-back in defence and a winger up front', () => {
+    expect(bucketFor('LWB')).toBe('DEF');
+    expect(bucketFor('RWB')).toBe('DEF');
+    expect(bucketFor('RW')).toBe('FWD');
   });
 
   it('treats anything unrecognised as midfield rather than dropping the player', () => {
@@ -43,10 +51,10 @@ describe('bucketFor', () => {
 
 describe('arrangeByFormation', () => {
   const squad = [
-    player('gk', 'Nour Hassan', 'Goalkeeper', 1),
-    ...Array.from({ length: 3 }, (_, i) => player(`d${i}`, `Def ${i}`, 'Defender', 2 + i)),
-    ...Array.from({ length: 2 }, (_, i) => player(`m${i}`, `Mid ${i}`, 'Midfielder', 5 + i)),
-    player('f0', 'Fwd 0', 'Forward', 7),
+    player('gk', 'Nour Hassan', 'GK', 1),
+    ...Array.from({ length: 3 }, (_, i) => player(`d${i}`, `Def ${i}`, 'CB', 2 + i)),
+    ...Array.from({ length: 2 }, (_, i) => player(`m${i}`, `Mid ${i}`, 'CM', 5 + i)),
+    player('f0', 'Fwd 0', 'ST', 7),
   ];
 
   it('fills each row with the count the formation asks for', () => {
@@ -57,15 +65,15 @@ describe('arrangeByFormation', () => {
 
   it('puts defenders nearest the keeper and forwards furthest', () => {
     const { rows } = arrangeByFormation(squad, '3-2-1');
-    expect(rows[0]!.every((p) => p.position === 'Defender')).toBe(true);
-    expect(rows[2]![0]!.position).toBe('Forward');
+    expect(rows[0]!.every((p) => p.position === 'CB')).toBe(true);
+    expect(rows[2]![0]!.position).toBe('ST');
   });
 
   it('places every starter, even when positions do not match the shape', () => {
     // A squad with no forwards still has to field a 3-2-1.
     const lopsided = [
-      player('gk', 'Keeper', 'Goalkeeper', 1),
-      ...Array.from({ length: 6 }, (_, i) => player(`d${i}`, `Def ${i}`, 'Defender', 2 + i)),
+      player('gk', 'Keeper', 'GK', 1),
+      ...Array.from({ length: 6 }, (_, i) => player(`d${i}`, `Def ${i}`, 'CB', 2 + i)),
     ];
     const { keeper, rows } = arrangeByFormation(lopsided, '3-2-1');
     const placed = keeper.length + rows.flat().length;
@@ -76,9 +84,9 @@ describe('arrangeByFormation', () => {
 describe('FormationPitch', () => {
   it('shows the formation label and a shirt per starter', async () => {
     const squad = [
-      player('gk', 'Nour Hassan', 'Goalkeeper', 1),
-      player('d0', 'Salma Nabil', 'Defender', 2),
-      player('m0', 'Mariam Adel', 'Midfielder', 6),
+      player('gk', 'Nour Hassan', 'GK', 1),
+      player('d0', 'Salma Nabil', 'CB', 2),
+      player('m0', 'Mariam Adel', 'CM', 6),
     ];
     const screen = await render(<FormationPitch formation="1-1" starters={squad} />);
     expect(screen.getByText('1-1')).toBeTruthy();
@@ -91,10 +99,10 @@ describe('FormationPitch', () => {
 
 describe('inferFormation', () => {
   const squad = [
-    player('gk', 'Keeper', 'Goalkeeper', 1),
-    ...Array.from({ length: 3 }, (_, i) => player(`d${i}`, `Def ${i}`, 'Defender', 2 + i)),
-    ...Array.from({ length: 2 }, (_, i) => player(`m${i}`, `Mid ${i}`, 'Midfielder', 5 + i)),
-    player('f0', 'Fwd', 'Forward', 7),
+    player('gk', 'Keeper', 'GK', 1),
+    ...Array.from({ length: 3 }, (_, i) => player(`d${i}`, `Def ${i}`, 'CB', 2 + i)),
+    ...Array.from({ length: 2 }, (_, i) => player(`m${i}`, `Mid ${i}`, 'CM', 5 + i)),
+    player('f0', 'Fwd', 'ST', 7),
   ];
 
   it('reads the shape the squad is already playing', () => {
@@ -107,16 +115,16 @@ describe('inferFormation', () => {
   });
 
   it('returns null when there is nobody outfield', () => {
-    expect(inferFormation([player('gk', 'Keeper', 'Goalkeeper', 1)])).toBeNull();
+    expect(inferFormation([player('gk', 'Keeper', 'GK', 1)])).toBeNull();
   });
 });
 
 describe('FormationPitch without a stored formation', () => {
   it('still draws, marking the shape as inferred', async () => {
     const squad = [
-      player('gk', 'Nour Hassan', 'Goalkeeper', 1),
-      player('d0', 'Salma Nabil', 'Defender', 2),
-      player('f0', 'Mariam Adel', 'Forward', 9),
+      player('gk', 'Nour Hassan', 'GK', 1),
+      player('d0', 'Salma Nabil', 'CB', 2),
+      player('f0', 'Mariam Adel', 'ST', 9),
     ];
     const screen = await render(<FormationPitch formation={null} starters={squad} />);
     expect(screen.getByText(/1-1/u)).toBeTruthy();
@@ -126,9 +134,9 @@ describe('FormationPitch without a stored formation', () => {
 
 describe('captain armband', () => {
   const squad = [
-    player('gk', 'Nour Hassan', 'Goalkeeper', 1),
-    player('d0', 'Salma Nabil', 'Defender', 2),
-    player('f0', 'Mariam Adel', 'Forward', 9),
+    player('gk', 'Nour Hassan', 'GK', 1),
+    player('d0', 'Salma Nabil', 'CB', 2),
+    player('f0', 'Mariam Adel', 'ST', 9),
   ];
 
   it('marks only the captain', async () => {
@@ -145,7 +153,7 @@ describe('captain armband', () => {
 
 
 describe('FormationPitch shirts as buttons', () => {
-  const squad = [player('gk', 'Jana Kamal', 'Goalkeeper', 1), player('d0', 'Aya Nabil', 'Defender', 6)];
+  const squad = [player('gk', 'Jana Kamal', 'GK', 1), player('d0', 'Aya Nabil', 'CB', 6)];
 
   it('opens the player a shirt belongs to', async () => {
     const onSelect = jest.fn();

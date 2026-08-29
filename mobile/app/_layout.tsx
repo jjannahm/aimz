@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { SpaceGrotesk_400Regular } from '@expo-google-fonts/space-grotesk/400Regular';
-import { SpaceGrotesk_500Medium } from '@expo-google-fonts/space-grotesk/500Medium';
-import { SpaceGrotesk_600SemiBold } from '@expo-google-fonts/space-grotesk/600SemiBold';
-import { SpaceGrotesk_700Bold } from '@expo-google-fonts/space-grotesk/700Bold';
-import { JetBrainsMono_500Medium } from '@expo-google-fonts/jetbrains-mono/500Medium';
-import { JetBrainsMono_700Bold } from '@expo-google-fonts/jetbrains-mono/700Bold';
+import { Roboto_400Regular } from '@expo-google-fonts/roboto/400Regular';
+import { Roboto_500Medium } from '@expo-google-fonts/roboto/500Medium';
+import { Roboto_600SemiBold } from '@expo-google-fonts/roboto/600SemiBold';
+import { Roboto_700Bold } from '@expo-google-fonts/roboto/700Bold';
+import { RobotoMono_500Medium } from '@expo-google-fonts/roboto-mono/500Medium';
+import { RobotoMono_700Bold } from '@expo-google-fonts/roboto-mono/700Bold';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
@@ -24,15 +24,31 @@ import { ThemeProvider, useAppTheme } from '@/src/theme/ThemeProvider';
 // `public/fonts` is copied to the deploy root verbatim, which gives web a stable
 // URL; native keeps using the bundled asset.
 const iconFont = Platform.OS === 'web' ? { ionicons: '/fonts/Ionicons.ttf' } : Ionicons.font;
-const appFonts = {
-  ...iconFont,
-  SpaceGrotesk_400Regular,
-  SpaceGrotesk_500Medium,
-  SpaceGrotesk_600SemiBold,
-  SpaceGrotesk_700Bold,
-  JetBrainsMono_500Medium,
-  JetBrainsMono_700Bold,
-};
+
+// The app's own faces land in that same unreachable place, for the same reason:
+// Metro mirrors an asset's source path, and pnpm's is a dot directory. Left
+// alone the page would render in a system face rather than saying anything was
+// wrong. `scripts/copy-web-fonts.mjs` lifts them to `/fonts` after the export,
+// so web asks for them there and native keeps the bundled asset.
+const webFont = (family: string) => `/fonts/${family}.ttf`;
+const textFonts = Platform.OS === 'web'
+  ? {
+    Roboto_400Regular: webFont('Roboto_400Regular'),
+    Roboto_500Medium: webFont('Roboto_500Medium'),
+    Roboto_600SemiBold: webFont('Roboto_600SemiBold'),
+    Roboto_700Bold: webFont('Roboto_700Bold'),
+    RobotoMono_500Medium: webFont('RobotoMono_500Medium'),
+    RobotoMono_700Bold: webFont('RobotoMono_700Bold'),
+  }
+  : {
+    Roboto_400Regular,
+    Roboto_500Medium,
+    Roboto_600SemiBold,
+    Roboto_700Bold,
+    RobotoMono_500Medium,
+    RobotoMono_700Bold,
+  };
+const appFonts = { ...iconFont, ...textFonts };
 
 export default function RootLayout() {
   return (

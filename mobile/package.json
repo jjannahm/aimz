@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "web": "expo start --web",
-    "web:export": "expo export --platform web --clear && node scripts/inject-web-branding.mjs && node scripts/verify-web-export.mjs",
+    "web:export": "expo export --platform web --clear && node scripts/inject-web-branding.mjs && node scripts/copy-web-fonts.mjs && node scripts/verify-web-export.mjs",
     "web:export:staging": "EXPO_PUBLIC_API_URL=https://aimz-api-staging.shared-links.workers.dev EXPO_PUBLIC_APP_ENV=staging EXPO_PUBLIC_ENABLE_MEDIA=true EXPO_PUBLIC_ENABLE_PASSWORD_RESET=false npm run web:export",
     "web:deploy:cloudflare": "wrangler pages deploy dist --project-name aimz-egypt-staging --branch main",
     "typecheck": "tsc --noEmit",
@@ -18,8 +18,8 @@
     "api:types": "openapi-typescript ${EXPO_PUBLIC_API_URL:-http://127.0.0.1:8000}/openapi.json -o src/types/generated.ts"
   },
   "dependencies": {
-    "@expo-google-fonts/jetbrains-mono": "^0.4.1",
-    "@expo-google-fonts/space-grotesk": "^0.4.1",
+    "@expo-google-fonts/roboto": "^0.4.3",
+    "@expo-google-fonts/roboto-mono": "^0.4.2",
     "@expo/vector-icons": "^15.1.1",
     "@hookform/resolvers": "^5.9.1",
     "@tanstack/react-query": "^5.101.4",

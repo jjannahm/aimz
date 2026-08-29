@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { JerseyIcon } from '@/src/components/JerseyIcon';
+import { lineFor, type PositionLine } from '@/src/lib/positions';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { formationRows, type Player } from '@/src/types/api';
@@ -9,16 +10,16 @@ import { formationRows, type Player } from '@/src/types/api';
 const PITCH = '#15603C';
 const PITCH_LINE = '#2E7C55';
 
-type Bucket = 'GK' | 'DEF' | 'MID' | 'FWD';
+type Bucket = PositionLine;
 
-/** Players carry free text positions, so map them onto the four rows. */
-export function bucketFor(position: string): Bucket {
-  const value = position.toLowerCase();
-  if (value.startsWith('goal') || value === 'gk') return 'GK';
-  if (value.startsWith('def') || value.includes('back')) return 'DEF';
-  if (value.startsWith('for') || value.includes('strik') || value.includes('wing')) return 'FWD';
-  return 'MID';
-}
+/**
+ * Which row of the pitch a player stands in.
+ *
+ * Positions used to be free text, so this had to read the prose and guess —
+ * and only placed a wing-back correctly because "back" happened to be tested
+ * before "wing". The vocabulary answers it outright now.
+ */
+export const bucketFor = lineFor;
 
 /**
  * Lay starters out to match the formation.

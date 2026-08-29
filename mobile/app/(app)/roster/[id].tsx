@@ -12,7 +12,8 @@ import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
-import { showMessage, showToast } from '@/src/lib/platformAlert';
+import { confirmManageWrite } from '@/src/lib/manageToasts';
+import { showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
@@ -40,7 +41,7 @@ export default function PrivateRosterDetailsScreen() {
       return api.savePlayerRosterDetails(id, { date_of_birth: dateOfBirth || null, contacts: contacts.map((contact) => ({ name: contact.name.trim(), relationship: contact.relationship.trim() || null, email: contact.email.trim() || null, phone: contact.phone.trim() || null })) });
     },
     onError: (error) => showMessage('Roster details not saved', (error as Error).message),
-    onSuccess: async () => { await invalidateAfterWrite(client, 'roster'); showToast('Private roster details saved'); },
+    onSuccess: async () => { await invalidateAfterWrite(client, 'roster'); confirmManageWrite('roster', 'saved'); },
   });
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
   if (player.isLoading || details.isLoading) return <Screen action={<CloseButton />} title="Private roster details"><LoadingState /></Screen>;

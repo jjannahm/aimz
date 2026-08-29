@@ -1,6 +1,7 @@
 import { groupStandings } from "./knockout";
 import type { Hono } from "hono";
 import { ApiProblem, publicCompetition, publicPlayer, publicStat, publicTeam } from "./helpers";
+import { summariseMilestones } from "./milestones";
 import { applyStanding, AWARDS, FORM_LENGTH, outcome, type AwardDefinition } from "./scoring-rules";
 import type { AwardTotals, CompetitionGroupRow, CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
 
@@ -8,8 +9,23 @@ type App = Hono<{ Bindings: Env }>;
 
 type LeaderMetric = "goals" | "assists" | "cards";
 
+/** A statistic with the match it belongs to joined in. */
+interface JoinedStatRow extends StatRow {
+  kickoff_datetime: string;
+  home_team_id: string;
+  away_team_id: string;
+  home_score: number;
+  away_score: number;
+  motm_player_id: string | null;
+  competition_id: string;
+  competition_name: string;
+  season: string;
+}
+
 interface LeaderTotals {
   player_id: string;
+  /** The squad the statistics were earned for, not the one she is on today. */
+  team_id: string | null;
   goals: number;
   assists: number;
   yellow_cards: number;
@@ -128,7 +144,10 @@ export function registerStatsRoutes(app: App): void {
     if (competitionId) { filters.push("m.competition_id=?"); values.push(competitionId); }
     if (season) { filters.push("cp.season=?"); values.push(season); }
     const where = filters.length ? ` AND ${filters.join(" AND ")}` : "";
-    const totals = await c.env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.yellow_cards) AS yellow_cards, SUM(s.red_cards) AS red_cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN players p ON p.id=s.player_id JOIN teams t ON t.id=p.team_id${seasonJoin} WHERE m.status='finished'${where} GROUP BY s.player_id`).bind(...values).all<LeaderTotals>();
+    // `MAX(m.kickoff_datetime)` is the only min/max aggregate here, so SQLite
+    // takes the bare `s.team_id` from that same row: the squad she turned out
+    // for most recently among the matches this filter counted.
+    const totals = await c.env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.yellow_cards) AS yellow_cards, SUM(s.red_cards) AS red_cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances, MAX(m.kickoff_datetime) AS latest_kickoff, s.team_id AS team_id FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN players p ON p.id=s.player_id JOIN teams t ON t.id=COALESCE(s.team_id, p.team_id)${seasonJoin} WHERE m.status='finished'${where} GROUP BY s.player_id`).bind(...values).all<LeaderTotals>();
     // A sending-off weighs more than a caution.
     const scored = (row: LeaderTotals) => metric === "goals" ? row.goals : metric === "assists" ? row.assists : row.yellow_cards + row.red_cards * 3;
     const tiebreak = (row: LeaderTotals) => metric === "goals" ? row.assists : metric === "assists" ? row.goals : row.red_cards;
@@ -137,20 +156,90 @@ export function registerStatsRoutes(app: App): void {
     const playerIds = counted.map((row) => row.player_id);
     const players = await c.env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")})`).bind(...playerIds).all<PlayerRow>();
     const playerMap = new Map(players.results.map((player) => [player.id, player]));
-    const teamMap = await teamsByIds(c.env, [...new Set(players.results.map((player) => player.team_id))]);
+    const teamMap = await teamsByIds(c.env, [...new Set([...counted.flatMap((row) => row.team_id ? [row.team_id] : []), ...players.results.map((player) => player.team_id)])]);
     const ranked = counted.sort((a, b) => scored(b) - scored(a)
       || tiebreak(b) - tiebreak(a)
       || a.appearances - b.appearances
       || (playerMap.get(a.player_id)?.name ?? "").localeCompare(playerMap.get(b.player_id)?.name ?? "")).slice(0, limit);
-    return c.json(ranked.map((row, index) => ({ rank: index + 1, player: publicPlayer(playerMap.get(row.player_id) ?? null), team: publicTeam(teamMap.get(playerMap.get(row.player_id)?.team_id ?? "") ?? null), goals: row.goals, assists: row.assists, yellow_cards: row.yellow_cards, red_cards: row.red_cards, appearances: row.appearances })));
+    return c.json(ranked.map((row, index) => ({ rank: index + 1, player: publicPlayer(playerMap.get(row.player_id) ?? null), team: publicTeam(teamMap.get(row.team_id ?? playerMap.get(row.player_id)?.team_id ?? "") ?? null), goals: row.goals, assists: row.assists, yellow_cards: row.yellow_cards, red_cards: row.red_cards, appearances: row.appearances })));
   });
 
   app.get("/api/v1/players/:id/stats", async (c) => {
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>(); if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
     const season = new URL(c.req.url).searchParams.get("season"); const values: unknown[] = [player.id]; const where = season ? " AND cp.season=?" : ""; if (season) values.push(season);
-    const result = await c.env.DB.prepare(`SELECT s.* FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN competitions cp ON cp.id=m.competition_id WHERE s.player_id=?${where} ORDER BY m.kickoff_datetime DESC`).bind(...values).all<StatRow>();
+    // The match is joined in rather than left to the client. It used to fetch
+    // every match of the player's *current* squad to name the opponent, so a
+    // match played for another squad showed no opponent at all.
+    const [result, seasons] = await Promise.all([
+      c.env.DB.prepare(`SELECT s.*, m.kickoff_datetime AS kickoff_datetime, m.home_team_id AS home_team_id, m.away_team_id AS away_team_id, m.home_score AS home_score, m.away_score AS away_score, m.man_of_the_match_player_id AS motm_player_id, cp.id AS competition_id, cp.name AS competition_name, cp.season AS season FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN competitions cp ON cp.id=m.competition_id WHERE s.player_id=?${where} ORDER BY m.kickoff_datetime DESC`).bind(...values).all<JoinedStatRow>(),
+      // Every season she has a record in, so a profile can offer the switch
+      // whichever season is being read.
+      c.env.DB.prepare("SELECT DISTINCT cp.season AS season FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN competitions cp ON cp.id=m.competition_id WHERE s.player_id=? ORDER BY cp.season DESC").bind(player.id).all<{ season: string }>(),
+    ]);
     const totals = result.results.reduce((sum, stat) => ({ appearances: sum.appearances + (stat.appeared ? 1 : 0), minutes_played: sum.minutes_played+stat.minutes_played, goals: sum.goals+stat.goals, assists: sum.assists+stat.assists, own_goals: sum.own_goals+stat.own_goals, yellow_cards: sum.yellow_cards+stat.yellow_cards, red_cards: sum.red_cards+stat.red_cards, goals_conceded: sum.goals_conceded+stat.goals_conceded, penalties_saved: sum.penalties_saved+stat.penalties_saved, clean_sheets: sum.clean_sheets+stat.clean_sheet }), { appearances:0, minutes_played:0, goals:0, assists:0, own_goals:0, yellow_cards:0, red_cards:0, goals_conceded:0, penalties_saved:0, clean_sheets:0 });
-    return c.json({ player: publicPlayer(player), season, ...totals, matches: result.results.map(publicStat) });
+    const teamMap = await teamsByIds(c.env, [...new Set(result.results.flatMap((row) => [row.home_team_id, row.away_team_id, ...(row.team_id ? [row.team_id] : [])]))]);
+    // The squad on the statistic decides which side of the match she was on, so
+    // a match she played for a squad she has since left still names the right
+    // opponent.
+    const squadOf = (row: JoinedStatRow) => row.team_id ?? (player.team_id === row.home_team_id || player.team_id === row.away_team_id ? player.team_id : null);
+    const matches = result.results.map((row) => {
+      const squad = squadOf(row);
+      const opponentId = squad === row.home_team_id ? row.away_team_id : squad === row.away_team_id ? row.home_team_id : null;
+      return {
+        ...publicStat(row),
+        kickoff_datetime: row.kickoff_datetime,
+        competition: { id: row.competition_id, name: row.competition_name, season: row.season },
+        team: publicTeam(squad ? teamMap.get(squad) ?? null : null),
+        opponent: publicTeam(opponentId ? teamMap.get(opponentId) ?? null : null),
+        man_of_the_match: row.motm_player_id === player.id,
+      };
+    });
+    // Oldest first: every count accumulates forward and the streaks read back.
+    const milestones = summariseMilestones([...result.results].reverse().map((row) => ({
+      match_id: row.match_id,
+      kickoff_datetime: row.kickoff_datetime,
+      appeared: Boolean(row.appeared),
+      goals: row.goals,
+      assists: row.assists,
+      motm: row.motm_player_id === player.id,
+    })));
+    return c.json({ player: publicPlayer(player), season, seasons: seasons.results.map((row) => row.season), ...totals, milestones, matches });
+  });
+
+  /**
+   * Everything this player has won, across every season.
+   *
+   * Awards are worked out from the record rather than stored, so a cabinet is
+   * always the truth as it stands. A competition whose matches are all played
+   * is final; one still under way says so rather than quietly overstating an
+   * honour that could still change hands.
+   */
+  app.get("/api/v1/players/:id/honours", async (c) => {
+    const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>();
+    if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
+    const competitions = await c.env.DB.prepare("SELECT DISTINCT cp.* FROM competitions cp JOIN matches m ON m.competition_id=cp.id JOIN player_match_stats s ON s.match_id=m.id WHERE s.player_id=? ORDER BY cp.season DESC, cp.name").bind(player.id).all<CompetitionRow>();
+    const honours: Record<string, unknown>[] = [];
+    for (const competition of competitions.results) {
+      const [rank, remaining] = await Promise.all([
+        awardRankings(c.env, competition.id),
+        c.env.DB.prepare("SELECT COUNT(*) total FROM matches WHERE competition_id=? AND status<>'finished'").bind(competition.id).first<{ total: number }>(),
+      ]);
+      const isFinal = (remaining?.total ?? 0) === 0;
+      for (const definition of AWARDS) {
+        const [winner] = rank(definition);
+        if (!winner || (winner.player as { id?: string } | null)?.id !== player.id) continue;
+        honours.push({
+          competition: publicCompetition(competition),
+          metric: definition.metric,
+          label: definition.label,
+          value: winner.value,
+          unit: winner.unit,
+          team: winner.team,
+          is_final: isFinal,
+        });
+      }
+    }
+    return c.json({ player: publicPlayer(player), honours });
   });
 
   app.get("/api/v1/competitions/:id/awards", async (c) => {
@@ -183,14 +272,16 @@ export function registerStatsRoutes(app: App): void {
  * Ranks every award off one set of totals, so an award's headline winner is
  * always rank 1 of the ranking a client opens behind it.
  */
-async function awardRankings(env: Env, competitionId: string): Promise<(definition: AwardDefinition) => AwardRank[]> {
-  const totals = await env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.minutes_played) AS minutes, SUM(s.yellow_cards + s.red_cards) AS cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances, (SELECT COUNT(*) FROM matches mm WHERE mm.competition_id=m.competition_id AND mm.status='finished' AND mm.man_of_the_match_player_id=s.player_id) AS motm FROM player_match_stats s JOIN matches m ON m.id=s.match_id WHERE m.status='finished' AND m.competition_id=? GROUP BY s.player_id`).bind(competitionId).all<AwardTotals>();
+export async function awardRankings(env: Env, competitionId: string): Promise<(definition: AwardDefinition) => AwardRank[]> {
+  const totals = await env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.minutes_played) AS minutes, SUM(s.yellow_cards + s.red_cards) AS cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances, (SELECT COUNT(*) FROM matches mm WHERE mm.competition_id=m.competition_id AND mm.status='finished' AND mm.man_of_the_match_player_id=s.player_id) AS motm, MAX(m.kickoff_datetime) AS latest_kickoff, s.team_id AS team_id FROM player_match_stats s JOIN matches m ON m.id=s.match_id WHERE m.status='finished' AND m.competition_id=? GROUP BY s.player_id`).bind(competitionId).all<AwardTotals>();
   const playerIds = totals.results.map((row) => row.player_id);
   const players = playerIds.length
     ? await env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")})`).bind(...playerIds).all<PlayerRow>()
     : { results: [] as PlayerRow[] };
   const playerMap = new Map(players.results.map((player) => [player.id, player]));
-  const awardTeams = await teamsByIds(env, [...new Set(players.results.map((player) => player.team_id))]);
+  // The squad each award was earned with, so a promoted player's honour still
+  // reads under the squad she won it with.
+  const awardTeams = await teamsByIds(env, [...new Set([...totals.results.flatMap((row) => row.team_id ? [row.team_id] : []), ...players.results.map((player) => player.team_id)])]);
   const nameOf = (row: AwardTotals) => playerMap.get(row.player_id)?.name ?? "";
   return (definition) => totals.results
     .filter(definition.eligible)
@@ -202,7 +293,7 @@ async function awardRankings(env: Env, competitionId: string): Promise<(definiti
       return {
         rank: index + 1,
         player: publicPlayer(player),
-        team: publicTeam(awardTeams.get(player?.team_id ?? "") ?? null),
+        team: publicTeam(awardTeams.get(row.team_id ?? player?.team_id ?? "") ?? null),
         value: definition.value(row),
         unit: definition.unit,
         appearances: row.appearances,

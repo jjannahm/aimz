@@ -5,6 +5,7 @@ import { AccessibilityInfo } from 'react-native';
 
 import ManageScreen from '@/app/(app)/(tabs)/manage';
 import { api } from '@/src/lib/api';
+import { showToast } from '@/src/lib/platformAlert';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({
@@ -32,8 +33,18 @@ jest.mock('@/src/lib/api', () => ({
     matches: jest.fn(),
     players: jest.fn(),
     teams: jest.fn(),
+    createTeam: jest.fn(),
+    updateTeam: jest.fn(),
+    createPlayer: jest.fn(),
+    deletePlayer: jest.fn(),
   },
   ApiError: class extends Error {},
+}));
+jest.mock('@/src/lib/platformAlert', () => ({
+  ...jest.requireActual('@/src/lib/platformAlert'),
+  showToast: jest.fn(),
+  showMessage: jest.fn(),
+  confirmAction: jest.fn((_title: string, _body: string, _label: string, onConfirm: () => void) => onConfirm()),
 }));
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -93,5 +104,59 @@ describe('ManageScreen navigation', () => {
     expect(await screen.findByText('Schedule manager content')).toBeTruthy();
     await fireEvent.press(screen.getByRole('tab', { name: 'Announcements' }));
     expect(await screen.findByText('Announcements manager content')).toBeTruthy();
+  });
+});
+
+describe('ManageScreen confirmations', () => {
+  beforeEach(() => {
+    jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
+    jest.mocked(api.teams).mockResolvedValue(emptyPage);
+    jest.mocked(api.competitions).mockResolvedValue(emptyPage);
+    jest.mocked(api.players).mockResolvedValue(emptyPage);
+    jest.mocked(api.matches).mockResolvedValue(emptyPage);
+    jest.mocked(api.invites).mockResolvedValue([]);
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
+    jest.restoreAllMocks();
+  });
+
+  it('confirms a new squad in the same words the schedule already used', async () => {
+    jest.mocked(api.createTeam).mockResolvedValue({ id: 't-1' } as never);
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
+    await fireEvent.press(screen.getByText('Add item'));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Squad created'));
+  });
+
+  // The same form, the same button, a different section: the confirmation has
+  // to follow the section rather than the table behind it.
+  it('calls an opposing club an opponent, not a squad', async () => {
+    jest.mocked(api.createTeam).mockResolvedValue({ id: 't-2' } as never);
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Opponents' }));
+    await fireEvent.changeText(await screen.findByLabelText('Opponent name'), 'Cairo Stars');
+    await fireEvent.press(screen.getByText('Add item'));
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Opponent created'));
+  });
+
+  it('says nothing at all when the save fails', async () => {
+    jest.mocked(api.createTeam).mockRejectedValue(new Error('The server refused it.'));
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
+    await fireEvent.press(screen.getByText('Add item'));
+    await waitFor(() => expect(screen.getByText('The server refused it.')).toBeTruthy());
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('says nothing when the form is rejected before anything is sent', async () => {
+    const screen = await render(<ManageScreen />, { wrapper });
+    await screen.findByLabelText('Team or squad name');
+    // No name typed, so it never reaches the API.
+    await fireEvent.press(screen.getByText('Add item'));
+    await waitFor(() => expect(screen.getByText('Enter a team or squad name.')).toBeTruthy());
+    expect(api.createTeam).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
   });
 });

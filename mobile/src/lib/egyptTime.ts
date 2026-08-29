@@ -44,6 +44,18 @@ export function formatEgyptDateTime(iso: string): string {
   return `${day} · ${time}`;
 }
 
+/**
+ * The day alone, for example `Aug 21, 2026`.
+ *
+ * What a milestone or an honour is dated by: the minute a fiftieth appearance
+ * kicked off is not part of the story.
+ */
+export function formatEgyptDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return 'Not set';
+  return new Intl.DateTimeFormat('en-US', { timeZone: EGYPT_TIME_ZONE, dateStyle: 'medium' }).format(date);
+}
+
 const pad = (value: number) => String(value).padStart(2, '0');
 
 /** `YYYY-MM-DDTHH:mm` in Egypt time, which is what `datetime-local` speaks. */
