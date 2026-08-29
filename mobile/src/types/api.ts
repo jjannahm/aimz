@@ -22,7 +22,31 @@ export type RegistrationInvite = Schema['InviteRead'] & { player_id: string | nu
 export type PresignResponse = Schema['PresignResponse'];
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 /** 8, 16 or 32 for a knockout; null for a competition that is only a table. */
-export type Competition = Schema['CompetitionRead'] & { team_count: number | null; group_size: number | null };
+/** A closed season is read-only; the API refuses to score into one. */
+export type CompetitionStatus = 'active' | 'completed';
+// Not in the generated schema yet; catches up on the next `npm run api:types`.
+// Optional so a response cached before seasons could be closed still types.
+export type Competition = Schema['CompetitionRead'] & { team_count: number | null; group_size: number | null; status?: CompetitionStatus; completed_at?: string | null };
+
+/** Seasons of one competition, newest first, and which of them is open. */
+export function seasonsOf(competitions: Competition[], name: string): Competition[] {
+  return competitions.filter((item) => item.name === name).sort((a, b) => b.season.localeCompare(a.season));
+}
+
+/** Every season on record, newest first. */
+export function allSeasons(competitions: Competition[]): string[] {
+  return [...new Set(competitions.map((item) => item.season))].sort((a, b) => b.localeCompare(a));
+}
+
+/**
+ * The season to open on: the newest that still has something being played,
+ * falling back to the newest on record when every one of them has ended.
+ */
+export function currentSeason(competitions: Competition[]): string | null {
+  const seasons = allSeasons(competitions);
+  const open = seasons.find((season) => competitions.some((item) => item.season === season && item.status !== 'completed'));
+  return open ?? seasons[0] ?? null;
+}
 export const KNOCKOUT_TEAM_COUNTS = [8, 16, 32] as const;
 /** Two from each group go through, which is what settles the bracket's size. */
 export const ADVANCE_PER_GROUP = 2;

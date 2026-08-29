@@ -41,11 +41,21 @@ export interface TeamRow {
   updated_at: string;
 }
 
+export type CompetitionStatus = "active" | "completed";
+
 export interface CompetitionRow {
   id: string;
   name: string;
   season: string;
   type: CompetitionType;
+  /**
+   * Whether this season is still being played.
+   *
+   * A completed season is read-only: its table, results and statistics stand as
+   * they were, and nothing may be scored into it until an admin reopens it.
+   */
+  status: CompetitionStatus;
+  completed_at: string | null;
   /**
    * How many teams a knockout competition is drawn for: 8, 16 or 32.
    *

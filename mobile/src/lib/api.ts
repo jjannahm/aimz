@@ -223,6 +223,10 @@ export const api = {
   updateTeam: (id: string, payload: Partial<Team>) => request<Team>(`/api/v1/teams/${id}`, { method: 'PATCH', body: payload }),
   deleteTeam: (id: string) => request<void>(`/api/v1/teams/${id}`, { method: 'DELETE' }),
   competitions: (query = '') => request<Page<Competition>>(`/api/v1/competitions${query}`),
+  completeSeason: (competitionId: string) => request<Competition>(`/api/v1/competitions/${competitionId}/complete`, { method: 'POST', body: {} }),
+  reopenSeason: (competitionId: string) => request<Competition>(`/api/v1/competitions/${competitionId}/reopen`, { method: 'POST', body: {} }),
+  startNextSeason: (competitionId: string, season: string, carry_teams: boolean) =>
+    request<Competition>(`/api/v1/competitions/${competitionId}/next-season`, { method: 'POST', body: { season, carry_teams } }),
   createCompetition: (payload: Partial<Competition>) => request<Competition>('/api/v1/competitions', { method: 'POST', body: payload }),
   updateCompetition: (id: string, payload: Partial<Competition>) => request<Competition>(`/api/v1/competitions/${id}`, { method: 'PATCH', body: payload }),
   deleteCompetition: (id: string) => request<void>(`/api/v1/competitions/${id}`, { method: 'DELETE' }),
