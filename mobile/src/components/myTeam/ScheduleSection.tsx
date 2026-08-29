@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
-import { HubGlass } from '@/src/components/myTeam/HubGlass';
+import { GlassSurface } from '@/src/components/GlassSurface';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { toEgyptWallClock } from '@/src/lib/egyptTime';
@@ -34,7 +34,7 @@ function NextTraining({ session }: { session: TrainingSession }) {
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>NEXT TRAINING</Text>
       <Pressable accessibilityLabel={spoken(session)} accessibilityRole="button" onPress={() => open(session)} style={({ pressed }) => pressed && styles.pressed}>
-        <HubGlass intensity={55} radius={22} style={styles.feature}>
+        <GlassSurface intensity={55} radius={22} style={styles.feature}>
           <View style={styles.featureTop}>
             <View>
               <Text style={styles.featureDay}>{weekday.format(when).toUpperCase()} {dayNumber.format(when)}</Text>
@@ -49,7 +49,7 @@ function NextTraining({ session }: { session: TrainingSession }) {
             </View>
             <Ionicons accessibilityElementsHidden color={colors.textMuted} name="chevron-forward" size={20} />
           </View>
-        </HubGlass>
+        </GlassSurface>
       </Pressable>
     </View>
   );
@@ -103,14 +103,14 @@ export function ScheduleSection() {
           <Text accessibilityRole="header" style={styles.sectionLabel}>{month.label.toUpperCase()}</Text>
           {/* One surface for the month, with the rows ruled inside it: a blur
             * apiece would cost as many as there are sessions. */}
-          <HubGlass radius={20} style={styles.monthCard}>
+          <GlassSurface radius={20} style={styles.monthCard}>
             {month.sessions.map((session, index) => (
               <View key={session.id}>
                 {index ? <View style={styles.rule} /> : null}
                 <SessionRow last={index === month.sessions.length - 1} session={session} />
               </View>
             ))}
-          </HubGlass>
+          </GlassSurface>
         </View>
       ))}
     </View>

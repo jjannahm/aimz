@@ -4,7 +4,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 import { useAppTheme } from '@/src/theme/ThemeProvider';
 
 /**
- * What the hub's glass has to look through.
+ * What glass has to look through.
  *
  * A flat navy gives translucency nothing to show, so the page is left uniform
  * and the surfaces read as flat fills however they are built. Two very diffuse
@@ -14,7 +14,7 @@ import { useAppTheme } from '@/src/theme/ThemeProvider';
  * Deliberately near the threshold of noticing. Turned up even a little this
  * stops being depth and starts being decoration.
  */
-export function HubBackdrop() {
+export function GlassBackdrop() {
   const { mode } = useAppTheme();
   const dark = mode !== 'light';
   return (

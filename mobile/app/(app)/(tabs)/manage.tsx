@@ -229,7 +229,10 @@ export default function ManageScreen() {
   const resourceChips = <View style={styles.chips}>{resources.map((item) => <View key={item.value} style={styles.chipCell}>
     <AnimatedTabPill accessibilityLabel={item.label} compact label={item.short ?? item.label} onPress={() => switchResource(item.value)} selected={resource === item.value} style={styles.chip} testID={`manage-tab-${item.value}`} />
   </View>)}</View>;
-  const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active) ?? [];
+  // The academy's own age squads, which is what a session or a notice is for.
+  // `is_aimz` alone would name the league's clubs too: they carry it so that
+  // players, lineups and live scoring work for them, and they have no age group.
+  const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
   if (resource === 'schedule' || resource === 'announcements') return <Screen scrollRef={pageRef} title="Manage academy">
     {resourceChips}
     <View style={styles.content} testID="manage-content">

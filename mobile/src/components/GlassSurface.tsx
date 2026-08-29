@@ -5,7 +5,7 @@ import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useAppTheme } from '@/src/theme/ThemeProvider';
 
 /**
- * The material the hub's surfaces are made of.
+ * The material the app's glass surfaces are made of.
  *
  * Neutral, not blue: what tints it is whatever it is laid over, which is the
  * whole point of the thing. `expo-blur` does the blurring on all three
@@ -16,7 +16,8 @@ import { useAppTheme } from '@/src/theme/ThemeProvider';
  * Both are white at single-figure opacity: any more and it stops reading as
  * glass and starts reading as a card.
  *
- * Scoped to the hub. The rest of the app keeps its own flat surfaces.
+ * Used where the glass look has been asked for — the hub, and a player's own
+ * stats. The rest of the app keeps its flat surfaces.
  */
 
 /** Dark glass is lifted with white; on a pale page it has to be deepened instead. */
@@ -32,7 +33,7 @@ type Props = PropsWithChildren<{
   intensity?: number;
 }>;
 
-export function HubGlass({ style, radius, intensity = 40, children }: Props) {
+export function GlassSurface({ style, radius, intensity = 40, children }: Props) {
   const { mode } = useAppTheme();
   const key = mode === 'light' ? 'light' : 'dark';
   return (
