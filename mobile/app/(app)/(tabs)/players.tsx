@@ -14,6 +14,7 @@ import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
+import { cacheKeys } from '@/src/lib/cache';
 import { mediaUrl } from '@/src/lib/mediaUrl';
 import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -77,8 +78,10 @@ function PlayerRow({ player, subtitle, spoken, trailing, last }: { player: Playe
 }
 
 function useRoster() {
-  const teams = useQuery({ queryKey: ['teams', 'roster'], queryFn: () => api.teams('?limit=100') });
-  const players = useQuery({ queryKey: ['players', 'roster'], queryFn: () => api.players('?limit=100') });
+  // The same keys the rest of the app reads these two lists under, so a tab
+  // opened second is served from cache rather than fetching them again.
+  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
+  const players = useQuery({ queryKey: cacheKeys.players, queryFn: () => api.players('?limit=100') });
   // Squads are whatever the admin has created, so a new one shows up here
   // without a code change or a restart.
   const squads = useMemo(() => {
@@ -88,7 +91,10 @@ function useRoster() {
       if (bucket) bucket.push(player); else counts.set(player.team_id, [player]);
     }
     return (teams.data?.items ?? [])
-      .filter((team) => team.is_aimz && team.is_active)
+      // The academy's own age squads. `is_aimz` alone is not the line: the
+      // league's clubs carry it too, so that players, lineups and live scoring
+      // work for them — what marks a squad of ours is the age group it plays.
+      .filter((team) => team.is_aimz && team.is_active && team.age_group)
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((team) => ({ team, players: counts.get(team.id) ?? [] }));
   }, [players.data, teams.data]);

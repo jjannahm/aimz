@@ -7,7 +7,7 @@ import { ChoiceField } from '@/src/components/ChoiceField';
 import { FormField } from '@/src/components/FormField';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
-import { invalidateAfterWrite } from '@/src/lib/cache';
+import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -20,7 +20,9 @@ export function AvailabilityPanel({ session }: { session: TrainingSession }) {
   const { user } = useAuth();
   const client = useQueryClient();
   const availability = useQuery({ queryKey: ['training-availability', session.id], queryFn: () => api.trainingAvailability(session.id) });
-  const players = useQuery({ queryKey: ['players'], queryFn: () => api.players(`?team_id=${encodeURIComponent(session.team_id)}&limit=100`), enabled: user?.role === 'admin' });
+  const players = useQuery({ // One squad's players, so not the shared ['players'] list: same key,
+    // different rows would have each overwrite the other's cache.
+    queryKey: [...cacheKeys.players, 'team', session.team_id], queryFn: () => api.players(`?team_id=${encodeURIComponent(session.team_id)}&limit=100`), enabled: user?.role === 'admin' });
   const [adminPlayer, setAdminPlayer] = React.useState('');
   const [note, setNote] = React.useState('');
   const target = user?.role === 'admin' ? adminPlayer : user?.player_id ?? '';

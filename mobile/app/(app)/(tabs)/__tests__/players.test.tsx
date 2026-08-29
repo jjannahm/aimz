@@ -145,6 +145,18 @@ describe('PlayersScreen', () => {
     expect(screen.queryByText('Salma Nabil')).toBeNull();
   });
 
+  // The league's clubs carry `is_aimz` too, so that players, lineups and live
+  // scoring work for them. They have no age group and no roster to browse, so
+  // they do not belong on a list of the academy's own squads.
+  it('lists the academy squads only, not the league clubs', async () => {
+    const club = { ...team('t-ahly', 'Al Ahly', 'U9'), age_group: null };
+    const withClubs = [...teams, club];
+    jest.mocked(api.teams).mockResolvedValue({ items: withClubs, total: withClubs.length, limit: 100, offset: 0 });
+    const screen = await render(<PlayersScreen />, { wrapper });
+    expect(await screen.findByLabelText('AIMZ U9, 1 player')).toBeTruthy();
+    expect(screen.queryByText('Al Ahly')).toBeNull();
+  });
+
   it('shows a squad added later without any code change', async () => {
     const added = [...teams, team('t-u15', 'AIMZ U15', 'U15')];
     jest.mocked(api.teams).mockResolvedValue({ items: added, total: added.length, limit: 100, offset: 0 });
