@@ -39,8 +39,8 @@ describe('theme palettes', () => {
   });
 
   it('uses the compact editorial core tokens in both modes', () => {
-    expect(darkColors).toMatchObject({ background: '#08080C', surface: '#121216', surfaceRaised: '#1A1A20', border: '#2C2B32', accent: '#CBFF32', textPrimary: '#F5F2EA' });
-    expect(lightColors).toMatchObject({ background: '#F2F0E8', surface: '#FBFAF5', surfaceRaised: '#E6E2D8', border: '#CBC7BD', accent: '#B8EB32', accentSoft: '#3F5700' });
+    expect(darkColors).toMatchObject({ background: '#08080C', surface: '#121216', surfaceRaised: '#1A1A20', border: '#2C2B32', accent: '#3B82F6', accentSoft: '#0EA2E7', leaderAccent: '#3B82F6', textPrimary: '#F5F2EA' });
+    expect(lightColors).toMatchObject({ background: '#F2F0E8', surface: '#FBFAF5', surfaceRaised: '#E6E2D8', border: '#CBC7BD', accent: '#3B82F6', accentSoft: '#1E40AF', leaderAccent: '#1E40AF' });
     expect(Object.values(theme.spacing)).toEqual([4, 8, 12, 16, 24, 32, 48]);
   });
 
@@ -64,6 +64,8 @@ describe('theme palettes', () => {
       expect(contrast(colors.textPrimary, colors.background)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(colors.textSecondary, colors.surface)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(colors.onAccent, colors.accent)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(colors.accentSoft, colors.background)).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(colors.leaderAccent, colors.leaderSurface)).toBeGreaterThanOrEqual(4.5);
     }
   });
 });
