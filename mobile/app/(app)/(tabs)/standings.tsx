@@ -234,8 +234,10 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   played: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: PLAYED_COLUMN },
   scores: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: SCORES_COLUMN },
   // Small enough to stay out of the header's way; `hitSlop` gives the finger
-  // the 44 points the drawing does not.
-  compare: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, height: COMPARE_CONTROL, justifyContent: 'center', width: COMPARE_CONTROL },
+  // the 44 points the drawing does not. The margin stands it off the label
+  // rather than sitting on it: `nameSide` sets the gap for the rows too, so
+  // widening that would have moved every rank and crest along with it.
+  compare: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, height: COMPARE_CONTROL, justifyContent: 'center', marginLeft: theme.spacing.sm, width: COMPARE_CONTROL },
   compareOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   pickedRow: { borderColor: colors.accent },
   hoveredRow: { backgroundColor: colors.surfaceRaised },
