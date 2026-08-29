@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -84,7 +84,7 @@ function rowTops(count: number): number[] {
   return Array.from({ length: count }, (unused, index) => 67 - (index * 48) / Math.max(1, count - 1));
 }
 
-export function FormationPitch({ starters, formation, captainId }: { starters: Player[]; formation?: string | null; captainId?: string | null }) {
+export function FormationPitch({ starters, formation, captainId, onSelect }: { starters: Player[]; formation?: string | null; captainId?: string | null; onSelect?: (playerId: string) => void }) {
   const styles = useThemedStyles(stylesheet);
   const shape = formation ?? inferFormation(starters);
   const { keeper, rows } = arrangeByFormation(starters, shape ?? String(Math.max(0, starters.length - 1)));
@@ -101,24 +101,27 @@ export function FormationPitch({ starters, formation, captainId }: { starters: P
     <View accessibilityElementsHidden style={styles.arcWindow}><View style={styles.arc} /></View>
     <View accessibilityElementsHidden style={styles.sixYardBox} />
     {rows.map((row, rowIndex) => <View key={`row-${rowIndex}`} style={[styles.row, { top: `${tops[rowIndex] ?? 50}%` }]}>
-      {row.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} player={player} />)}
+      {row.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} onSelect={onSelect} player={player} />)}
     </View>)}
-    {keeper.length ? <View style={[styles.row, { top: `${KEEPER_TOP}%` }]}>{keeper.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} player={player} />)}</View> : null}
+    {keeper.length ? <View style={[styles.row, { top: `${KEEPER_TOP}%` }]}>{keeper.map((player) => <PitchPlayer captain={player.id === captainId} key={player.id} onSelect={onSelect} player={player} />)}</View> : null}
     <Text style={styles.badge}>{shape ?? '—'}{formation ? '' : ' · from positions'}</Text>
   </View>;
 }
 
-function PitchPlayer({ player, captain = false }: { player: Player; captain?: boolean }) {
+function PitchPlayer({ player, captain = false, onSelect }: { player: Player; captain?: boolean; onSelect?: (playerId: string) => void }) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const firstName = player.name.trim().split(/\s+/u)[0] ?? player.name;
-  return <View style={styles.player}>
+  const shirt = <>
     <View>
       <JerseyIcon color={colors.textPrimary} number={player.jersey_number} size={40} />
       {captain ? <View accessibilityLabel={`${player.name}, captain`} style={styles.armband}><Text style={styles.armbandText}>C</Text></View> : null}
     </View>
     <Text numberOfLines={1} style={styles.playerName}>{firstName}</Text>
-  </View>;
+  </>;
+  // A shirt is only a button where there is somewhere for it to go.
+  if (!onSelect) return <View style={styles.player}>{shirt}</View>;
+  return <Pressable accessibilityLabel={`${player.name}, open stats`} accessibilityRole="button" onPress={() => onSelect(player.id)} style={({ pressed }) => [styles.player, pressed && styles.pressed]}>{shirt}</Pressable>;
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
@@ -148,6 +151,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   },
   row: { flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'space-evenly', left: theme.spacing.sm, marginTop: -ROW_HALF, position: 'absolute', right: theme.spacing.sm },
   player: { alignItems: 'center', flex: 1, gap: 2, maxWidth: 92 },
+  pressed: { opacity: 0.6 },
   playerName: { color: '#EAF6EF', fontSize: 11, fontWeight: '700', textAlign: 'center' },
   armband: {
     alignItems: 'center', backgroundColor: colors.warning, borderColor: PITCH,
