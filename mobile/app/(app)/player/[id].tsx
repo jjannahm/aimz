@@ -8,13 +8,10 @@ import { HonoursSection } from '@/src/components/player/HonoursSection';
 import { MilestonesSection } from '@/src/components/player/MilestonesSection';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
 import { Screen } from '@/src/components/Screen';
-import { SegmentedControl } from '@/src/components/SegmentedControl';
+import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonFilter';
 import { api } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
-
-/** Every season, plus the career that spans them. */
-const ALL_SEASONS = '';
 
 export default function PlayerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -29,13 +26,8 @@ export default function PlayerDetailScreen() {
   if (!id) return <Screen action={<CloseButton />} title="Player" />;
 
   return <Screen action={<CloseButton />} title="Player stats">
-    {seasons.length > 1 ? <SegmentedControl
-      label="Which season to show"
-      onChange={setSeason}
-      options={[{ label: 'Career', value: ALL_SEASONS }, ...seasons.map((item) => ({ label: item, value: item }))]}
-      value={season}
-    /> : null}
-    <PlayerStatsPanel playerId={id} season={season || undefined} />
+    <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />
+    <PlayerStatsPanel playerId={id} season={seasonQuery(season, seasons)} />
     <MilestonesSection milestones={career.data?.milestones ?? { reached: [], streaks: [], next: [] }} />
     <HonoursSection playerId={id} />
     {career.isSuccess && !career.data.matches.length

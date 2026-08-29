@@ -55,6 +55,26 @@ export function MatchTimeline({ events, homeTeamId, homeTeamName, awayTeamName, 
   </View>;
 }
 
+/**
+ * A penalty, and whether it was scored.
+ *
+ * A penalty is a goal or a miss like any other, so it takes the same marker on
+ * the thread — a "P" rather than a ball — with a small tick or cross set into
+ * its corner saying which. The overlay hangs outside the marker's own circle,
+ * which is why the marker does not clip it.
+ */
+function PenaltyMark({ scored }: { scored: boolean }) {
+  const styles = useThemedStyles(stylesheet);
+  const colors = useColors();
+  const tint = scored ? colors.live : colors.error;
+  return <View style={[styles.icon, styles.penalty]}>
+    <Text style={styles.penaltyLetter}>P</Text>
+    <View style={[styles.outcome, { backgroundColor: tint }]}>
+      <Ionicons color={colors.background} name={scored ? 'checkmark' : 'close'} size={8} />
+    </View>
+  </View>;
+}
+
 function TimelineRow({ event, isHome, actorTeamName, creditedTeamName, playerNames }: {
   event: MatchEvent;
   isHome: boolean;
@@ -73,6 +93,8 @@ function TimelineRow({ event, isHome, actorTeamName, creditedTeamName, playerNam
   const cameOff = event.type === 'substitution' && event.secondary_player_id ? playerNames.get(event.secondary_player_id) : null;
   const tint = event.type === 'red_card' || event.type === 'own_goal' ? colors.error : event.type === 'yellow_card' ? colors.warning : event.type === 'penalty_missed' ? colors.textMuted : colors.accentSoft;
   const minute = event.minute == null ? 'FT' : `${event.minute}'`;
+  // Both ends of a spot kick: the one that went in, and the one that did not.
+  const penalty = (event.type === 'goal' && event.is_penalty) || event.type === 'penalty_missed';
   const align = isHome ? styles.alignRight : styles.alignLeft;
 
   const copy = <View style={styles.copy}>
@@ -90,7 +112,7 @@ function TimelineRow({ event, isHome, actorTeamName, creditedTeamName, playerNam
       * each event under the team that made it. */}
     <View style={[styles.half, styles.halfHome]}>{isHome ? <>{copy}{stamp}</> : null}</View>
     <View style={styles.marker}>
-      <View style={[styles.icon, { borderColor: tint }]}><Ionicons color={tint} name={eventIcon(event.type)} size={13} /></View>
+      {penalty ? <PenaltyMark scored={event.type === 'goal'} /> : <View style={[styles.icon, { borderColor: tint }]}><Ionicons color={tint} name={eventIcon(event.type)} size={13} /></View>}
     </View>
     <View style={[styles.half, styles.halfAway]}>{isHome ? null : <>{stamp}{copy}</>}</View>
   </View>;
@@ -117,6 +139,11 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   marker: { alignItems: 'center', justifyContent: 'center', width: MARKER },
   // Ringed and filled, so the shape sits on the thread rather than being cut by it.
   icon: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: 13, borderWidth: 1, height: 26, justifyContent: 'center', width: 26 },
+
+  // The outcome badge hangs off the corner, so this one is not clipped.
+  penalty: { borderColor: colors.warning, overflow: 'visible' },
+  penaltyLetter: { color: colors.warning, fontFamily: theme.font.bold, fontSize: 12, lineHeight: 14 },
+  outcome: { alignItems: 'center', borderColor: colors.surface, borderRadius: 7, borderWidth: 1, bottom: -3, height: 14, justifyContent: 'center', position: 'absolute', right: -4, width: 14 },
 
   copy: { flexShrink: 1 },
   lead: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontSize: theme.type.label },
