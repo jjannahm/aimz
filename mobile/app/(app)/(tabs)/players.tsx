@@ -6,6 +6,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useMyChildren } from '@/src/auth/useMyTeam';
+import { GlassBackdrop } from '@/src/components/GlassBackdrop';
 import { Screen } from '@/src/components/Screen';
 import { SegmentedControl, type SegmentedOption } from '@/src/components/SegmentedControl';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
@@ -42,7 +43,9 @@ function MyStatsSection() {
   const [childId, setChildId] = useState<string | null>(null);
   if (user?.role !== 'parent') {
     return user?.player_id
-      ? <PlayerStatsPanel playerId={user.player_id} />
+      // Behind the panel, so its glass has something to look through: a flat
+      // page leaves translucency nothing to show and the cards read as fills.
+      ? <View style={styles.stack}><GlassBackdrop /><PlayerStatsPanel playerId={user.player_id} /></View>
       : <EmptyState body={copy.accountNotLinked} title="Account not linked" />;
   }
   if (isLoading) return <LoadingState label="Loading your children" />;
@@ -50,6 +53,7 @@ function MyStatsSection() {
   if (!children.length) return <EmptyState body={copy.accountNotLinked} title="Account not linked" />;
   const selected = children.find((child) => child.id === childId) ?? children[0]!;
   return <View style={styles.stack}>
+    <GlassBackdrop />
     {children.length > 1 ? <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
       {children.map((child) => {
         const active = child.id === selected.id;

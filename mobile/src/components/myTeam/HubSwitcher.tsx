@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { HubGlass } from '@/src/components/myTeam/HubGlass';
+import { GlassSurface } from '@/src/components/GlassSurface';
 import { useReduceMotion } from '@/src/lib/useReduceMotion';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -45,7 +45,7 @@ export function HubSwitcher<Value extends string>({ options, value, onChange, la
 
   const share = 100 / options.length;
   return (
-    <HubGlass intensity={45} radius={999} style={styles.capsule}>
+    <GlassSurface intensity={45} radius={999} style={styles.capsule}>
       <View accessibilityLabel={label} accessibilityRole="tablist" style={styles.track}>
         <Animated.View
           pointerEvents="none"
@@ -72,7 +72,7 @@ export function HubSwitcher<Value extends string>({ options, value, onChange, la
           );
         })}
       </View>
-    </HubGlass>
+    </GlassSurface>
   );
 }
 
