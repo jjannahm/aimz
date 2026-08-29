@@ -18,53 +18,31 @@ import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import type { PressState } from '@/src/lib/pressState';
 import { showMessage } from '@/src/lib/platformAlert';
-import { isKnockout, type BracketSlot, type FormResult, type StandingRow } from '@/src/types/api';
-
-function HeadToHead({ teamId, opponentId, onClose }: { teamId: string; opponentId: string; onClose: () => void }) {
-  const styles = useThemedStyles(stylesheet);
-  const colors = useColors();
-  const record = useQuery({ queryKey: ['head-to-head', teamId, opponentId], queryFn: () => api.headToHead(teamId, opponentId) });
-  return <View style={styles.h2h}>
-    <View style={styles.h2hHeader}>
-      <Text style={styles.h2hTitle}>{record.data ? `${record.data.team.name} vs ${record.data.opponent.name}` : 'Head to head'}</Text>
-      <Pressable accessibilityLabel="Close head to head" accessibilityRole="button" onPress={onClose} style={({ pressed }) => [styles.h2hClose, pressed && styles.pressed]}>
-        <Ionicons color={colors.textSecondary} name="close" size={18} />
-      </Pressable>
-    </View>
-    {record.isLoading ? <LoadingState label="Loading record" /> : record.isError ? <ErrorState message={(record.error as ApiError).message} onRetry={() => record.refetch()} /> : !record.data?.played ? <Text style={styles.h2hEmpty}>These two have not met in a finished match yet.</Text> : <>
-      <Text accessibilityLabel={`Won ${record.data.won}, drawn ${record.data.drawn}, lost ${record.data.lost}`} style={styles.h2hRecord}>
-        {record.data.won}W · {record.data.drawn}D · {record.data.lost}L · {record.data.goals_for}–{record.data.goals_against}
-      </Text>
-      {record.data.meetings.slice(0, 5).map((meeting) => <View key={meeting.match_id} style={styles.h2hRow}>
-        <Text numberOfLines={1} style={styles.h2hFixture}>{meeting.home_team?.name} {meeting.home_score}–{meeting.away_score} {meeting.away_team?.name}</Text>
-        <Text style={styles.h2hDate}>{new Intl.DateTimeFormat('en-EG', { dateStyle: 'medium' }).format(new Date(meeting.kickoff_datetime))}</Text>
-      </View>)}
-    </>}
-  </View>;
-}
+import { isKnockout, type BracketSlot, type StandingRow } from '@/src/types/api';
 
 /**
- * The only way into a comparison.
+ * The only way into a comparison, and there is one of it.
  *
- * It sits inside the row, which opens the team, so the press is stopped here:
- * on native the responder system already keeps it, and on web the click would
- * otherwise carry on up to the row. Small on the page and 44 points to the
- * finger, which is what `hitSlop` buys without drawing anything bigger.
+ * Comparing is something you do once, so the control for it belongs in the
+ * table's header rather than repeated down every row: it turns the table into a
+ * picker, and the rows themselves say who to compare. Small on the page and 44
+ * points to the finger, which is what `hitSlop` buys without drawing anything
+ * bigger.
  */
-function CompareButton({ onPress, selected, teamName }: { onPress: () => void; selected: boolean; teamName: string }) {
+function CompareToggle({ comparing, onPress }: { comparing: boolean; onPress: () => void }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
   return <Pressable
-    accessibilityHint="Selects this team to compare, without opening it"
-    accessibilityLabel={selected ? `${teamName} selected to compare` : `Compare ${teamName}`}
+    accessibilityHint="Then pick two teams from the table"
+    accessibilityLabel="Compare two teams"
     accessibilityRole="button"
-    accessibilityState={{ selected }}
+    accessibilityState={{ selected: comparing }}
     hitSlop={12}
-    onPress={(event) => { event.stopPropagation?.(); onPress(); }}
-    style={({ pressed }) => [styles.compare, selected && styles.compareOn, pressed && styles.pressed]}
-    testID={`compare-${teamName}`}
+    onPress={onPress}
+    style={({ pressed }) => [styles.compare, comparing && styles.compareOn, pressed && styles.pressed]}
+    testID="compare-toggle"
   >
-    <Ionicons color={selected ? colors.onAccent : colors.textMuted} name={selected ? 'checkmark' : 'swap-horizontal'} size={14} />
+    <Ionicons color={comparing ? colors.onAccent : colors.textMuted} name="swap-horizontal" size={14} />
   </Pressable>;
 }
 
@@ -111,20 +89,21 @@ export default function StandingsScreen() {
     return [...groups.values()];
   }, [table.data]);
   /**
-   * Comparison is its own action, reached only through the compare control on a
-   * row. Tapping the row itself opens the team, at every stage — the two never
-   * stand in for one another.
+   * Comparison is a mode the header control turns on, not something a row can
+   * fall into by accident: `null` is off, `[]` is on with nobody picked, and one
+   * id is on and waiting for the second. While it is on a row press picks rather
+   * than opens, which is the whole of the difference between the two.
    */
-  const [comparing, setComparing] = useState<string | null>(null);
-  const compare = (teamId: string) => {
-    if (comparing === teamId) { setComparing(null); return; }
-    if (comparing === null) { setComparing(teamId); return; }
-    const first = comparing;
-    setComparing(null);
-    router.push({ pathname: '/compare/[a]/[b]', params: { a: first, b: teamId } });
+  const [picking, setPicking] = useState<string[] | null>(null);
+  const toggleCompare = () => setPicking((current) => (current === null ? [] : null));
+  const pick = (chosen: string[], teamId: string) => {
+    const next = chosen.includes(teamId) ? chosen.filter((id) => id !== teamId) : [...chosen, teamId];
+    if (next.length < 2) { setPicking(next); return; }
+    setPicking(null);
+    router.push({ pathname: '/compare/[a]/[b]', params: { a: next[0]!, b: next[1]! } });
   };
   const open = (teamId: string) => router.push({ pathname: '/team/[id]', params: { id: teamId } });
-  const comparingName = table.data?.find((row) => row.team.id === comparing)?.team.name;
+  const pickedName = table.data?.find((row) => row.team.id === picking?.[0])?.team.name;
 
   return <Screen title="Standings">
     {/* Only worth a switcher when more than one competition is running. */}
@@ -136,9 +115,9 @@ export default function StandingsScreen() {
     </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
     <View style={styles.content} testID="standings-content">
       {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
-      {comparing ? <View style={styles.compareBar}>
-        <Text style={styles.comparePrompt}>Select another team to compare with {comparingName ?? 'this team'}.</Text>
-        <Pressable accessibilityLabel="Cancel comparison" accessibilityRole="button" onPress={() => setComparing(null)} style={({ pressed }) => [styles.compareCancel, pressed && styles.pressed]}>
+      {picking ? <View style={styles.compareBar}>
+        <Text style={styles.comparePrompt}>{picking.length ? `Select another team to compare with ${pickedName ?? 'this team'}.` : 'Select two teams to compare.'}</Text>
+        <Pressable accessibilityLabel="Cancel comparison" accessibilityRole="button" onPress={() => setPicking(null)} style={({ pressed }) => [styles.compareCancel, pressed && styles.pressed]}>
           <Text style={styles.compareCancelText}>Cancel</Text>
         </Pressable>
       </View> : null}
@@ -152,13 +131,13 @@ export default function StandingsScreen() {
   function tableFor(rows: StandingRow[]) {
     return <View style={styles.table}>
       <View style={styles.tableHeader}>
+        {/* The label is left to size itself rather than flexing, so the control
+          * sits beside the word and not out at the far end of the column. */}
         <View style={styles.nameSide}>
           <Text style={styles.rankHeader}>#</Text>
-          <Text style={[styles.team, styles.headerText]}>TEAM</Text>
+          <Text style={styles.headerText}>TEAM</Text>
+          <CompareToggle comparing={picking !== null} onPress={toggleCompare} />
         </View>
-        {/* Stands in for the compare control, so the columns above the rows are
-          * set back by exactly as much as the rows are. */}
-        <View accessibilityElementsHidden style={styles.compareSlot} />
         <View style={styles.stats}>
           <Text style={[styles.played, styles.headerText]}>P</Text>
           <Text style={[styles.scores, styles.headerText]}>F:A</Text>
@@ -166,32 +145,48 @@ export default function StandingsScreen() {
           <Text style={[styles.pointsHeader, styles.headerText]}>PTS</Text>
         </View>
       </View>
-      {rows.map((row: StandingRow, index: number) => <View key={row.team.id} style={[styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, comparing === row.team.id && styles.comparingRow]} testID={`standings-row-${row.team.id}`}>
-        {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
-        <Pressable accessibilityHint="Opens this team's profile" accessibilityLabel={`${row.team.name}, ${row.points} points`} accessibilityRole="button" onPress={() => open(row.team.id)} style={({ pressed, hovered }: PressState) => [styles.nameSide, hovered && styles.hoveredRow, pressed && styles.pressed]}>
-        <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
-        <View style={styles.teamCell}>
-          <TeamAvatar badgeStyle={row.team.badge_style} isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={32} />
-          <View style={styles.team}>
-            <View style={styles.nameRow}>
-              <Text numberOfLines={1} style={[styles.teamName, row.rank === 1 && styles.leaderName]}>{row.team.name}</Text>
-              {row.rank === 1 ? <Ionicons accessibilityLabel="First place" color={colors.leaderAccent} name="trophy" size={16} /> : null}
+      {rows.map((row: StandingRow, index: number) => {
+        const picked = picking?.includes(row.team.id) ?? false;
+        const difference = `${row.goal_difference > 0 ? '+' : ''}${row.goal_difference}`;
+        // One press, one meaning: the row is a single target again now that
+        // nothing sits inside it wanting a press of its own.
+        return <View key={row.team.id} style={[styles.row, index % 2 === 1 && styles.altRow, row.team.is_aimz && styles.aimzRow, row.rank === 1 && styles.leaderRow, picked && styles.pickedRow]} testID={`standings-row-${row.team.id}`}>
+          {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
+          <Pressable
+            accessibilityHint={picking ? 'Selects this team to compare' : "Opens this team's profile"}
+            accessibilityLabel={`${row.team.name}, ${row.points} points, played ${row.played}, ${row.goals_for} scored and ${row.goals_against} conceded, goal difference ${difference}`}
+            accessibilityRole="button"
+            accessibilityState={{ selected: picked }}
+            onPress={() => (picking ? pick(picking, row.team.id) : open(row.team.id))}
+            style={({ pressed, hovered }: PressState) => [styles.rowPress, hovered && styles.hoveredRow, pressed && styles.pressed]}
+          >
+            <View style={styles.nameSide}>
+              {/* The tick takes the rank's own column, so turning the mode on
+                * moves nothing along the row. */}
+              {picked ? <Ionicons color={colors.accent} name="checkmark" size={16} style={styles.rankSlot} /> : <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>}
+              <View style={styles.teamCell}>
+                <TeamAvatar badgeStyle={row.team.badge_style} isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={32} />
+                <View style={styles.team}>
+                  <View style={styles.nameRow}>
+                    <Text numberOfLines={1} style={[styles.teamName, row.rank === 1 && styles.leaderName]}>{row.team.name}</Text>
+                    {row.rank === 1 ? <Ionicons accessibilityLabel="First place" color={colors.leaderAccent} name="trophy" size={16} /> : null}
+                  </View>
+                  {row.team.squad_code ? <Text numberOfLines={1} style={styles.code}>{row.team.squad_code}</Text> : null}
+                  <View style={styles.formRow}><FormStrip form={row.form ?? []} /></View>
+                </View>
+              </View>
             </View>
-            {row.team.squad_code ? <Text numberOfLines={1} style={styles.code}>{row.team.squad_code}</Text> : null}
-            <View style={styles.formRow}><FormStrip form={row.form ?? []} /></View>
-          </View>
-        </View>
-        </Pressable>
-        <CompareButton onPress={() => compare(row.team.id)} selected={comparing === row.team.id} teamName={row.team.name} />
-        <Pressable accessibilityHint="Opens this team's profile" accessibilityLabel={`${row.team.name}: played ${row.played}, ${row.goals_for} scored and ${row.goals_against} conceded, goal difference ${row.goal_difference}`} accessibilityRole="button" onPress={() => open(row.team.id)} style={({ pressed, hovered }: PressState) => [styles.stats, hovered && styles.hoveredRow, pressed && styles.pressed]}>
-          <Text style={styles.played}>{row.played}</Text>
-          <Text style={styles.scores}>{row.goals_for}:{row.goals_against}</Text>
-          <Text style={styles.stat}>{row.goal_difference > 0 ? '+' : ''}{row.goal_difference}</Text>
-          <View style={[styles.pointsBox, row.rank === 1 && styles.leaderPointsBox]}>
-            <Text style={[styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
-          </View>
-        </Pressable>
-      </View>)}
+            <View style={styles.stats}>
+              <Text style={styles.played}>{row.played}</Text>
+              <Text style={styles.scores}>{row.goals_for}:{row.goals_against}</Text>
+              <Text style={styles.stat}>{difference}</Text>
+              <View style={[styles.pointsBox, row.rank === 1 && styles.leaderPointsBox]}>
+                <Text style={[styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
+              </View>
+            </View>
+          </Pressable>
+        </View>;
+      })}
     </View>;
   }
 }
@@ -211,7 +206,8 @@ const SCORES_COLUMN = 34;
 /** A sign and two digits. */
 const STAT_COLUMN = 26;
 const POINTS_COLUMN = 34;
-const COMPARE_COLUMN = 22;
+/** The header's compare control, which no row has to make room for. */
+const COMPARE_CONTROL = 22;
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // The section the switcher swaps, which keeps the page's own rhythm between
@@ -228,37 +224,25 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   tab: { paddingHorizontal: theme.spacing.md },
   pressed: { opacity: 0.7 },
   formRow: { marginTop: 4 },
-  // Small enough to stay out of the table's way; `hitSlop` gives the finger the
-  // 44 points the drawing does not.
-  // The row's own tap target. It holds every column, so the compare control
-  // beside it is the only thing in the row that is not "open this team".
-  // The team's side of the row, which is one tap target; the figures are
-  // another, and the compare control sits between them belonging to neither.
+  // The row's one tap target, holding every column: with the compare control
+  // gone from the row, nothing inside it wants a press of its own.
+  rowPress: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm },
   nameSide: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minWidth: 0 },
-  compareSlot: { width: COMPARE_COLUMN },
   // Four narrow columns held closer together than the row's own spacing, so
   // the extra one costs the team name as little width as it can.
   stats: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   played: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: PLAYED_COLUMN },
   scores: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: SCORES_COLUMN },
-  compare: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, height: COMPARE_COLUMN, justifyContent: 'center', width: COMPARE_COLUMN },
+  // Small enough to stay out of the header's way; `hitSlop` gives the finger
+  // the 44 points the drawing does not.
+  compare: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, height: COMPARE_CONTROL, justifyContent: 'center', width: COMPARE_CONTROL },
   compareOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  comparingRow: { borderColor: colors.accent },
+  pickedRow: { borderColor: colors.accent },
   hoveredRow: { backgroundColor: colors.surfaceRaised },
   compareBar: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   comparePrompt: { color: colors.textSecondary, flex: 1, lineHeight: 20 },
   compareCancel: { minHeight: theme.touch.minimum, justifyContent: 'center' },
   compareCancelText: { color: colors.accentSoft, fontFamily: theme.font.bold },
-  h2h: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
-  h2hHeader: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
-  h2hTitle: { color: colors.textPrimary, flex: 1, fontFamily: theme.font.bold },
-  h2hClose: { alignItems: 'center', height: theme.touch.minimum, justifyContent: 'center', width: theme.touch.minimum },
-  h2hRecord: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'] },
-  h2hRow: { borderTopColor: colors.border, borderTopWidth: 1, paddingTop: theme.spacing.xs },
-  h2hFixture: { color: colors.textPrimary, fontFamily: theme.font.regular, fontSize: theme.type.label },
-  h2hDate: { color: colors.textMuted, fontFamily: theme.font.mono, fontSize: theme.type.caption, marginTop: 2 },
-  h2hEmpty: { color: colors.textMuted, fontFamily: theme.font.regular, lineHeight: 21 },
-  h2hPrompt: { color: colors.textSecondary, fontFamily: theme.font.regular, lineHeight: 21 },
   table: { gap: 6 },
   // Each row is a bordered card, and with border-box that border eats a pixel
   // of its content on both sides. The header carries the same border in nothing
@@ -278,6 +262,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   leaderEdge: { backgroundColor: colors.leaderAccent, bottom: 0, left: 0, position: 'absolute', top: 0, width: 4 },
   rank: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], width: RANK_COLUMN },
   leaderRank: { color: colors.leaderAccent },
+  // The tick a picked row shows instead of its rank, on the rank's column so
+  // the swap costs the row no width.
+  rankSlot: { textAlign: 'center', width: RANK_COLUMN },
   teamCell: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm },
   team: { flex: 1 },
   nameRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },

@@ -196,57 +196,96 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
   afterEach(() => jest.clearAllMocks());
 
   const push = () => jest.mocked(require('expo-router').router.push);
+  // The row's label carries its figures too, so match on the name and points it
+  // opens with rather than spelling the whole readout out at every call site.
+  const lions = /^Giza Lions, 9 points/u;
+  const aimz = /^AIMZ U18 Women, 6 points/u;
 
   it('opens a team when its row is tapped', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
-    fireEvent.press(await screen.findByLabelText('Giza Lions, 9 points'));
+    fireEvent.press(await screen.findByLabelText(lions));
 
     expect(push()).toHaveBeenCalledWith({ pathname: '/team/[id]', params: { id: 't-1' } });
   });
 
-  // The whole point of the split: the compare control must not open the team.
-  it('does not open the team when its compare control is pressed', async () => {
+  // Comparing is one action, so it gets one control however long the table is.
+  it('carries a single compare control for the whole table', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
-    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
+    await screen.findByText('Giza Lions');
+
+    expect(screen.getAllByLabelText('Compare two teams')).toHaveLength(1);
+    expect(screen.queryByLabelText(/^Compare Giza Lions/u)).toBeNull();
+  });
+
+  // The control took a column of its own out of every row; the figures still
+  // have to sit under the labels that name them.
+  it('keeps the numbers under the labels they belong to', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    await screen.findByText('Giza Lions');
+    const width = (node: { props: { style?: unknown } }) => (StyleSheet.flatten(node.props.style) as ViewStyle).width;
+
+    expect(width(screen.getByText('P'))).toBe(width(screen.getAllByText('4')[0]!));
+    expect(width(screen.getByText('GD'))).toBe(width(screen.getAllByText('+1')[0]!));
+  });
+
+  // One control for an action taken once: the table asks who, the rows answer.
+  it('asks for two teams when the header control is pressed', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Compare two teams'));
+
+    expect(push()).not.toHaveBeenCalled();
+    expect(await screen.findByText('Select two teams to compare.')).toBeTruthy();
+  });
+
+  // Nothing picked yet, so there is nobody for a row to open.
+  it('picks a team instead of opening it while comparing', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Compare two teams'));
+    fireEvent.press(await screen.findByLabelText(lions));
 
     expect(push()).not.toHaveBeenCalled();
     expect(await screen.findByText(/Select another team to compare with Giza Lions/u)).toBeTruthy();
+    expect(screen.getByLabelText(lions).props.accessibilityState.selected).toBe(true);
   });
 
-  it('lets the same control put a team back down', async () => {
+  it('lets the same row put a team back down', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
-    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
-    fireEvent.press(await screen.findByLabelText('Giza Lions selected to compare'));
+    fireEvent.press(await screen.findByLabelText('Compare two teams'));
+    fireEvent.press(await screen.findByLabelText(lions));
+    fireEvent.press(await screen.findByLabelText(lions));
 
-    await waitFor(() => expect(screen.queryByText(/Select another team to compare/u)).toBeNull());
+    await waitFor(() => expect(screen.getByText('Select two teams to compare.')).toBeTruthy());
     expect(push()).not.toHaveBeenCalled();
   });
 
-  it('compares only once a second compare control is pressed', async () => {
+  it('compares only once a second team is picked', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
-    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
-    fireEvent.press(await screen.findByLabelText('Compare AIMZ U18 Women'));
+    fireEvent.press(await screen.findByLabelText('Compare two teams'));
+    fireEvent.press(await screen.findByLabelText(lions));
+    expect(push()).not.toHaveBeenCalled();
+    fireEvent.press(await screen.findByLabelText(aimz));
 
     expect(push()).toHaveBeenCalledWith({ pathname: '/compare/[a]/[b]', params: { a: 't-1', b: 't-2' } });
   });
 
-  // Tapping a row mid-comparison is still a row tap, at every stage.
-  it('still opens a team tapped while a comparison is waiting on its second', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
-    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
-    fireEvent.press(await screen.findByLabelText('AIMZ U18 Women, 6 points'));
-
-    expect(push()).toHaveBeenCalledWith({ pathname: '/team/[id]', params: { id: 't-2' } });
-    expect(push()).not.toHaveBeenCalledWith(expect.objectContaining({ pathname: '/compare/[a]/[b]' }));
-    // And the comparison is still waiting, rather than having been taken over.
-    expect(screen.getByText(/Select another team to compare with Giza Lions/u)).toBeTruthy();
-  });
-
   it('offers a way out of comparison without choosing anyone', async () => {
     const screen = await render(<StandingsScreen />, { wrapper });
-    fireEvent.press(await screen.findByLabelText('Compare Giza Lions'));
+    fireEvent.press(await screen.findByLabelText('Compare two teams'));
+    fireEvent.press(await screen.findByLabelText(lions));
     fireEvent.press(await screen.findByLabelText('Cancel comparison'));
 
     await waitFor(() => expect(screen.queryByText(/Select another team to compare/u)).toBeNull());
+    expect(screen.queryByText('Select two teams to compare.')).toBeNull();
+    expect(push()).not.toHaveBeenCalled();
+  });
+
+  // The mode is a mode: leaving it hands the rows back to opening teams.
+  it('opens teams again once the comparison is off', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByLabelText('Compare two teams'));
+    fireEvent.press(await screen.findByLabelText('Compare two teams'));
+    fireEvent.press(await screen.findByLabelText(lions));
+
+    expect(push()).toHaveBeenCalledWith({ pathname: '/team/[id]', params: { id: 't-1' } });
   });
 });
