@@ -91,3 +91,19 @@ export function matchPositions(query: string): readonly PositionDefinition[] {
   }
   return [...byCode, ...byName];
 }
+
+/** Back to front, which is the order a team sheet is read in. */
+const LINE_ORDER: Record<PositionLine, number> = { GK: 0, DEF: 1, MID: 2, FWD: 3 };
+
+/**
+ * A squad in team-sheet order: keepers, defenders, midfield, then attack, and
+ * alphabetical within each line.
+ *
+ * Sorts a copy, so a list held elsewhere is not rearranged underneath whoever
+ * is holding it.
+ */
+export function byPosition<T extends { name: string; position: string | null }>(players: readonly T[]): T[] {
+  return [...players].sort((a, b) =>
+    LINE_ORDER[lineFor(a.position)] - LINE_ORDER[lineFor(b.position)]
+    || a.name.localeCompare(b.name));
+}
