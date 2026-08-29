@@ -1,4 +1,4 @@
-import type { ViewStyle } from 'react-native';
+import type { TextStyle, ViewStyle } from 'react-native';
 
 export const palette = {
   ink: '#08080C',
@@ -167,3 +167,6 @@ export type Theme = typeof theme;
  * they parse `outlineStyle`, and know only `solid`, `dotted` and `dashed`.
  */
 export const noFocusRing: ViewStyle = { outlineStyle: 'solid', outlineWidth: 0 };
+
+/** The same suppression for a text input, whose style is a `TextStyle`. */
+export const noFocusRingText: TextStyle = { outlineStyle: 'solid', outlineWidth: 0 };

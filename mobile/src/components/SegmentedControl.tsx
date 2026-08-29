@@ -121,9 +121,11 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     overflow: 'hidden',
     padding: theme.spacing.xs,
   },
+  // The accent, matching the marker under the selected tab in the bottom dock:
+  // one selected-state colour for every tab bar in the app.
   indicator: {
-    backgroundColor: colors.surface,
-    borderColor: colors.border,
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
     borderWidth: 1,
     borderRadius: theme.radius.pill,
     bottom: theme.spacing.xs,
@@ -141,6 +143,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     paddingHorizontal: 0,
   },
   label: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.label, textAlign: 'center' },
-  labelOn: { color: colors.textPrimary, fontFamily: theme.font.bold },
+  labelOn: { color: colors.onAccent, fontFamily: theme.font.bold },
   pressed: { opacity: 0.7 },
 });

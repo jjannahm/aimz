@@ -119,9 +119,10 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     minHeight: theme.touch.minimum,
     overflow: 'hidden',
   },
-  pillSelected: { borderColor: colors.border },
+  pillSelected: { borderColor: colors.accent },
+  // The dock's accent, so a selected tab reads the same wherever it is.
   fill: {
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: colors.accent,
     bottom: 0,
     left: 0,
     position: 'absolute',
@@ -138,6 +139,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     zIndex: 1,
   },
   labelCompact: { fontSize: theme.type.caption, lineHeight: theme.spacing.md },
-  labelSelected: { color: colors.textPrimary, fontFamily: theme.font.bold },
+  labelSelected: { color: colors.onAccent, fontFamily: theme.font.bold },
   pressed: { opacity: 0.7 },
 });

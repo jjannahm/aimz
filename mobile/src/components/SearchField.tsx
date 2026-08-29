@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { theme, type ThemeColors } from '@/src/theme';
+import { noFocusRingText, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 /** A search box, with a clear control that only appears once there is something to clear. */
@@ -51,7 +51,9 @@ export function SearchField({ value, onChange, placeholder = 'Search', label = '
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   group: { gap: theme.spacing.xs },
   field: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md },
-  input: { color: colors.textPrimary, flex: 1, fontSize: theme.type.body, paddingVertical: theme.spacing.sm },
+  // The field draws its own border; the browser's focus outline on web would
+  // put a second, blue one inside it.
+  input: { ...noFocusRingText, color: colors.textPrimary, flex: 1, fontSize: theme.type.body, paddingVertical: theme.spacing.sm },
   clear: { alignItems: 'center', justifyContent: 'center' },
   pressed: { opacity: 0.6 },
   count: { color: colors.textMuted, fontSize: theme.type.caption },
