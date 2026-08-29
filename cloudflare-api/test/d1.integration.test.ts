@@ -28,7 +28,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0022_backfill_appearances.sql');
+    expect(applied.results.at(-1)?.name).toBe('0023_parent_role.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -137,6 +137,83 @@ describe('team hub authorization and roster privacy', () => {
     expect(deleteSeries.status).toBe(204);
     const afterDelete = await (await request('/api/v1/training-sessions?limit=100', json('GET', undefined, admin.token))).json<{ items: unknown[] }>();
     expect(afterDelete.items).toHaveLength(0);
+  });
+});
+
+// A parent account is the one role that reaches the roster through a join table
+// rather than through users.player_id, and it is the only one whose role value
+// was added after the users table was written. Both are covered here: the whole
+// feature shipped working and unusable because nothing registered a parent.
+describe('parent accounts', () => {
+  it('registers one account against several children and reads them back', async () => {
+    const admin = await seedUser('admin');
+    const younger = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U9', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const older = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U13', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const salma = await (await request('/api/v1/players', json('POST', { name: 'Salma Nabil', team_id: younger.id, position: 'ST' }, admin.token))).json<{ id: string }>();
+    const mariam = await (await request('/api/v1/players', json('POST', { name: 'Mariam Adel', team_id: older.id, position: 'GK' }, admin.token))).json<{ id: string }>();
+
+    const invite = await request('/api/v1/admin/registration-invites', json('POST', { label: 'Nabil family', code: 'FAMILY-2026', kind: 'parent', player_ids: [salma.id, mariam.id], max_uses: 5 }, admin.token));
+    expect(invite.status).toBe(201);
+    // A parent invitation names children without claiming them, so it keeps the
+    // several uses it was given rather than being cut down to one.
+    expect(await invite.json()).toMatchObject({ kind: 'parent', max_uses: 5 });
+
+    const registered = await request('/api/v1/auth/register', json('POST', { name: 'Hala Nabil', email: 'hala@aimz.test', password: 'long-secure-password', invite_code: 'FAMILY-2026' }));
+    expect(registered.status).toBe(201);
+    const session = await registered.json<{ access_token: string; user: { role: string; player_id: string | null } }>();
+    // A parent speaks for children rather than being one, so no roster record is
+    // theirs — the link lives in user_children instead.
+    expect(session.user).toMatchObject({ role: 'parent', player_id: null });
+
+    const children = await (await request('/api/v1/users/me/children', json('GET', undefined, session.access_token))).json<{ items: { id: string; name: string; team_name: string }[] }>();
+    expect(children.items.map((child) => child.name)).toEqual(['Mariam Adel', 'Salma Nabil']);
+    expect(children.items.map((child) => child.team_name)).toEqual(['AIMZ U13', 'AIMZ U9']);
+
+    // Two guardians of one child are expected, so a parent invitation does not
+    // lock the roster record the way a player invitation does.
+    const second = await request('/api/v1/admin/registration-invites', json('POST', { label: 'Second guardian', code: 'FAMILY-2026-B', kind: 'parent', player_ids: [salma.id] }, admin.token));
+    expect(second.status).toBe(201);
+    const father = await request('/api/v1/auth/register', json('POST', { name: 'Omar Nabil', email: 'omar@aimz.test', password: 'long-secure-password', invite_code: 'FAMILY-2026-B' }));
+    expect(father.status).toBe(201);
+    const his = await (await request('/api/v1/users/me/children', json('GET', undefined, (await father.json<{ access_token: string }>()).access_token))).json<{ items: { name: string }[] }>();
+    expect(his.items.map((child) => child.name)).toEqual(['Salma Nabil']);
+  });
+});
+
+// 0023 rebuilds users, and DROP TABLE fires the foreign key actions pointing at
+// it. Everything below would be lost to that — the parent links first among them
+// — if the migration's copy-aside step were ever dropped. Run it a second time
+// over live-looking rows to prove the step earns its place.
+describe('the users rebuild keeps what points at it', () => {
+  it('carries links, sessions and authorship through the migration', async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U11', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const child = await (await request('/api/v1/players', json('POST', { name: 'Farida Sami', team_id: team.id, position: 'CM' }, admin.token))).json<{ id: string }>();
+    const announcement = await (await request('/api/v1/announcements', json('POST', { team_id: team.id, title: 'Kit collection', body: 'Saturday', pinned: false }, admin.token))).json<{ id: string }>();
+    const invite = await (await request('/api/v1/admin/registration-invites', json('POST', { label: 'Sami family', code: 'SAMI-2026', kind: 'parent', player_ids: [child.id] }, admin.token))).json<{ id: string }>();
+    const parent = await (await request('/api/v1/auth/register', json('POST', { name: 'Sami Farid', email: 'sami@aimz.test', password: 'long-secure-password', invite_code: 'SAMI-2026' }))).json<{ user: { id: string } }>();
+    // Registering issues a refresh session, which is the other CASCADE.
+    const sessionsBefore = await testEnv.DB.prepare('SELECT COUNT(*) n FROM refresh_sessions WHERE user_id=?').bind(parent.user.id).first<{ n: number }>();
+    expect(sessionsBefore?.n).toBe(1);
+
+    const migrations = JSON.parse(testEnv.TEST_MIGRATIONS) as { name: string; queries: string[] }[];
+    const rebuild = migrations.find((migration) => migration.name === '0023_parent_role.sql');
+    expect(rebuild, 'the parent-role migration is in the chain').toBeTruthy();
+    for (const query of rebuild!.queries) await testEnv.DB.prepare(query).run();
+
+    const links = await testEnv.DB.prepare('SELECT player_id FROM user_children WHERE user_id=?').bind(parent.user.id).all<{ player_id: string }>();
+    expect(links.results.map((row) => row.player_id)).toEqual([child.id]);
+    const sessionsAfter = await testEnv.DB.prepare('SELECT COUNT(*) n FROM refresh_sessions WHERE user_id=?').bind(parent.user.id).first<{ n: number }>();
+    expect(sessionsAfter?.n).toBe(1);
+    expect((await testEnv.DB.prepare('SELECT author_id FROM announcements WHERE id=?').bind(announcement.id).first<{ author_id: string }>())?.author_id).toBe(admin.id);
+    expect((await testEnv.DB.prepare('SELECT created_by_id FROM registration_invites WHERE id=?').bind(invite.id).first<{ created_by_id: string }>())?.created_by_id).toBe(admin.id);
+
+    // And the point of the rebuild: the widened role still holds afterwards.
+    const roles = await testEnv.DB.prepare('SELECT role FROM users WHERE id=?').bind(parent.user.id).first<{ role: string }>();
+    expect(roles?.role).toBe('parent');
+    const rejected = testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, 1, ?, ?)')
+      .bind(crypto.randomUUID(), 'Nobody', 'nobody@aimz.test', 'unused', 'coach', now, now).run();
+    await expect(rejected, 'the CHECK still refuses a role nobody defined').rejects.toThrow();
   });
 });
 
