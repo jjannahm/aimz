@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User } from '@/src/types/api';
+import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -260,6 +260,7 @@ export const api = {
     if (options.limit) params.set('limit', String(options.limit));
     return request<PlayerLeaderRow[]>(`/api/v1/stats/leaders?${params.toString()}`);
   },
+  squadStats: (teamId: string) => request<SquadStat[]>(`/api/v1/teams/${teamId}/squad-stats`),
   headToHead: (teamId: string, opponentId: string) => request<HeadToHead>(`/api/v1/teams/${teamId}/head-to-head/${opponentId}`),
   awards: (competitionId: string) => request<SeasonAwards>(`/api/v1/competitions/${competitionId}/awards`),
   awardRanking: (competitionId: string, metric: AwardMetric, limit = 25) =>
