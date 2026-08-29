@@ -3,7 +3,7 @@ import { adminUser, ApiProblem, jsonArray, jsonObject, nowIso, publicTeam, strin
 import { outcome } from "./scoring-rules";
 import { ADVANCE_PER_GROUP, GROUP_SIZE, groupCountFor, resolveShape, roundLabel, roundsFor, TEAM_COUNTS } from "./knockout-shape";
 import type { Shape } from "./knockout-shape";
-import type { BracketSlotRow, CompetitionGroupRow, CompetitionRow, MatchRow, TeamRow } from "./types";
+import type { BracketSlotRow, CompetitionGroupRow, CompetitionRow, CompetitionStatus, MatchRow, TeamRow } from "./types";
 
 export { ADVANCE_PER_GROUP, GROUP_SIZE, groupCountFor, roundLabel, roundsFor, TEAM_COUNTS };
 
@@ -112,6 +112,13 @@ export async function groupStandings(env: Env, competitionId: string): Promise<M
   return byGroup;
 }
 
+/** A knockout belongs to a season, and a season that has ended takes nothing more. */
+function requireOpenCompetition(competition: { status?: CompetitionStatus | null; name: string; season: string }): void {
+  if (competition.status === "completed") {
+    throw new ApiProblem(409, "season_completed", `${competition.name} ${competition.season} has ended. Reopen the season before changing it.`);
+  }
+}
+
 export function registerKnockoutRoutes(app: Hono<{ Bindings: Env }>): void {
   app.get("/api/v1/competitions/:id/groups", async (c) => {
     const competition = await competitionOr404(c.env, c.req.param("id"));
@@ -129,6 +136,7 @@ export function registerKnockoutRoutes(app: Hono<{ Bindings: Env }>): void {
   app.put("/api/v1/competitions/:id/groups/:groupId/teams", async (c) => {
     await adminUser(c);
     const competition = await competitionOr404(c.env, c.req.param("id"));
+    requireOpenCompetition(competition);
     const group = await c.env.DB.prepare("SELECT * FROM competition_groups WHERE id = ? AND competition_id = ?").bind(c.req.param("groupId"), competition.id).first<CompetitionGroupRow>();
     if (!group) throw new ApiProblem(404, "group_not_found", "Group not found.");
     const body = await jsonArray(c);
@@ -156,6 +164,7 @@ export function registerKnockoutRoutes(app: Hono<{ Bindings: Env }>): void {
   app.post("/api/v1/competitions/:id/advance", async (c) => {
     await adminUser(c);
     const competition = await competitionOr404(c.env, c.req.param("id"));
+    requireOpenCompetition(competition);
     if (competition.team_count === null) throw new ApiProblem(409, "not_a_knockout", "This competition has no knockout stage.");
     const body = await jsonObject(c);
     const round = typeof body.round === "number" ? body.round : null;
@@ -202,6 +211,7 @@ export function registerKnockoutRoutes(app: Hono<{ Bindings: Env }>): void {
     await adminUser(c);
     const slot = await c.env.DB.prepare("SELECT * FROM bracket_slots WHERE id = ?").bind(c.req.param("id")).first<BracketSlotRow>();
     if (!slot) throw new ApiProblem(404, "slot_not_found", "Bracket tie not found.");
+    requireOpenCompetition(await competitionOr404(c.env, slot.competition_id));
     const body = await jsonObject(c);
     const winner = body.winner_team_id === undefined ? slot.winner_team_id : stringField(body, "winner_team_id", { nullable: true, max: 36 }) ?? null;
     const matchId = body.match_id === undefined ? slot.match_id : stringField(body, "match_id", { nullable: true, max: 36 }) ?? null;

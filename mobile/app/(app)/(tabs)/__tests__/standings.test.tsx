@@ -67,7 +67,9 @@ describe('StandingsScreen', () => {
     expect(await screen.findByText('Women Academy League')).toBeTruthy();
     expect(screen.getAllByText('Women Academy League')).toHaveLength(1);
     expect(screen.queryByLabelText('Women Academy League, season 2026')).toBeNull();
-    expect(screen.queryByText('2026')).toBeNull();
+    // The season is said once too, by the picker in the header — not again in
+    // a card under the tabs, which is what this test has always guarded.
+    expect(screen.getAllByText('2026')).toHaveLength(1);
   });
 
   // The gold edge used to be a left border, which is part of the box: it inset
@@ -93,8 +95,9 @@ describe('StandingsScreen', () => {
     const screen = await render(<StandingsScreen />, { wrapper });
     expect(await screen.findByText('Women Academy League')).toBeTruthy();
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
-    // The name is all that is left; the season line went with the card.
-    expect(screen.queryByText('2026')).toBeNull();
+    // One season on record needs no control, so it is stated rather than offered.
+    expect(screen.queryByTestId('season-picker')).toBeNull();
+    expect(screen.getAllByText('2026')).toHaveLength(1);
   });
 
   it('offers a switcher and changes table when several competitions run', async () => {
@@ -287,5 +290,57 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
     fireEvent.press(await screen.findByLabelText(lions));
 
     expect(push()).toHaveBeenCalledWith({ pathname: '/team/[id]', params: { id: 't-1' } });
+  });
+});
+
+
+const lastSeason = competition('c-old', 'Women Academy League', '2025');
+const thisSeason = competition('c-new', 'Women Academy League', '2026');
+
+describe('StandingsScreen — seasons', () => {
+  beforeEach(() => {
+    jest.mocked(api.competitions).mockResolvedValue({ items: [lastSeason, thisSeason], total: 2, limit: 100, offset: 0 });
+    jest.mocked(api.standings).mockResolvedValue(table);
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  // The season being played, not whichever row came back first.
+  it('opens on the season still being played', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    expect(await screen.findByLabelText('Season 2026')).toBeTruthy();
+    await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-new'));
+  });
+
+  it('falls back to the newest season once every one of them has ended', async () => {
+    jest.mocked(api.competitions).mockResolvedValue({
+      items: [{ ...lastSeason, status: 'completed' as const }, { ...thisSeason, status: 'completed' as const }],
+      total: 2, limit: 100, offset: 0,
+    });
+    const screen = await render(<StandingsScreen />, { wrapper });
+    expect(await screen.findByLabelText('Season 2026, ended')).toBeTruthy();
+  });
+
+  // The point of the whole thing: the season decides which competition is read,
+  // so the table comes from the API rather than being sieved in the screen.
+  it('reads the chosen season from its own competition', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    fireEvent.press(await screen.findByTestId('season-picker'));
+    fireEvent.press(await screen.findByText('2025'));
+
+    await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-old'));
+  });
+
+  it('says plainly when a season is closed', async () => {
+    jest.mocked(api.competitions).mockResolvedValue({
+      items: [{ ...thisSeason, status: 'completed' as const }], total: 1, limit: 100, offset: 0,
+    });
+    const screen = await render(<StandingsScreen />, { wrapper });
+    expect(await screen.findByText(/has ended\. This table is final\./u)).toBeTruthy();
+  });
+
+  it('leaves an open season unmarked', async () => {
+    const screen = await render(<StandingsScreen />, { wrapper });
+    await screen.findByText('Giza Lions');
+    expect(screen.queryByText(/has ended/u)).toBeNull();
   });
 });

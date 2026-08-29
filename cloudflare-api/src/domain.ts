@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import { recordAudit } from "./audit";
 import { generationStatements, groupSizeOf, knockoutShape } from "./knockout";
 import { POSITION_CODES } from "./positions";
 import {
@@ -16,7 +17,7 @@ import {
   publicTeam,
   stringField,
 } from "./helpers";
-import type { CompetitionRow, JsonObject, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
+import type { CompetitionRow, CompetitionStatus, JsonObject, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
 import { MatchPhaseTransitionError, transitionLegacyStatus } from "./match-clock";
 import { isOpponentOnly } from "./scoring-rules";
 
@@ -49,6 +50,8 @@ interface JoinedMatchRow extends MatchRow {
   away_updated_at: string;
   competition_name: string;
   competition_season: string;
+  /** Null on a row written before seasons could be closed. */
+  competition_status: CompetitionStatus | null;
   competition_type: "league" | "tournament" | "friendly";
   competition_team_count: number | null;
   competition_group_size: number | null;
@@ -66,7 +69,7 @@ const matchSelect = `
     a.season away_season, a.is_aimz away_is_aimz, a.is_active away_is_active,
     a.logo_key away_logo_key, a.badge_style away_badge_style, a.coach away_coach, a.assistant_coach away_assistant_coach,
     a.created_at away_created_at, a.updated_at away_updated_at,
-    c.name competition_name, c.season competition_season, c.type competition_type,
+    c.name competition_name, c.season competition_season, c.type competition_type, c.status competition_status,
     c.team_count competition_team_count, c.group_size competition_group_size,
     c.created_at competition_created_at, c.updated_at competition_updated_at
   FROM matches m
@@ -91,7 +94,8 @@ export function joinedMatch(row: JoinedMatchRow): Record<string, unknown> {
   };
   const competition: CompetitionRow = {
     id: row.competition_id, name: row.competition_name, season: row.competition_season,
-    type: row.competition_type, team_count: row.competition_team_count, group_size: row.competition_group_size, created_at: row.competition_created_at,
+    type: row.competition_type, team_count: row.competition_team_count, group_size: row.competition_group_size,
+    status: row.competition_status ?? "active", completed_at: null, created_at: row.competition_created_at,
     updated_at: row.competition_updated_at,
   };
   return publicMatch(row, home, away, competition);
@@ -101,6 +105,12 @@ export async function getJoinedMatch(env: Env, id: string): Promise<JoinedMatchR
   const row = await env.DB.prepare(`${matchSelect} WHERE m.id = ?`).bind(id).first<JoinedMatchRow>();
   if (!row) throw new ApiProblem(404, "match_not_found", "Match not found.");
   return row;
+}
+
+async function getCompetition(env: Env, id: string): Promise<CompetitionRow> {
+  const row = await env.DB.prepare("SELECT * FROM competitions WHERE id = ?").bind(id).first<CompetitionRow>();
+  if (!row) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
+  return { ...row, status: row.status ?? "active" };
 }
 
 function countValue(row: { total: number } | null): number {
@@ -185,7 +195,7 @@ export function registerDomainRoutes(app: App): void {
     const { limit, offset } = parsePagination(url);
     const conditions: string[] = [];
     const values: unknown[] = [];
-    for (const field of ["season", "type"] as const) {
+    for (const field of ["season", "type", "status"] as const) {
       const value = url.searchParams.get(field); if (value) { conditions.push(`${field} = ?`); values.push(value); }
     }
     const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
@@ -198,7 +208,7 @@ export function registerDomainRoutes(app: App): void {
   app.post("/api/v1/competitions", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const now = nowIso();
     const shape = knockoutShape(body, { team_count: null, group_size: null });
-    const competition: CompetitionRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, season: stringField(body, "season", { min: 2, max: 40 })!, type: enumField(body, "type", ["league", "tournament", "friendly"] as const), ...shape, created_at: now, updated_at: now };
+    const competition: CompetitionRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, season: stringField(body, "season", { min: 2, max: 40 })!, type: enumField(body, "type", ["league", "tournament", "friendly"] as const), ...shape, status: "active", completed_at: null, created_at: now, updated_at: now };
     // Groups and an empty bracket are written with the competition itself, so a
     // failure cannot leave a knockout half drawn.
     const statements = [
@@ -229,6 +239,81 @@ export function registerDomainRoutes(app: App): void {
     catch { throw new ApiProblem(409, "competition_exists", "A competition with that name and season already exists."); }
     return c.json(publicCompetition(item));
   });
+  /**
+   * Close a season.
+   *
+   * Nothing is deleted or moved: the table, the results, the statistics and the
+   * bracket stay exactly as they are, and the season simply stops accepting
+   * anything new. A match still being played is refused, because a live match
+   * in a finished season is a contradiction rather than an archive.
+   */
+  app.post("/api/v1/competitions/:id/complete", async (c) => {
+    const admin = await adminUser(c);
+    const competition = await getCompetition(c.env, c.req.param("id"));
+    if (competition.status === "completed") return c.json(publicCompetition(competition));
+    const live = await c.env.DB.prepare("SELECT id FROM matches WHERE competition_id = ? AND status = 'live' LIMIT 1").bind(competition.id).first();
+    if (live) throw new ApiProblem(409, "match_in_progress", "Finish the match still being played before ending this season.");
+    const now = nowIso();
+    const updated: CompetitionRow = { ...competition, status: "completed", completed_at: now, updated_at: now };
+    await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE competitions SET status='completed', completed_at=?, updated_at=? WHERE id=?").bind(now, now, competition.id),
+      recordAudit(c.env, admin, { action: "season_completed", entityType: "competition", entityId: competition.id, matchId: null, summary: `Ended ${competition.name} ${competition.season}.` }),
+    ]);
+    return c.json(publicCompetition(updated));
+  });
+
+  /** Put a closed season back into play, which is the only way to score into it again. */
+  app.post("/api/v1/competitions/:id/reopen", async (c) => {
+    const admin = await adminUser(c);
+    const competition = await getCompetition(c.env, c.req.param("id"));
+    const now = nowIso();
+    const updated: CompetitionRow = { ...competition, status: "active", completed_at: null, updated_at: now };
+    await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE competitions SET status='active', completed_at=NULL, updated_at=? WHERE id=?").bind(now, competition.id),
+      recordAudit(c.env, admin, { action: "season_reopened", entityType: "competition", entityId: competition.id, matchId: null, summary: `Reopened ${competition.name} ${competition.season}.` }),
+    ]);
+    return c.json(publicCompetition(updated));
+  });
+
+  /**
+   * Start the next season of the same competition.
+   *
+   * A new row, sharing the name that ties the seasons together and carrying the
+   * same format. The season it follows is left untouched — its teams, matches
+   * and table still point at it, which is what keeps the history intact.
+   *
+   * `carry_teams` copies the club list across: their names, crests and age
+   * groups, as new rows belonging to the new season. Players are not copied,
+   * because a squad is not the same people a year later.
+   */
+  app.post("/api/v1/competitions/:id/next-season", async (c) => {
+    const admin = await adminUser(c);
+    const previous = await getCompetition(c.env, c.req.param("id"));
+    const body = await jsonObject(c);
+    const season = stringField(body, "season", { min: 2, max: 40 })!;
+    if (season === previous.season) throw new ApiProblem(422, "same_season", "The next season must be named differently from this one.");
+    const carryTeams = booleanField(body, "carry_teams", false);
+    const now = nowIso();
+    const next: CompetitionRow = {
+      ...previous, id: crypto.randomUUID(), season, status: "active", completed_at: null, created_at: now, updated_at: now,
+    };
+    const statements = [
+      c.env.DB.prepare("INSERT INTO competitions (id, name, season, type, team_count, group_size, status, completed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?)").bind(next.id, next.name, next.season, next.type, next.team_count, next.group_size, now, now),
+      ...(next.team_count === null ? [] : generationStatements(c.env, next.id, next.team_count, groupSizeOf(next))),
+    ];
+    if (carryTeams) {
+      const teams = await c.env.DB.prepare("SELECT * FROM teams WHERE competition_id = ? ORDER BY name").bind(previous.id).all<TeamRow>();
+      for (const team of teams.results) {
+        statements.push(c.env.DB.prepare("INSERT INTO teams (id, name, squad_code, age_group, season, is_aimz, is_active, logo_key, badge_style, coach, assistant_coach, competition_id, competition_group_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, NULL, ?, ?)")
+          .bind(crypto.randomUUID(), team.name, team.squad_code, team.age_group, season, team.is_aimz, team.logo_key, team.badge_style, team.coach, team.assistant_coach, next.id, now, now));
+      }
+    }
+    statements.push(recordAudit(c.env, admin, { action: "season_started", entityType: "competition", entityId: next.id, matchId: null, summary: `Started ${next.name} ${season}.` }));
+    try { await c.env.DB.batch(statements); }
+    catch { throw new ApiProblem(409, "competition_exists", "That season of this competition already exists."); }
+    return c.json(publicCompetition(next), 201);
+  });
+
   app.delete("/api/v1/competitions/:id", async (c) => deleteRestricted(c, "competitions", "competition", c.req.param("id")));
 
   app.get("/api/v1/players", async (c) => {
@@ -332,6 +417,9 @@ export function registerDomainRoutes(app: App): void {
   });
   app.post("/api/v1/matches", async (c) => {
     await adminUser(c); const body = await jsonObject(c); const match = await matchInput(c.env, body);
+    // A fixture cannot be added to a season that has already been closed.
+    const season = await getCompetition(c.env, match.competition_id);
+    if (season.status === "completed") throw new ApiProblem(409, "season_completed", `${season.name} ${season.season} has ended. Reopen the season before adding matches.`);
     const now = nowIso();
     const clock = match.status === "live"
       ? { status: "live" as const, phase: "first_half" as const, phase_started_at: now }

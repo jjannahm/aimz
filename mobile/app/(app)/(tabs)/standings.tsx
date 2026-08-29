@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { BracketView } from '@/src/components/BracketView';
 import { Screen } from '@/src/components/Screen';
+import { SeasonPicker } from '@/src/components/SeasonPicker';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { FormStrip } from '@/src/components/FormStrip';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
@@ -18,7 +19,7 @@ import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import type { PressState } from '@/src/lib/pressState';
 import { showMessage } from '@/src/lib/platformAlert';
-import { isKnockout, type BracketSlot, type StandingRow } from '@/src/types/api';
+import { allSeasons, currentSeason, isKnockout, type BracketSlot, type StandingRow } from '@/src/types/api';
 
 /**
  * The only way into a comparison, and there is one of it.
@@ -54,13 +55,26 @@ export default function StandingsScreen() {
   const { user } = useAuth();
   const client = useQueryClient();
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
-  const eligible = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
+  const running = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
+  const seasons = useMemo(() => allSeasons(running), [running]);
+  const [season, setSeason] = useState<string | null>(null);
+  // The season being played, until the reader picks another.
+  const openSeason = season ?? currentSeason(running);
+  // Each season is its own set of competition rows, so choosing a season is
+  // what decides which table, matches, bracket and awards are read — the
+  // filtering is the competition id, not a sieve over everything at once.
+  const eligible = useMemo(() => running.filter((item) => item.season === openSeason), [running, openSeason]);
   const [selected, setSelected] = useState<string | null>(null);
   // Arriving from Manage names the competition to open, so the admin lands on
   // the table they were just setting up rather than on whichever is first.
   const { competition: requested } = useLocalSearchParams<{ competition?: string }>();
+  const [selectedName, setSelectedName] = useState<string | null>(null);
   useEffect(() => { if (requested) setSelected(requested); }, [requested]);
-  const competition = eligible.find((item) => item.id === (selected ?? requested)) ?? eligible[0];
+  const chosen = eligible.find((item) => item.id === (selected ?? requested));
+  // A season change moves to the same competition in that season rather than
+  // dropping the reader back to whichever happens to be first.
+  const byName = selectedName ? eligible.find((item) => item.name === selectedName) : undefined;
+  const competition = chosen ?? byName ?? eligible[0];
   const competitionId = competition?.id;
   const knockout = isKnockout(competition);
   const table = useQuery({ queryKey: ['standings', competitionId], queryFn: () => api.standings(competitionId!), enabled: Boolean(competitionId) });
@@ -105,12 +119,17 @@ export default function StandingsScreen() {
   const open = (teamId: string) => router.push({ pathname: '/team/[id]', params: { id: teamId } });
   const pickedName = table.data?.find((row) => row.team.id === picking?.[0])?.team.name;
 
-  return <Screen title="Standings">
+  const closed = competition?.status === 'completed';
+  return <Screen action={<SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} />} title="Standings">
+    {closed ? <View style={styles.archived}>
+      <Ionicons accessibilityElementsHidden color={colors.textMuted} name="lock-closed-outline" size={14} />
+      <Text style={styles.archivedText}>{competition?.name} {competition?.season} has ended. This table is final.</Text>
+    </View> : null}
     {/* Only worth a switcher when more than one competition is running. */}
     {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.tabs} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
       {eligible.map((item) => {
         const active = item.id === competitionId;
-        return <AnimatedTabPill key={item.id} label={item.name} onPress={() => setSelected(item.id)} selected={active} style={styles.tab} testID={`competition-tab-${item.id}`} />;
+        return <AnimatedTabPill key={item.id} label={item.name} onPress={() => { setSelected(item.id); setSelectedName(item.name); }} selected={active} style={styles.tab} testID={`competition-tab-${item.id}`} />;
       })}
     </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
     <View style={styles.content} testID="standings-content">
@@ -241,6 +260,8 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   compareOn: { backgroundColor: colors.accent, borderColor: colors.accent },
   pickedRow: { borderColor: colors.accent },
   hoveredRow: { backgroundColor: colors.surfaceRaised },
+  archived: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  archivedText: { color: colors.textMuted, flex: 1, fontSize: theme.type.caption },
   compareBar: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   comparePrompt: { color: colors.textSecondary, flex: 1, lineHeight: 20 },
   compareCancel: { minHeight: theme.touch.minimum, justifyContent: 'center' },
