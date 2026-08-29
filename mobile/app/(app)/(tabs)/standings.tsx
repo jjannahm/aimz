@@ -135,7 +135,7 @@ export default function StandingsScreen() {
         {row.rank === 1 ? <View accessibilityElementsHidden style={styles.leaderEdge} /> : null}
         <Text style={[styles.rank, row.rank === 1 && styles.leaderRank]}>{row.rank}</Text>
         <View style={styles.teamCell}>
-          <TeamAvatar badgeStyle={row.team.badge_style} isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={34} />
+          <TeamAvatar badgeStyle={row.team.badge_style} isAimz={row.team.is_aimz} logoUrl={row.team.logo_url} name={row.team.name} size={32} />
           <View style={styles.team}>
             <View style={styles.nameRow}>
               <Text numberOfLines={1} style={[styles.teamName, row.rank === 1 && styles.leaderName]}>{row.team.name}</Text>
@@ -147,7 +147,9 @@ export default function StandingsScreen() {
         </View>
         <Text style={styles.stat}>{row.played}</Text>
         <Text style={styles.stat}>{row.goal_difference > 0 ? '+' : ''}{row.goal_difference}</Text>
-        <Text style={[styles.stat, styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
+        <View style={[styles.pointsBox, row.rank === 1 && styles.leaderPointsBox]}>
+          <Text style={[styles.points, row.rank === 1 && styles.leaderPoints]}>{row.points}</Text>
+        </View>
       </Pressable>)}
     </View>;
   }
@@ -158,10 +160,10 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // whatever it is showing.
   content: { gap: theme.spacing.lg },
   tabBar: { flexGrow: 0 },
-  soleCompetition: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900', paddingHorizontal: theme.spacing.xs },
+  soleCompetition: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.body, paddingHorizontal: theme.spacing.xs },
   groups: { gap: theme.spacing.lg },
   group: { gap: theme.spacing.sm },
-  groupName: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
+  groupName: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.label, letterSpacing: 1.2, textTransform: 'uppercase' },
   tabs: { gap: theme.spacing.sm },
   // AnimatedTabPill draws the pill itself — radius, border and focus-ring
   // reset included — so this only spaces the label inside it.
@@ -169,23 +171,23 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   pressed: { opacity: 0.7 },
   form: { flexDirection: 'row', gap: 3, marginTop: 4 },
   formDot: { alignItems: 'center', borderRadius: 3, height: 14, justifyContent: 'center', width: 14 },
-  formLetter: { color: colors.background, fontSize: 9, fontWeight: '900' },
+  formLetter: { color: colors.background, fontFamily: theme.font.bold, fontSize: 9 },
   h2h: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
   h2hHeader: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
-  h2hTitle: { color: colors.textPrimary, flex: 1, fontWeight: '900' },
+  h2hTitle: { color: colors.textPrimary, flex: 1, fontFamily: theme.font.bold },
   h2hClose: { alignItems: 'center', height: theme.touch.minimum, justifyContent: 'center', width: theme.touch.minimum },
-  h2hRecord: { color: colors.accentSoft, fontVariant: ['tabular-nums'], fontWeight: '900' },
+  h2hRecord: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'] },
   h2hRow: { borderTopColor: colors.border, borderTopWidth: 1, paddingTop: theme.spacing.xs },
-  h2hFixture: { color: colors.textPrimary, fontSize: theme.type.label },
-  h2hDate: { color: colors.textMuted, fontSize: theme.type.caption, marginTop: 2 },
-  h2hEmpty: { color: colors.textMuted, lineHeight: 21 },
-  h2hPrompt: { color: colors.textSecondary, lineHeight: 21 },
-  table: { borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, overflow: 'hidden' },
-  tableHeader: { alignItems: 'center', backgroundColor: colors.surfaceRaised, flexDirection: 'row', gap: theme.spacing.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  headerText: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 0.6 },
-  rankHeader: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', width: 22 },
-  row: { alignItems: 'center', backgroundColor: colors.surface, borderTopColor: colors.border, borderTopWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: 62, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
-  altRow: { backgroundColor: colors.surfaceRaised },
+  h2hFixture: { color: colors.textPrimary, fontFamily: theme.font.regular, fontSize: theme.type.label },
+  h2hDate: { color: colors.textMuted, fontFamily: theme.font.mono, fontSize: theme.type.caption, marginTop: 2 },
+  h2hEmpty: { color: colors.textMuted, fontFamily: theme.font.regular, lineHeight: 21 },
+  h2hPrompt: { color: colors.textSecondary, fontFamily: theme.font.regular, lineHeight: 21 },
+  table: { gap: 6 },
+  tableHeader: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 32, paddingHorizontal: theme.spacing.md },
+  headerText: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, letterSpacing: 0.8 },
+  rankHeader: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, width: 22 },
+  row: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, minHeight: theme.size.listRow, overflow: 'hidden', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs },
+  altRow: { backgroundColor: colors.surface },
   aimzRow: { backgroundColor: colors.highlightedSurface },
   leaderRow: { backgroundColor: colors.leaderSurface },
   // Laid over the row rather than bordering it. A left border is part of the
@@ -194,15 +196,17 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // of the header, which has no border to match. The table clips it to the
   // rounded corner.
   leaderEdge: { backgroundColor: colors.leaderAccent, bottom: 0, left: 0, position: 'absolute', top: 0, width: 4 },
-  rank: { color: colors.textMuted, fontVariant: ['tabular-nums'], fontWeight: '800', width: 22 },
-  leaderRank: { color: colors.leaderAccent, fontWeight: '900' },
+  rank: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], width: 22 },
+  leaderRank: { color: colors.leaderAccent },
   teamCell: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm },
   team: { flex: 1 },
   nameRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
-  teamName: { color: colors.textPrimary, flexShrink: 1, fontWeight: '800' },
-  leaderName: { fontWeight: '900' },
-  leaderPoints: { color: colors.leaderAccent },
-  code: { color: colors.accentSoft, fontSize: theme.type.caption, marginTop: 2 },
-  stat: { color: colors.textSecondary, fontVariant: ['tabular-nums'], textAlign: 'right', width: 38 },
-  points: { color: colors.textPrimary, fontWeight: '900' },
+  teamName: { color: colors.textPrimary, flexShrink: 1, fontFamily: theme.font.semibold },
+  leaderName: { fontFamily: theme.font.bold },
+  code: { color: colors.accentSoft, fontFamily: theme.font.medium, fontSize: theme.type.caption, marginTop: 2 },
+  stat: { color: colors.textSecondary, fontFamily: theme.font.mono, fontVariant: ['tabular-nums'], textAlign: 'right', width: 34 },
+  pointsBox: { alignItems: 'center', backgroundColor: colors.textPrimary, borderRadius: theme.radius.sm, justifyContent: 'center', minHeight: 40, width: 40 },
+  leaderPointsBox: { backgroundColor: colors.accent },
+  points: { color: colors.background, fontFamily: theme.font.monoBold, textAlign: 'center' },
+  leaderPoints: { color: colors.onAccent },
 });

@@ -40,4 +40,4 @@ export default function ResetPasswordScreen() {
     <Link href="/(auth)/login" style={styles.link}>Back to sign in</Link>
   </AuthShell>;
 }
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ form: { gap: theme.spacing.md }, error: { color: colors.errorText }, link: { color: colors.accentSoft, fontWeight: '800', textAlign: 'center' } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ form: { gap: theme.spacing.md }, error: { color: colors.errorText, fontFamily: theme.font.regular }, link: { color: colors.accentSoft, fontFamily: theme.font.bold, textAlign: 'center' } });

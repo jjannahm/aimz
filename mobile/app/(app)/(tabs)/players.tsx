@@ -1,15 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { useMemo, useState, type ReactNode } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useMyChildren } from '@/src/auth/useMyTeam';
-import { GlassBackdrop } from '@/src/components/GlassBackdrop';
+import { FlatCard } from '@/src/components/FlatCard';
 import { Screen } from '@/src/components/Screen';
-import { GlassSwitcher } from '@/src/components/GlassSwitcher';
-import { GlassSurface } from '@/src/components/GlassSurface';
 import { SegmentedControl, type SegmentedOption } from '@/src/components/SegmentedControl';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
@@ -22,22 +20,6 @@ import { mediaUrl } from '@/src/lib/mediaUrl';
 import { noFocusRing, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AwardRank, Player, PlayerAward } from '@/src/types/api';
-
-/**
- * Whether this tab is drawn on glass, which only a player's own account is.
- * An administrator's Players tab is left exactly as it was — the look was asked
- * for on the player side alone, and the two share this screen.
- */
-const GlassContext = createContext(false);
-const useGlass = () => useContext(GlassContext);
-
-/** The list container: a pane of glass for a player, a plain card for an admin. */
-function Surface({ radius, style, children }: { radius: number; style?: StyleProp<ViewStyle>; children: ReactNode }) {
-  const styles = useThemedStyles(stylesheet);
-  return useGlass()
-    ? <GlassSurface radius={radius} style={style}>{children}</GlassSurface>
-    : <View style={[styles.flatSurface, { borderRadius: radius }, style]}>{children}</View>;
-}
 
 type Section = SegmentedOption<string>;
 
@@ -90,9 +72,8 @@ function Chevron() {
 
 function PlayerRow({ player, subtitle, spoken, trailing, last }: { player: Player; subtitle: string; spoken?: string; trailing?: ReactNode; last?: boolean }) {
   const styles = useThemedStyles(stylesheet);
-  const glass = useGlass();
-  return <Pressable accessibilityLabel={`${player.name}, ${spoken ?? subtitle}`} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, glass && styles.rowOnGlass, last && styles.lastRow, pressed && styles.pressed]}>
-    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: mediaUrl(player.photo_url) }} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={48} />}
+  return <Pressable accessibilityLabel={`${player.name}, ${spoken ?? subtitle}`} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, last && styles.lastRow, pressed && styles.pressed]}>
+    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: mediaUrl(player.photo_url) }} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={40} />}
     <View style={styles.copy}><Text style={styles.name}>{player.name}</Text><Text style={styles.position}>{subtitle}</Text></View>
     {trailing}
     <Chevron />
@@ -126,7 +107,6 @@ function useRoster() {
 function TeamsSection() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
-  const glass = useGlass();
   const [openTeam, setOpenTeam] = useState<string | null>(null);
   const roster = useRoster();
 
@@ -136,14 +116,14 @@ function TeamsSection() {
 
   const open = roster.squads.find((squad) => squad.team.id === openTeam);
   if (!open) {
-    return <Surface radius={20} style={styles.list}>{roster.squads.map((item, index) => {
+    return <FlatCard radius={theme.radius.md} style={styles.list}>{roster.squads.map((item, index) => {
       const count = item.players.length;
-      return <Pressable accessibilityLabel={`${item.team.name}, ${count} ${count === 1 ? 'player' : 'players'}`} accessibilityRole="button" key={item.team.id} onPress={() => setOpenTeam(item.team.id)} style={({ pressed }) => [styles.row, glass && styles.rowOnGlass, index === roster.squads.length - 1 && styles.lastRow, pressed && styles.pressed]}>
-        <TeamAvatar badgeStyle={item.team.badge_style} isAimz={item.team.is_aimz} logoUrl={item.team.logo_url} name={item.team.name} size={48} />
+      return <Pressable accessibilityLabel={`${item.team.name}, ${count} ${count === 1 ? 'player' : 'players'}`} accessibilityRole="button" key={item.team.id} onPress={() => setOpenTeam(item.team.id)} style={({ pressed }) => [styles.row, index === roster.squads.length - 1 && styles.lastRow, pressed && styles.pressed]}>
+        <TeamAvatar badgeStyle={item.team.badge_style} isAimz={item.team.is_aimz} logoUrl={item.team.logo_url} name={item.team.name} size={40} />
         <View style={styles.copy}><Text style={styles.name}>{item.team.name}</Text><Text style={styles.position}>{item.team.age_group ? `${item.team.age_group} · ` : ''}{count} {count === 1 ? 'player' : 'players'}</Text></View>
         <Chevron />
       </Pressable>;
-    })}</Surface>;
+    })}</FlatCard>;
   }
 
   return <View style={styles.stack}>
@@ -152,7 +132,7 @@ function TeamsSection() {
       <Text style={styles.backText}>All teams</Text>
     </Pressable>
     <Text accessibilityRole="header" style={styles.squadTitle}>{open.team.name}</Text>
-    {open.players.length ? <Surface radius={20} style={styles.list}>{open.players.map((item, index) => <PlayerRow key={item.id} last={index === open.players.length - 1} player={item} spoken={`${item.position}, number ${item.jersey_number ?? 'not assigned'}`} subtitle={item.position} />)}</Surface> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
+    {open.players.length ? <FlatCard radius={theme.radius.md} style={styles.list}>{open.players.map((item, index) => <PlayerRow key={item.id} last={index === open.players.length - 1} player={item} spoken={`${item.position}, number ${item.jersey_number ?? 'not assigned'}`} subtitle={item.position} />)}</FlatCard> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
   </View>;
 }
 
@@ -175,10 +155,10 @@ function AwardRanking({ award, competitionId }: { award: PlayerAward; competitio
   if (ranking.isLoading) return <LoadingState label={`Loading the ${name} ranking`} />;
   if (ranking.isError) return <ErrorState message={(ranking.error as ApiError).message} onRetry={() => ranking.refetch()} />;
   if (!ranking.data?.length) return <EmptyState body={copy.emptyLeaders} title={`No ${name} ranking yet`} />;
-  return <Surface radius={20} style={styles.list}>{ranking.data.map((item: AwardRank, index: number) => <View key={item.player.id} style={styles.leaderRow}>
+  return <FlatCard radius={theme.radius.md} style={styles.list}>{ranking.data.map((item: AwardRank, index: number) => <View key={item.player.id} style={styles.leaderRow}>
     <Text accessibilityElementsHidden style={styles.rank}>{item.rank}</Text>
     <View style={styles.leaderPlayer}><PlayerRow last={index === ranking.data.length - 1} player={item.player} subtitle={`${item.team.name}, ${record(item)}`} trailing={<Text accessibilityElementsHidden style={styles.tally}>{item.value}</Text>} /></View>
-  </View>)}</Surface>;
+  </View>)}</FlatCard>;
 }
 
 /** One award, opening to reveal everybody it was won against. */
@@ -194,12 +174,12 @@ function AwardRow({ award, competitionId }: { award: PlayerAward; competitionId:
       onPress={() => setExpanded((current) => !current)}
       style={({ pressed }) => pressed && styles.pressed}
     >
-      <Surface radius={16} style={styles.award}>
+      <FlatCard radius={theme.radius.md} style={styles.award}>
       <Ionicons accessibilityElementsHidden color={colors.leaderAccent} name="trophy" size={20} />
       <View style={styles.copy}><Text style={styles.awardLabel}>{award.label}</Text><Text style={styles.name}>{award.player.name}</Text><Text style={styles.position}>{award.team.name}</Text></View>
       <Text accessibilityElementsHidden style={styles.tally}>{award.value}</Text>
       <Ionicons accessibilityElementsHidden color={colors.textMuted} name={expanded ? 'chevron-up' : 'chevron-down'} size={18} />
-      </Surface>
+      </FlatCard>
     </Pressable>
     {expanded ? <AwardRanking award={award} competitionId={competitionId} /> : null}
   </View>;
@@ -237,26 +217,12 @@ export default function PlayersScreen() {
   const sections = useMemo(() => sectionsFor(user?.role !== 'admin' && (user?.role === 'parent' || Boolean(user?.player_id))), [user?.role, user?.player_id]);
   const section = sections.find((item) => item.value === selected) ?? sections[0]!;
 
-  const glass = user?.role !== 'admin';
-  return <GlassContext.Provider value={glass}>
-    <Screen title="Players">
-      {/* Behind everything the tab draws, so its glass has something to look
-        * through: a flat page leaves translucency nothing to show. */}
-      {glass ? <GlassBackdrop /> : null}
-      {glass
-        ? <GlassSwitcher label="Player section" onChange={setSelected} options={sections} value={section.value} />
-        : <SegmentedControl label="Player section" onChange={setSelected} options={sections} value={section.value} />}
+  return <Screen title="Players">
+      <SegmentedControl label="Player section" onChange={setSelected} options={sections} value={section.value} />
       {section.value === 'mine' ? <MyStatsSection /> : section.value === 'awards' ? <AwardsSection /> : <TeamsSection />}
-    </Screen>
-  </GlassContext.Provider>;
+    </Screen>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ chipBar: { flexGrow: 0 }, chips: { gap: theme.spacing.sm }, chip: { ...noFocusRing, alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: colors.accent, borderColor: colors.accent }, chipText: { color: colors.textSecondary, fontWeight: '700' }, chipTextActive: { color: colors.onAccent, fontWeight: '900' }, stack: { gap: theme.spacing.md }, back: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.touch.minimum, paddingRight: theme.spacing.md }, backText: { color: colors.accentSoft, fontWeight: '800' }, squadTitle: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, list: { paddingHorizontal: 0 },
-  // What an administrator's tab keeps: the bordered card it always had.
-  flatSurface: { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1, overflow: 'hidden' }, // No fill of its own: what it sits on is the surface, and the rule between
-  // rows is white rather than `border`, which on glass is the page's own colour.
-  // No fill of its own: what it sits on is the surface it is inside, glass or
-  // card. Only the rule differs — on glass `border` is the page's own colour and
-  // shows as nothing, so it is white there instead.
-  row: { alignItems: 'center', borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 72, padding: theme.spacing.md },
-  rowOnGlass: { borderBottomColor: 'rgba(255, 255, 255, 0.10)', borderBottomWidth: StyleSheet.hairlineWidth }, lastRow: { borderBottomWidth: 0 }, leaderRow: { alignItems: 'center', flexDirection: 'row' }, leaderPlayer: { flex: 1 }, rank: { color: colors.textMuted, fontVariant: ['tabular-nums'], fontWeight: '800', paddingLeft: theme.spacing.md, textAlign: 'center', width: 34 }, tally: { color: colors.accentSoft, fontSize: theme.type.heading, fontVariant: ['tabular-nums'], fontWeight: '900' }, awardList: { gap: theme.spacing.sm }, awardOpen: { gap: theme.spacing.sm }, award: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.md, padding: theme.spacing.md }, awardLabel: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' }, pressed: { opacity: 0.7 }, badge: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 24, height: 48, justifyContent: 'center', width: 48 }, badgeText: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '900' }, number: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 24, height: 48, justifyContent: 'center', width: 48 }, photo: { borderRadius: 24, height: 48, width: 48 }, numberText: { color: colors.accentSoft, fontSize: theme.type.heading, fontWeight: '900' }, copy: { flex: 1 }, name: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '800' }, position: { color: colors.textMuted, marginTop: 3 } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ chipBar: { flexGrow: 0 }, chips: { gap: theme.spacing.sm }, chip: { ...noFocusRing, alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md }, chipActive: { backgroundColor: colors.surfaceRaised }, chipText: { color: colors.textSecondary, fontFamily: theme.font.semibold }, chipTextActive: { color: colors.textPrimary, fontFamily: theme.font.bold }, stack: { gap: theme.spacing.md }, back: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.touch.minimum, paddingRight: theme.spacing.md }, backText: { color: colors.accentSoft, fontFamily: theme.font.bold }, squadTitle: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, list: { overflow: 'hidden', paddingHorizontal: 0 },
+  row: { alignItems: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: theme.spacing.md, minHeight: theme.size.listRow, padding: theme.spacing.md },
+  lastRow: { borderBottomWidth: 0 }, leaderRow: { alignItems: 'center', flexDirection: 'row' }, leaderPlayer: { flex: 1 }, rank: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], paddingLeft: theme.spacing.md, textAlign: 'center', width: 34 }, tally: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontSize: theme.type.heading, fontVariant: ['tabular-nums'] }, awardList: { gap: theme.spacing.sm }, awardOpen: { gap: theme.spacing.sm }, award: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.md, padding: theme.spacing.md }, awardLabel: { color: colors.textMuted, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 0.8, textTransform: 'uppercase' }, pressed: { opacity: 0.7 }, badge: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 }, badgeText: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.label }, number: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 }, photo: { borderRadius: 20, height: 40, width: 40 }, numberText: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.heading }, copy: { flex: 1 }, name: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontSize: theme.type.body }, position: { color: colors.textMuted, fontFamily: theme.font.regular, marginTop: 2 } });

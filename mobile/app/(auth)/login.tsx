@@ -38,4 +38,4 @@ export default function LoginScreen() {
   </AuthShell>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ form: { gap: theme.spacing.md }, error: { backgroundColor: colors.errorSurface, borderRadius: theme.radius.sm, color: colors.errorText, padding: theme.spacing.md }, link: { color: colors.accentSoft, fontWeight: '800', minHeight: theme.touch.minimum, paddingVertical: 12 }, disabledNote: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20 }, footer: { color: colors.textSecondary, textAlign: 'center' } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ form: { gap: theme.spacing.md }, error: { backgroundColor: colors.errorSurface, borderRadius: theme.radius.sm, color: colors.errorText, fontFamily: theme.font.regular, padding: theme.spacing.md }, link: { color: colors.accentSoft, fontFamily: theme.font.bold, minHeight: theme.touch.minimum, paddingVertical: 12 }, disabledNote: { color: colors.textMuted, fontFamily: theme.font.regular, fontSize: theme.type.label, lineHeight: 20 }, footer: { color: colors.textSecondary, fontFamily: theme.font.regular, textAlign: 'center' } });

@@ -39,7 +39,7 @@ export function MatchRow({ match, compact = false }: { match: Match; compact?: b
     >
       <View style={styles.teamSide}>
         <Text numberOfLines={2} style={[styles.teamName, styles.homeName]}>{homeName}</Text>
-        <TeamAvatar badgeStyle={match.home_team?.badge_style} isAimz={match.home_team?.is_aimz} logoUrl={match.home_team?.logo_url} name={homeName} size={compact ? 36 : 40} />
+        <TeamAvatar badgeStyle={match.home_team?.badge_style} isAimz={match.home_team?.is_aimz} logoUrl={match.home_team?.logo_url} name={homeName} size={compact ? 32 : 34} />
       </View>
 
       <View style={styles.center}>
@@ -56,7 +56,7 @@ export function MatchRow({ match, compact = false }: { match: Match; compact?: b
       </View>
 
       <View style={styles.teamSide}>
-        <TeamAvatar badgeStyle={match.away_team?.badge_style} isAimz={match.away_team?.is_aimz} logoUrl={match.away_team?.logo_url} name={awayName} size={compact ? 36 : 40} />
+        <TeamAvatar badgeStyle={match.away_team?.badge_style} isAimz={match.away_team?.is_aimz} logoUrl={match.away_team?.logo_url} name={awayName} size={compact ? 32 : 34} />
         <Text numberOfLines={2} style={styles.teamName}>{awayName}</Text>
       </View>
     </Pressable>
@@ -64,19 +64,19 @@ export function MatchRow({ match, compact = false }: { match: Match; compact?: b
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  row: { alignItems: 'center', flexDirection: 'row', minHeight: 94, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md },
-  compactRow: { minHeight: 78, paddingVertical: theme.spacing.sm },
+  row: { alignItems: 'center', flexDirection: 'row', minHeight: 72, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
+  compactRow: { minHeight: 64, paddingVertical: theme.spacing.xs },
   pressed: { backgroundColor: colors.highlightedSurface, opacity: 0.86 },
   teamSide: { alignItems: 'center', flex: 1, flexDirection: 'row', gap: theme.spacing.sm, minWidth: 0 },
-  teamName: { color: colors.textPrimary, flex: 1, fontSize: theme.type.label, fontWeight: '800', lineHeight: 18 },
+  teamName: { color: colors.textPrimary, flex: 1, fontFamily: theme.font.semibold, fontSize: theme.type.label, lineHeight: 18 },
   homeName: { textAlign: 'right' },
-  center: { alignItems: 'center', justifyContent: 'center', minWidth: 92, paddingHorizontal: 6 },
+  center: { alignItems: 'center', justifyContent: 'center', minWidth: 82, paddingHorizontal: 4 },
   kickoffRow: { alignItems: 'baseline', flexDirection: 'row', gap: 3 },
-  kickoff: { color: colors.textPrimary, fontSize: 18, fontVariant: ['tabular-nums'], fontWeight: '900' },
-  period: { color: colors.textSecondary, fontSize: 10, fontWeight: '800' },
-  secondary: { color: colors.textMuted, fontSize: 10, marginTop: 3 },
+  kickoff: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.body, fontVariant: ['tabular-nums'] },
+  period: { color: colors.textSecondary, fontFamily: theme.font.monoBold, fontSize: theme.type.caption },
+  secondary: { color: colors.textMuted, fontFamily: theme.font.regular, fontSize: theme.type.caption, marginTop: 1 },
   stateBadge: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.pill, flexDirection: 'row', gap: 5, marginTop: 5, minHeight: 24, paddingHorizontal: 8 },
   liveBadge: { backgroundColor: colors.liveSurface, borderColor: colors.live, borderWidth: 1 },
-  stateText: { color: colors.textMuted, fontSize: 10, fontVariant: ['tabular-nums'], fontWeight: '900' },
+  stateText: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, fontVariant: ['tabular-nums'] },
   liveText: { color: colors.liveText },
 });

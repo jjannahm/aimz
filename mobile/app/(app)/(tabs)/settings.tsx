@@ -49,4 +49,4 @@ export default function SettingsScreen() {
     <View style={styles.card}><Text style={styles.heading}>Session</Text><AppButton label="Sign out" onPress={() => signOut()} variant="secondary" /><AppButton label="Delete account" onPress={confirmDelete} variant="danger" /></View>
   </Screen>;
 }
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.lg }, heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, meta: { color: colors.textMuted }, error: { color: colors.errorText } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.size.cardPadding }, heading: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, meta: { color: colors.textMuted, fontFamily: theme.font.regular }, error: { color: colors.errorText, fontFamily: theme.font.regular } });

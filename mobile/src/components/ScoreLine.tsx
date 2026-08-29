@@ -46,13 +46,13 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   number: {
     color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
-    fontWeight: '900',
+    fontFamily: theme.font.monoBold,
   },
   home: { textAlign: 'right' },
   away: { textAlign: 'left' },
   dash: {
     color: colors.textPrimary,
-    fontWeight: '900',
+    fontFamily: theme.font.monoBold,
     paddingHorizontal: theme.spacing.xs,
   },
 });

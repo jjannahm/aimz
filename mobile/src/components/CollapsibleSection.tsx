@@ -52,9 +52,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   section: { gap: theme.spacing.sm },
   header: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: theme.touch.minimum },
   pressed: { opacity: 0.7 },
-  title: { color: colors.textPrimary, flex: 1, fontSize: theme.type.heading, fontWeight: '900' },
+  title: { color: colors.textPrimary, flex: 1, fontFamily: theme.font.bold, fontSize: theme.type.heading },
   groupTitle: { color: colors.textSecondary, fontSize: theme.type.label, letterSpacing: 0.6, textTransform: 'uppercase' },
-  count: { color: colors.accentSoft, fontVariant: ['tabular-nums'], fontWeight: '900' },
+  count: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'] },
   groupCount: { fontSize: theme.type.label },
   content: { gap: theme.spacing.sm },
 });

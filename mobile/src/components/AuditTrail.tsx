@@ -74,10 +74,10 @@ export function AuditTrail({ matchId, limit }: Props) {
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   list: { gap: theme.spacing.sm },
-  count: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800', letterSpacing: 0.5, textTransform: 'uppercase' },
+  count: { color: colors.textMuted, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 0.8, textTransform: 'uppercase' },
   entry: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 64, padding: theme.spacing.md },
   icon: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 18, height: 36, justifyContent: 'center', width: 36 },
   copy: { flex: 1 },
-  summary: { color: colors.textPrimary, fontWeight: '800' },
+  summary: { color: colors.textPrimary, fontFamily: theme.font.semibold },
   meta: { color: colors.textMuted, fontSize: theme.type.label, marginTop: 3 },
 });

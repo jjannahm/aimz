@@ -72,19 +72,19 @@ describe('SegmentedControl', () => {
     }
   });
 
-  it('clips an edge-to-edge active segment inside the one outer border', async () => {
+  it('insets a neutral active segment inside the outer rail', async () => {
     const screen = await render(<SegmentedControl label="Match filter" onChange={jest.fn()} options={options} value="live" />);
     await layoutTabs(screen.getAllByRole('tab'));
     const bar = flattenView(screen.getByLabelText('Match filter'));
     const indicator = flattenView(screen.getByTestId('segmented-control-indicator'));
 
-    expect(bar.padding).toBe(0);
+    expect(bar.padding).toBe(theme.spacing.xs);
     expect(bar.gap).toBe(0);
     expect(bar.overflow).toBe('hidden');
     expect(bar.borderWidth).toBe(1);
     expect(indicator.backgroundColor).toBeDefined();
-    expect(indicator.bottom).toBe(0);
-    expect(indicator.top).toBe(0);
+    expect(indicator.bottom).toBe(theme.spacing.xs);
+    expect(indicator.top).toBe(theme.spacing.xs);
     expect(indicator.width).toBe(100);
   });
 
@@ -142,7 +142,7 @@ describe('SegmentedControl', () => {
 
     expect(new Set(labels.map((style) => style.fontSize)).size).toBe(1);
     expect(new Set(labels.map((style) => style.letterSpacing)).size).toBe(1);
-    expect(labels[0]?.fontWeight).toBe('900');
-    expect(labels[1]?.fontWeight).toBe('800');
+    expect(labels[0]?.fontFamily).toBe(theme.font.bold);
+    expect(labels[1]?.fontFamily).toBe(theme.font.semibold);
   });
 });

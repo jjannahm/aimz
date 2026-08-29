@@ -21,4 +21,4 @@ export default function TrainingDetailScreen() {
   </Screen>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ hero: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.lg }, meta: { color: colors.textSecondary }, notes: { color: colors.textMuted, lineHeight: 22 }, team: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, time: { color: colors.accentSoft, fontSize: theme.type.body, fontWeight: '800' } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ hero: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.sm, padding: theme.size.cardPadding }, meta: { color: colors.textSecondary, fontFamily: theme.font.regular }, notes: { color: colors.textMuted, fontFamily: theme.font.regular, lineHeight: 22 }, team: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, time: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontSize: theme.type.body } });

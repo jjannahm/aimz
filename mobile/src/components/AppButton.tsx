@@ -100,7 +100,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   square: { paddingHorizontal: 0, width: theme.touch.minimum },
   disabled: { opacity: 0.45 },
   pressed: { opacity: 0.72 },
-  label: { fontSize: theme.type.label, fontWeight: '800' },
+  label: { fontFamily: theme.font.bold, fontSize: theme.type.label },
   primaryLabel: { color: colors.onAccent },
   secondaryLabel: { color: colors.textPrimary },
   dangerLabel: { color: colors.onError },

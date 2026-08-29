@@ -78,13 +78,13 @@ function Side({ team, winner, decided }: { team: Team | null; winner: boolean; d
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   rounds: { gap: theme.spacing.lg },
   round: { gap: theme.spacing.sm },
-  roundLabel: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '900', letterSpacing: 0.6, textTransform: 'uppercase' },
+  roundLabel: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.label, letterSpacing: 0.8, textTransform: 'uppercase' },
   ties: { gap: theme.spacing.sm },
   tie: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, overflow: 'hidden' },
   side: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, minHeight: 52, paddingHorizontal: theme.spacing.md },
   divider: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginHorizontal: theme.spacing.md },
-  name: { color: colors.textPrimary, flex: 1, fontWeight: '800' },
-  winnerName: { color: colors.leaderAccent, fontWeight: '900' },
+  name: { color: colors.textPrimary, flex: 1, fontFamily: theme.font.semibold },
+  winnerName: { color: colors.leaderAccent, fontFamily: theme.font.bold },
   pending: { color: colors.textMuted, flex: 1, fontStyle: 'italic' },
   pressed: { opacity: 0.7 },
 });

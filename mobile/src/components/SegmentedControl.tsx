@@ -112,22 +112,24 @@ export function SegmentedControl<Value extends string>({ label, onChange, option
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   bar: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     flexDirection: 'row',
     gap: 0,
     overflow: 'hidden',
-    padding: 0,
+    padding: theme.spacing.xs,
   },
   indicator: {
-    backgroundColor: colors.accent,
+    backgroundColor: colors.surface,
+    borderColor: colors.border,
+    borderWidth: 1,
     borderRadius: theme.radius.pill,
-    bottom: 0,
+    bottom: theme.spacing.xs,
     left: 0,
     position: 'absolute',
-    top: 0,
+    top: theme.spacing.xs,
   },
   segment: {
     ...noFocusRing,
@@ -138,7 +140,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     minWidth: 0,
     paddingHorizontal: 0,
   },
-  label: { color: colors.textSecondary, fontSize: theme.type.body, fontWeight: '800', letterSpacing: -0.4, textAlign: 'center' },
-  labelOn: { color: colors.onAccent, fontWeight: '900' },
+  label: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.label, textAlign: 'center' },
+  labelOn: { color: colors.textPrimary, fontFamily: theme.font.bold },
   pressed: { opacity: 0.7 },
 });

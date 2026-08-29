@@ -57,10 +57,10 @@ export function DialogHost() {
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  backdrop: { alignItems: 'center', backgroundColor: 'rgba(4, 8, 26, 0.72)', flex: 1, justifyContent: 'center', padding: theme.spacing.lg },
-  card: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, maxWidth: 420, padding: theme.spacing.lg, width: '100%' },
-  title: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' },
-  message: { color: colors.textSecondary, fontSize: theme.type.body, lineHeight: 22 },
+  backdrop: { alignItems: 'center', backgroundColor: 'rgba(8, 8, 12, 0.72)', flex: 1, justifyContent: 'center', padding: theme.spacing.lg },
+  card: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, maxWidth: 420, padding: theme.size.cardPadding, width: '100%' },
+  title: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading },
+  message: { color: colors.textSecondary, fontFamily: theme.font.regular, fontSize: theme.type.body, lineHeight: 22 },
   actions: { flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'flex-end' },
   action: { minWidth: 96 },
 });

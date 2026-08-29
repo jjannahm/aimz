@@ -1,5 +1,5 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Animated, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { TabIcon, type TabIconName } from '@/src/components/TabIcon';
@@ -39,18 +39,10 @@ const icons: Record<string, TabIconName> = {
 };
 
 /**
- * What frosts the rail. `backdrop-filter` is a web platform feature — blurring
- * what sits behind a native view takes a module this app does not carry — so the
- * rail is translucent only where there is a blur to back that up, and solid
- * elsewhere rather than see-through and muddled.
- */
-const frosting = Platform.OS === 'web' ? ({ backdropFilter: 'blur(24px) saturate(180%)' } as ViewStyle) : null;
-
-/**
  * What a page has to leave clear at its foot with the dock as low as it goes:
  * the rail, and the gap below it.
  */
-const CLEARANCE = theme.spacing.xxxl + theme.spacing.xl;
+const CLEARANCE = theme.touch.minimum + theme.spacing.sm * 2 + theme.spacing.xs * 2 + theme.spacing.lg;
 
 /**
  * The same, once a home indicator has pushed the dock up the screen. The dock
@@ -110,7 +102,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
         // The lane the marker travels is the rail inside its own padding, and
         // every tab takes an equal share of it.
         onLayout={(event) => setLane(event.nativeEvent.layout.width - theme.spacing.xs * 2)}
-        style={[styles.rail, frosting]}
+        style={styles.rail}
       >
         {width ? (
           <Animated.View
@@ -134,7 +126,7 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
               }}
               style={({ pressed }) => [styles.item, pressed && styles.pressed]}
             >
-              <TabIcon color={focused ? colors.textPrimary : colors.textSecondary} name={icons[route.name] ?? 'matches'} size={24} />
+              <TabIcon color={focused ? colors.onAccent : colors.textSecondary} name={icons[route.name] ?? 'matches'} size={22} />
               <Text numberOfLines={1} style={[styles.label, focused && styles.labelOn]}>{label}</Text>
             </Pressable>
           );
@@ -147,19 +139,21 @@ export function FloatingTabBar({ state, descriptors, navigation }: TabBarProps) 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // Over the page, not below it: the dock is laid on top and the scrollers keep
   // their own bottom padding clear of it.
-  wrap: { bottom: 0, left: 0, paddingHorizontal: theme.spacing.md, position: 'absolute', right: 0 },
+  wrap: { alignItems: 'center', bottom: 0, left: 0, paddingHorizontal: theme.spacing.md, position: 'absolute', right: 0 },
   rail: {
-    backgroundColor: Platform.OS === 'web' ? colors.surfaceGlass : colors.surfaceRaised,
+    backgroundColor: colors.surfaceRaised,
     borderColor: colors.border,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
-    elevation: 12,
+    elevation: 6,
     flexDirection: 'row',
     padding: theme.spacing.xs,
     shadowColor: '#000',
     shadowOffset: { height: 8, width: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    maxWidth: 760,
+    width: '100%',
   },
   // Laid in the lane before the tabs are, so the tabs draw over it. It fills
   // the rail's height, which is what leaves it wrapping name as well as glyph.
@@ -176,14 +170,11 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // sits exactly concentric with it, which is what lets the glow off the ends
   // rather than being clipped back to the rail.
   marker: {
-    backgroundColor: colors.selectionSurface,
-    // A full-strength rim and a halo around a washed middle: what makes the
-    // marker read as the accent rather than as a faintly tinted patch.
-    borderColor: colors.selectionGlow,
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
     borderRadius: theme.radius.pill,
     borderWidth: 1,
     bottom: theme.spacing.xs,
-    boxShadow: `0 0 24px ${colors.selectionGlow}`,
     left: theme.spacing.xs,
     position: 'absolute',
     top: theme.spacing.xs,
@@ -193,7 +184,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   item: { ...noFocusRing, alignItems: 'center', flex: 1, gap: theme.spacing.xs, justifyContent: 'center', minHeight: theme.touch.minimum, paddingVertical: theme.spacing.sm },
   // `textSecondary`, not `textMuted`: whatever scrolls under the glass shows
   // through it, and a muted grey stops carrying against a bright page.
-  label: { color: colors.textSecondary, fontSize: theme.type.caption, fontWeight: '700' },
-  labelOn: { color: colors.textPrimary },
+  label: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.caption },
+  labelOn: { color: colors.onAccent, fontFamily: theme.font.bold },
   pressed: { opacity: 0.7 },
 });

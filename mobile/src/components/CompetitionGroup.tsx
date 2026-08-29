@@ -25,8 +25,8 @@ export function CompetitionGroup({ group }: { group: CompetitionMatchGroup }) {
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, overflow: 'hidden' },
-  header: { alignItems: 'center', flexDirection: 'row', minHeight: 52, paddingHorizontal: theme.spacing.md },
-  name: { color: colors.textPrimary, flex: 1, fontSize: theme.type.label, fontWeight: '800' },
+  header: { alignItems: 'center', flexDirection: 'row', minHeight: 40, paddingHorizontal: theme.spacing.md },
+  name: { color: colors.textSecondary, flex: 1, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 1.2, textTransform: 'uppercase' },
   headerDivider: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth },
   rowDivider: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginHorizontal: theme.spacing.md },
 });

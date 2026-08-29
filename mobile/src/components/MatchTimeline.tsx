@@ -100,7 +100,7 @@ const MARKER = 28;
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   timeline: { gap: theme.spacing.xs },
-  title: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '800', letterSpacing: 0.6, marginBottom: 2, textTransform: 'uppercase' },
+  title: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.label, letterSpacing: 0.8, marginBottom: 2, textTransform: 'uppercase' },
   empty: { backgroundColor: colors.surface, borderRadius: theme.radius.md, color: colors.textMuted, fontSize: theme.type.label, padding: theme.spacing.md, textAlign: 'center' },
 
   // Reaches out past the card's padding, since two columns either side of a
@@ -119,10 +119,10 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   icon: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: 13, borderWidth: 1, height: 26, justifyContent: 'center', width: 26 },
 
   copy: { flexShrink: 1 },
-  lead: { color: colors.textPrimary, fontSize: theme.type.label, fontWeight: '800' },
+  lead: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontSize: theme.type.label },
   sub: { color: colors.textSecondary, fontSize: theme.type.caption, marginTop: 1 },
   kind: { color: colors.textMuted, fontSize: theme.type.caption, marginTop: 1 },
   alignRight: { textAlign: 'right' },
   alignLeft: { textAlign: 'left' },
-  minute: { color: colors.accentSoft, fontSize: theme.type.label, fontVariant: ['tabular-nums'], fontWeight: '900' },
+  minute: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontSize: theme.type.label, fontVariant: ['tabular-nums'] },
 });

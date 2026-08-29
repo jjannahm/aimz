@@ -1,6 +1,6 @@
 import type { PropsWithChildren, ReactNode, RefObject } from 'react';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/src/components/BrandMark';
@@ -20,13 +20,14 @@ type Props = PropsWithChildren<{
 
 export function Screen({ title, action, scroll = true, scrollRef, hideSettings = false, children }: Props) {
   const styles = useThemedStyles(stylesheet);
+  const { width } = useWindowDimensions();
   const [headerHeight, setHeaderHeight] = useState(0);
   const clearance = useDockClearance();
   const content = (
-    <View style={[styles.content, { paddingBottom: clearance }, scroll ? styles.growing : styles.filling]}>
+    <View style={[styles.content, { paddingBottom: clearance, paddingHorizontal: width >= 768 ? theme.size.tabletGutter : theme.size.phoneGutter }, scroll ? styles.growing : styles.filling]}>
       <View onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)} style={styles.header}>
         {/* The brand holds the top-left corner, ahead of the page's own title. */}
-        <BrandMark size={30} />
+        <BrandMark size={28} />
         <View style={styles.heading}>
           <Text accessibilityRole="header" style={styles.title}>{title}</Text>
         </View>
@@ -66,11 +67,11 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // The dock floats over the page rather than taking a strip below it, so the
   // last of the content has to clear where it sits, name included. How much
   // that is depends on the inset, so `useDockClearance` sets it per screen.
-  content: { alignSelf: 'center', gap: theme.spacing.lg, maxWidth: 760, padding: theme.spacing.lg, width: '100%' },
+  content: { alignSelf: 'center', gap: theme.size.sectionGap, maxWidth: 760, paddingVertical: theme.spacing.lg, width: '100%' },
   growing: { flexGrow: 1 },
   filling: { flex: 1 },
   header: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', gap: theme.spacing.md },
   actions: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs },
   heading: { flex: 1 },
-  title: { color: colors.textPrimary, fontSize: theme.type.display, fontWeight: '900', letterSpacing: -0.7 },
+  title: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.display, letterSpacing: -0.7 },
 });

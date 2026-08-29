@@ -63,5 +63,5 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     shadowRadius: 14,
     zIndex: 100,
   },
-  message: { color: colors.textPrimary, flexShrink: 1, fontWeight: '800' },
+  message: { color: colors.textPrimary, flexShrink: 1, fontFamily: theme.font.semibold },
 });

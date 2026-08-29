@@ -30,9 +30,9 @@ export function AuthShell({ title, subtitle, children }: PropsWithChildren<{ tit
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   safe: { backgroundColor: colors.background, flex: 1 }, flex: { flex: 1 },
-  scroll: { alignItems: 'center', flexGrow: 1, justifyContent: 'center', padding: theme.spacing.lg },
-  column: { gap: theme.spacing.xl, maxWidth: 560, width: '100%' },
+  scroll: { alignItems: 'center', flexGrow: 1, justifyContent: 'center', padding: theme.size.phoneGutter },
+  column: { gap: theme.spacing.lg, maxWidth: 520, width: '100%' },
   brand: { alignItems: 'center' },
-  card: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.lg, padding: theme.spacing.lg },
-  heading: { gap: theme.spacing.xs }, title: { color: colors.textPrimary, fontSize: theme.type.display, fontWeight: '900' }, subtitle: { color: colors.textSecondary, fontSize: theme.type.body, lineHeight: 23 },
+  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.lg, padding: theme.size.cardPadding },
+  heading: { gap: theme.spacing.xs }, title: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.display }, subtitle: { color: colors.textSecondary, fontFamily: theme.font.regular, fontSize: theme.type.body, lineHeight: 23 },
 });

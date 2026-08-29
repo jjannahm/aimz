@@ -27,8 +27,8 @@
       "favicon": "./assets/branding/favicon.png",
       "name": "AIMZ Egypt",
       "shortName": "AIMZ",
-      "themeColor": "#020817",
-      "backgroundColor": "#020817",
+      "themeColor": "#08080C",
+      "backgroundColor": "#08080C",
       "display": "standalone"
     },
     "ios": {

@@ -18,11 +18,12 @@
     "api:types": "openapi-typescript ${EXPO_PUBLIC_API_URL:-http://127.0.0.1:8000}/openapi.json -o src/types/generated.ts"
   },
   "dependencies": {
+    "@expo-google-fonts/jetbrains-mono": "^0.4.1",
+    "@expo-google-fonts/space-grotesk": "^0.4.1",
     "@expo/vector-icons": "^15.1.1",
     "@hookform/resolvers": "^5.9.1",
     "@tanstack/react-query": "^5.101.4",
     "expo": "~57.0.18",
-    "expo-blur": "~57.0.2",
     "expo-constants": "~57.0.16",
     "expo-font": "57.0.2",
     "expo-haptics": "^57.0.2",
