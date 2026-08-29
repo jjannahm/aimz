@@ -64,7 +64,7 @@ describe('SettingsScreen header', () => {
     expect(router.replace).toHaveBeenCalledWith('/(app)/(tabs)');
   });
 
-  it('falls back to Match centre when settings was opened directly', async () => {
+  it('falls back to Match Centre when settings was opened directly', async () => {
     jest.mocked(router.canGoBack).mockReturnValue(false);
     const screen = await render(<SettingsScreen />, { wrapper });
 

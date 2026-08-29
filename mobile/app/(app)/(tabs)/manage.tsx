@@ -237,7 +237,7 @@ export default function ManageScreen() {
   // `is_aimz` alone would name the league's clubs too: they carry it so that
   // players, lineups and live scoring work for them, and they have no age group.
   const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
-  if (resource === 'schedule' || resource === 'announcements') return <Screen scrollRef={pageRef} title="Manage academy">
+  if (resource === 'schedule' || resource === 'announcements') return <Screen scrollRef={pageRef} title="Manage Academy">
     {resourceChips}
     <View style={styles.content} testID="manage-content">
       {resource === 'schedule' ? <ScheduleManager teams={aimzTeams} /> : <AnnouncementsManager teams={aimzTeams} />}
@@ -377,7 +377,7 @@ export default function ManageScreen() {
     } catch (error) { showMessage('Upload failed', (error as Error).message); }
   };
 
-  return <Screen scrollRef={pageRef} title="Manage academy">
+  return <Screen scrollRef={pageRef} title="Manage Academy">
     {resourceChips}
     <View style={styles.content} testID="manage-content">
       {!appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}
