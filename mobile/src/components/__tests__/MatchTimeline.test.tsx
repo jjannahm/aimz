@@ -55,12 +55,18 @@ describe('MatchTimeline', () => {
     expect(screen.getByText('Substitution')).toBeTruthy();
   });
 
-  // An own goal sits with the side that put it in, and says who it counted for.
-  it('names the side an own goal counted for', async () => {
+  // An own goal is a goal for the other side, so it is filed under them — while
+  // still naming the side who put it in.
+  it('files an own goal under the team it counted for', async () => {
     const screen = await timeline([event({ type: 'own_goal', team_id: 'away', minute: 45 })]);
 
-    expect(screen.getByLabelText("45' Al Ahly U13, Own goal, Al Ahly U13")).toBeTruthy();
-    expect(screen.getByText('Own goal for AIMZ U13')).toBeTruthy();
+    expect(screen.getByLabelText("45' AIMZ U13, Own goal, Al Ahly U13")).toBeTruthy();
+    expect(screen.getByText('Own goal')).toBeTruthy();
+  });
+
+  it('files our own goal under the opponent, the same way round', async () => {
+    const screen = await timeline([event({ type: 'own_goal', team_id: 'home', minute: 45 })]);
+    expect(screen.getByLabelText("45' Al Ahly U13, Own goal, AIMZ U13")).toBeTruthy();
   });
 
   it('stamps an event with no minute as full time', async () => {

@@ -177,6 +177,8 @@ export interface MatchRow {
   formation: string | null;
   /** Picked by an admin once the match is finished, not voted for. */
   man_of_the_match_player_id: string | null;
+  /** Set when the award went to the other side, who have no player record here. */
+  man_of_the_match_is_opponent: number;
   created_at: string;
   updated_at: string;
 }
@@ -225,6 +227,11 @@ export interface StatRow {
   own_goals: number;
   yellow_cards: number;
   red_cards: number;
+  /** Goalkeeping, and zero for everyone who was not in goal. */
+  goals_conceded: number;
+  penalties_saved: number;
+  /** A flag, not a count: one match, one clean sheet at most. */
+  clean_sheet: number;
   created_at: string;
   updated_at: string;
 }

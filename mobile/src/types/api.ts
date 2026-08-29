@@ -68,7 +68,11 @@ export type BracketSlot = {
 export type BracketRound = { round: number; label: string; slots: BracketSlot[] };
 export type Bracket = { competition_id: string; team_count: number | null; rounds: BracketRound[] };
 export type PlayerMatchStat = Schema['PlayerMatchStatRead'];
-export type PlayerSeasonSummary = Schema['PlayerSeasonSummary'];
+// Not in the generated schema yet; catches up on the next `npm run api:types`.
+// Optional so a response cached before the goalkeeping fields existed still
+// types, and the app reads them through a zero.
+export type GoalkeeperTotals = { goals_conceded?: number; penalties_saved?: number; clean_sheets?: number };
+export type PlayerSeasonSummary = Schema['PlayerSeasonSummary'] & GoalkeeperTotals;
 
 export type Page<T> = { items: T[]; total: number; limit: number; offset: number };
 
@@ -290,6 +294,7 @@ export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'compe
   lineup_format: LineupFormat | null;
   formation: string | null;
   man_of_the_match_player_id: string | null;
+  man_of_the_match_is_opponent?: boolean;
 };
 
 /** (half × halves) + (break × (halves − 1)), plus two extra-time periods when enabled. */

@@ -37,29 +37,36 @@ export function MatchTimeline({ events, homeTeamId, homeTeamName, awayTeamName, 
     {events.length === 0 ? <Text style={styles.empty}>Match events will appear here.</Text> : <View style={styles.thread}>
       {/* One line behind every row, so it reads as a single thread. */}
       <View accessibilityElementsHidden style={styles.threadLine} />
-      {events.map((event) => <TimelineRow
-        awayTeamName={awayTeamName}
-        event={event}
-        homeTeamName={homeTeamName}
-        isHome={event.team_id === homeTeamId}
-        key={event.id}
-        playerNames={playerNames}
-      />)}
+      {events.map((event) => {
+        const byHome = event.team_id === homeTeamId;
+        // An own goal counts for the other side, so it belongs in their column
+        // even though it was their opponent who put it in.
+        const creditedToHome = event.type === 'own_goal' ? !byHome : byHome;
+        return <TimelineRow
+          actorTeamName={byHome ? homeTeamName : awayTeamName}
+          creditedTeamName={creditedToHome ? homeTeamName : awayTeamName}
+          event={event}
+          isHome={creditedToHome}
+          key={event.id}
+          playerNames={playerNames}
+        />;
+      })}
     </View>}
   </View>;
 }
 
-function TimelineRow({ event, isHome, homeTeamName, awayTeamName, playerNames }: {
+function TimelineRow({ event, isHome, actorTeamName, creditedTeamName, playerNames }: {
   event: MatchEvent;
   isHome: boolean;
-  homeTeamName: string;
-  awayTeamName: string;
+  /** The side who made the event happen — for an own goal, the side who conceded. */
+  actorTeamName: string;
+  /** The side the row is filed under, which for an own goal is the other one. */
+  creditedTeamName: string;
   playerNames: Map<string, string>;
 }) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
-  const teamName = isHome ? homeTeamName : awayTeamName;
-  const lead = event.player_id ? playerNames.get(event.player_id) ?? 'Player' : teamName;
+  const lead = event.player_id ? playerNames.get(event.player_id) ?? 'Player' : actorTeamName;
   // A goal owns its assist, so the provider sits under the scorer rather than
   // arriving as a row of its own.
   const assist = event.type === 'goal' && event.secondary_player_id ? playerNames.get(event.secondary_player_id) : null;
@@ -74,11 +81,11 @@ function TimelineRow({ event, isHome, homeTeamName, awayTeamName, playerNames }:
     {cameOff ? <Text style={[styles.sub, align]}>Off: {cameOff}</Text> : null}
     {event.type === 'substitution' && event.substitution_reason ? <Text style={[styles.sub, align]}>Reason: {reasonLabel.get(event.substitution_reason) ?? event.substitution_reason}</Text> : null}
     {event.type === 'penalty_missed' && event.penalty_outcome ? <Text style={[styles.sub, align]}>{outcomeLabel.get(event.penalty_outcome) ?? event.penalty_outcome}</Text> : null}
-    {event.type === 'goal' ? null : <Text style={[styles.kind, align]}>{eventLabel[event.type]}{event.type === 'own_goal' ? ` for ${isHome ? awayTeamName : homeTeamName}` : ''}</Text>}
+    {event.type === 'goal' ? null : <Text style={[styles.kind, align]}>{eventLabel[event.type]}</Text>}
   </View>;
   const stamp = <Text style={styles.minute}>{minute}</Text>;
 
-  return <View accessibilityLabel={`${minute} ${teamName}, ${eventLabel[event.type]}, ${lead}`} style={styles.row}>
+  return <View accessibilityLabel={`${minute} ${creditedTeamName}, ${eventLabel[event.type]}, ${lead}`} style={styles.row}>
     {/* The half belonging to the other side stays empty, which is what puts
       * each event under the team that made it. */}
     <View style={[styles.half, styles.halfHome]}>{isHome ? <>{copy}{stamp}</> : null}</View>

@@ -24,7 +24,7 @@ const match = (over: Partial<Match> = {}): Match => ({
   id: 'match-1', competition_id: 'c-1', home_team_id: 'home', away_team_id: 'away',
   kickoff_datetime: '2026-08-20T18:30:00.000Z', venue: 'AIMZ Arena',
   status: 'live', phase: 'first_half', phase_started_at: '2026-08-20T18:30:00.000Z',
-  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null, man_of_the_match_player_id: null,
+  home_score: 1, away_score: 0, revision: 1, lineup_format: null, formation: null, man_of_the_match_player_id: null, man_of_the_match_is_opponent: false,
   half_length_minutes: 45, num_halves: 2, half_time_break_minutes: 15,
   has_extra_time: false, extra_time_half_length_minutes: 15,
   created_at: '', updated_at: '',
@@ -155,13 +155,13 @@ describe('MatchDetailScreen — richer timeline', () => {
   });
   afterEach(() => jest.clearAllMocks());
 
-  it('says which side an own goal counted for', async () => {
+  it('files an own goal under the side it counted for', async () => {
     jest.mocked(api.live).mockResolvedValue({
-      ...snapshot(), events: [event({ type: 'own_goal', team_id: 'home' })],
+      ...snapshot(), events: [event({ type: 'own_goal', team_id: 'home', minute: 45 })],
     } as LiveMatchSnapshot);
     const screen = await render(<MatchDetailScreen />, { wrapper });
-    // Filed against the home side, so it counted for the away side.
-    expect(await screen.findByText('Own goal for Giza Lions')).toBeTruthy();
+    // Put in by the home side, so it counted for — and sits under — the away side.
+    expect(await screen.findByLabelText("45' Giza Lions, Own goal, AIMZ U18")).toBeTruthy();
   });
 
   it('shows why a player came off', async () => {

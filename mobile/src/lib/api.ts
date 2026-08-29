@@ -235,7 +235,7 @@ export const api = {
   updateMatch: (id: string, payload: Partial<Match>) => request<Match>(`/api/v1/matches/${id}`, { method: 'PATCH', body: payload }),
   setMatchResult: (id: string, home_score: number, away_score: number) => request<Match>(`/api/v1/matches/${id}/result`, { method: 'POST', body: { home_score, away_score } }),
   setMatchPhase: (id: string, action: MatchPhaseAction) => request<Match>(`/api/v1/matches/${id}/phase`, { method: 'POST', body: { action } }),
-  setManOfTheMatch: (id: string, player_id: string | null) => request<Match>(`/api/v1/matches/${id}/man-of-the-match`, { method: 'POST', body: { player_id } }),
+  setManOfTheMatch: (id: string, player_id: string | null, is_opponent = false) => request<Match>(`/api/v1/matches/${id}/man-of-the-match`, { method: 'POST', body: { player_id, is_opponent } }),
   deleteMatch: (id: string) => request<void>(`/api/v1/matches/${id}`, { method: 'DELETE' }),
   live: (id: string) => request<LiveMatchSnapshot>(`/api/v1/matches/${id}/live`),
   createEvent: (matchId: string, payload: Partial<MatchEvent>) => request<MatchEvent>(`/api/v1/matches/${matchId}/events`, { method: 'POST', body: payload }),
