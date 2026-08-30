@@ -2,7 +2,7 @@ import { Redirect } from 'expo-router';
 import React from 'react';
 
 import { useAuth } from '@/src/auth/AuthProvider';
-import { CalendarSubscription } from '@/src/components/CalendarSubscription';
+import { CalendarButton } from '@/src/components/CalendarButton';
 import { AnnouncementsSection } from '@/src/components/myTeam/AnnouncementsSection';
 import { ScheduleSection } from '@/src/components/myTeam/ScheduleSection';
 import { Screen } from '@/src/components/Screen';
@@ -15,9 +15,8 @@ export default function HubScreen() {
   const { user } = useAuth();
   const [selected, setSelected] = React.useState<Section>('schedule');
   if (user?.role === 'admin') return <Redirect href="/(app)/(tabs)" />;
-  return <Screen title="Hub">
+  return <Screen action={<CalendarButton />} title="Hub">
     <SegmentedControl label="Hub section" onChange={setSelected} options={sections} value={selected} />
-    {selected === 'schedule' ? <CalendarSubscription placement="hub" /> : null}
     {selected === 'schedule' ? <ScheduleSection /> : <AnnouncementsSection />}
   </Screen>;
 }

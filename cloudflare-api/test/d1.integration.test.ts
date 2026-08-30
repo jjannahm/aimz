@@ -248,8 +248,24 @@ describe('parent calendar feed', () => {
     await request('/api/v1/training-sessions', json('POST', { team_id: squad.id, venue: 'AIMZ Ground', notes: 'Bring shin pads', duration_minutes: 90, occurrences: [new Date(Date.now() + 86_400_000).toISOString()] }, admin.token));
     await request('/api/v1/admin/registration-invites', json('POST', { label: 'Sami family', code: `SAMI-CAL-${unique}`, kind: 'parent', player_ids: [child.id] }, admin.token));
     const parent = await (await request('/api/v1/auth/register', json('POST', { name: 'Sami Farid', email: `cal-${unique}@aimz.test`, password: 'long-secure-password', invite_code: `SAMI-CAL-${unique}` }))).json<{ access_token: string }>();
-    const feed = await (await request('/api/v1/users/me/calendar', json('GET', undefined, parent.access_token))).json<{ url: string; subscribed_at: string | null }>();
+    // Asking for a feed is a POST now: reading one no longer conjures it.
+    const feed = await (await request('/api/v1/users/me/calendar', json('POST', {}, parent.access_token))).json<{ url: string; subscribed_at: string | null }>();
     return { admin, parent, feed, ours, theirs, stranger, competition, rivals, other, soon, longVenue };
+  }
+
+  /**
+   * A parent with a child but no calendar feed, which is the starting state
+   * every account now has until it asks for one.
+   */
+  async function freshParent(): Promise<{ id: string; token: string }> {
+    const unique = crypto.randomUUID().slice(0, 8);
+    const admin = await seedUser('admin');
+    const squad = await (await request('/api/v1/teams', json('POST', { name: `AIMZ U15 ${unique}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+    const child = await (await request('/api/v1/players', json('POST', { name: `Child ${unique}`, team_id: squad.id, position: 'CM' }, admin.token))).json<{ id: string }>();
+    await request('/api/v1/admin/registration-invites', json('POST', { label: `Family ${unique}`, code: `FRESH-${unique}`, kind: 'parent', player_ids: [child.id] }, admin.token));
+    const registered = await (await request('/api/v1/auth/register', json('POST', { name: `Parent ${unique}`, email: `fresh-${unique}@aimz.test`, password: 'long-secure-password', invite_code: `FRESH-${unique}` }))).json<{ access_token: string }>();
+    const me = await (await request('/api/v1/users/me', json('GET', undefined, registered.access_token))).json<{ id: string }>();
+    return { id: me.id, token: registered.access_token };
   }
 
   /** The feed is fetched the way a calendar client would: no Authorization header. */
@@ -329,6 +345,67 @@ describe('parent calendar feed', () => {
     // An admin has no roster of their own, so there are no fixtures to follow.
     const admin = await seedUser('admin');
     expect((await request('/api/v1/users/me/calendar', json('GET', undefined, admin.token))).status).toBe(403);
+  });
+
+  /**
+   * The one that makes removing mean anything. Reading used to mint a token,
+   * so a deleted row came straight back and the subscription could never
+   * actually be taken away.
+   */
+  it('does not conjure a feed just because someone looked', async () => {
+    const { parent } = await family();
+    const fresh = await freshParent();
+
+    const before = await (await request('/api/v1/users/me/calendar', json('GET', undefined, fresh.token))).json<{ url: string | null; subscribed_at: string | null }>();
+    expect(before).toEqual({ url: null, subscribed_at: null });
+    // Not merely absent from the response — absent from the table.
+    const rows = await testEnv.DB.prepare('SELECT COUNT(*) total FROM calendar_tokens WHERE user_id = ?').bind(fresh.id).first<{ total: number }>();
+    expect(rows?.total).toBe(0);
+
+    // The family that did ask still has theirs.
+    const theirs = await (await request('/api/v1/users/me/calendar', json('GET', undefined, parent.access_token))).json<{ url: string | null }>();
+    expect(theirs.url).toMatch(/\/aimz\.ics$/u);
+  });
+
+  it('hands back the same address when asked for one twice', async () => {
+    const fresh = await freshParent();
+    const first = await request('/api/v1/users/me/calendar', json('POST', {}, fresh.token));
+    expect(first.status).toBe(201);
+    const created = await first.json<{ url: string }>();
+
+    const second = await request('/api/v1/users/me/calendar', json('POST', {}, fresh.token));
+    // Already there, so nothing was created and the address is unchanged: a
+    // second press of the Hub button must not revoke a working subscription.
+    expect(second.status).toBe(200);
+    expect((await second.json<{ url: string }>()).url).toBe(created.url);
+  });
+
+  it('takes the feed away, and leaves the old address answering like a stranger', async () => {
+    const fresh = await freshParent();
+    const created = await (await request('/api/v1/users/me/calendar', json('POST', {}, fresh.token))).json<{ url: string }>();
+    expect((await fetchFeed(created.url)).status).toBe(200);
+
+    expect((await request('/api/v1/users/me/calendar', json('DELETE', undefined, fresh.token))).status).toBe(204);
+
+    // Gone from the account, and gone for anything still polling it.
+    expect(await (await request('/api/v1/users/me/calendar', json('GET', undefined, fresh.token))).json()).toEqual({ url: null, subscribed_at: null });
+    expect((await fetchFeed(created.url)).status).toBe(404);
+
+    // Removing what is already gone is the state the caller asked for.
+    expect((await request('/api/v1/users/me/calendar', json('DELETE', undefined, fresh.token))).status).toBe(204);
+
+    // Setting up again is a different address, so removing is not undo.
+    const again = await (await request('/api/v1/users/me/calendar', json('POST', {}, fresh.token))).json<{ url: string }>();
+    expect(again.url).not.toBe(created.url);
+    expect((await fetchFeed(again.url)).status).toBe(200);
+  });
+
+  it('refuses an admin on every one of them', async () => {
+    const admin = await seedUser('admin');
+    for (const init of [json('GET', undefined, admin.token), json('POST', {}, admin.token), json('DELETE', undefined, admin.token)]) {
+      expect((await request('/api/v1/users/me/calendar', init)).status).toBe(403);
+    }
+    expect((await request('/api/v1/users/me/calendar/regenerate', json('POST', {}, admin.token))).status).toBe(403);
   });
 });
 

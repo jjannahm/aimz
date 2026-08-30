@@ -15,7 +15,7 @@ jest.mock('@/src/auth/AuthProvider', () => ({
 jest.mock('@/src/components/CalendarSubscription', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
-  return { CalendarSubscription: ({ placement }: { placement: string }) => React.createElement(Text, null, `Calendar ${placement}`) };
+  return { CalendarSubscription: () => React.createElement(Text, null, 'Calendar subscription card') };
 });
 let mockParams: { from?: string } = {};
 jest.mock('expo-router', () => ({
@@ -37,7 +37,7 @@ describe('SettingsScreen header', () => {
 
     expect(screen.getByLabelText('Close')).toBeTruthy();
     expect(screen.queryByLabelText('Settings')).toBeNull();
-    expect(screen.getByText('Calendar settings')).toBeTruthy();
+    expect(screen.getByText('Calendar subscription card')).toBeTruthy();
   });
 
   it('returns to the screen that opened settings', async () => {

@@ -6,8 +6,14 @@ type Schema = components['schemas'];
 // the next `npm run api:types`.
 export type UserRole = Schema['UserRole'] | 'parent';
 export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole };
-/** A private, renewable calendar subscription for one player or family. */
-export type CalendarFeed = { url: string; subscribed_at: string | null };
+/**
+ * A private, renewable calendar subscription for one player or family.
+ *
+ * `url` is null when there is no feed: reading no longer mints one, so an
+ * account that has never asked — or has removed the one it had — genuinely has
+ * no address to hand out.
+ */
+export type CalendarFeed = { url: string | null; subscribed_at: string | null };
 /** What redeeming an invitation creates: one player, or a parent of several. */
 export type InviteKind = 'player' | 'parent';
 /** A roster player an account speaks for: itself for a player, a child for a parent. */

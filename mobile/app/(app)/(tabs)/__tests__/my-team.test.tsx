@@ -4,10 +4,11 @@ import HubScreen from '@/app/(app)/(tabs)/my-team';
 
 jest.mock('expo-router', () => ({ Redirect: 'Redirect', router: { push: jest.fn() }, usePathname: () => '/(app)/(tabs)/my-team' }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'player', player_id: 'player-1' } }) }));
-jest.mock('@/src/components/CalendarSubscription', () => {
+// The Hub reaches the calendar through a header button now, not a card.
+jest.mock('@/src/components/CalendarButton', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
-  return { CalendarSubscription: ({ placement }: { placement: string }) => React.createElement(Text, null, `Calendar ${placement}`) };
+  return { CalendarButton: () => React.createElement(Text, null, 'Calendar button') };
 });
 jest.mock('@/src/components/myTeam/ScheduleSection', () => {
   const React = jest.requireActual('react');
@@ -25,12 +26,14 @@ describe('HubScreen navigation', () => {
     const screen = await render(<HubScreen />);
 
     expect(screen.getByText('Schedule content')).toBeTruthy();
-    expect(screen.getByText('Calendar hub')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Schedule' }).props.accessibilityState.selected).toBe(true);
+    // The calendar lives in the header now, so it belongs to the screen rather
+    // than to whichever section happens to be open.
+    expect(screen.getByText('Calendar button')).toBeTruthy();
 
-    fireEvent.press(screen.getByRole('tab', { name: 'Announcements' }));
+    await fireEvent.press(screen.getByRole('tab', { name: 'Announcements' }));
     await waitFor(() => expect(screen.getByText('Announcement content')).toBeTruthy());
-    expect(screen.queryByText('Calendar hub')).toBeNull();
+    expect(screen.getByText('Calendar button')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Announcements' }).props.accessibilityState.selected).toBe(true);
   });
 });

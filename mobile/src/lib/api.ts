@@ -214,7 +214,10 @@ export const api = {
   me: () => request<User>('/api/v1/users/me'),
   updateMe: (name: string) => request<User>('/api/v1/users/me', { method: 'PATCH', body: { name } }),
   calendarFeed: () => request<CalendarFeed>('/api/v1/users/me/calendar'),
+  /** Asks for a feed, and returns the existing one if there already is one. */
+  createCalendarFeed: () => request<CalendarFeed>('/api/v1/users/me/calendar', { method: 'POST', body: {} }),
   regenerateCalendarFeed: () => request<CalendarFeed>('/api/v1/users/me/calendar/regenerate', { method: 'POST', body: {} }),
+  removeCalendarFeed: () => request<void>('/api/v1/users/me/calendar', { method: 'DELETE' }),
   changePassword: (current_password: string, new_password: string) =>
     request<{ message: string }>('/api/v1/auth/password/change', {
       method: 'POST', body: { current_password, new_password },
