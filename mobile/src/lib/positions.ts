@@ -8,29 +8,33 @@
 
 export type PositionLine = 'GK' | 'DEF' | 'MID' | 'FWD';
 
+/** Which side of its line a position stands on, looking up the pitch. */
+export type PositionFlank = 'left' | 'centre' | 'right';
+
 export interface PositionDefinition {
   code: string;
   name: string;
   line: PositionLine;
+  flank: PositionFlank;
 }
 
 export const POSITIONS: readonly PositionDefinition[] = [
-  { code: 'GK', name: 'Goalkeeper', line: 'GK' },
-  { code: 'CB', name: 'Centre-back', line: 'DEF' },
-  { code: 'LB', name: 'Left-back', line: 'DEF' },
-  { code: 'RB', name: 'Right-back', line: 'DEF' },
-  { code: 'LWB', name: 'Left wing-back', line: 'DEF' },
-  { code: 'RWB', name: 'Right wing-back', line: 'DEF' },
-  { code: 'DM', name: 'Defensive midfield', line: 'MID' },
-  { code: 'CM', name: 'Centre midfield', line: 'MID' },
-  { code: 'AM', name: 'Attacking midfield', line: 'MID' },
-  { code: 'LM', name: 'Left midfield', line: 'MID' },
-  { code: 'RM', name: 'Right midfield', line: 'MID' },
-  { code: 'LW', name: 'Left wing', line: 'FWD' },
-  { code: 'RW', name: 'Right wing', line: 'FWD' },
-  { code: 'SS', name: 'Second striker', line: 'FWD' },
-  { code: 'CF', name: 'Centre-forward', line: 'FWD' },
-  { code: 'ST', name: 'Striker', line: 'FWD' },
+  { code: 'GK', name: 'Goalkeeper', line: 'GK', flank: 'centre' },
+  { code: 'CB', name: 'Centre-back', line: 'DEF', flank: 'centre' },
+  { code: 'LB', name: 'Left-back', line: 'DEF', flank: 'left' },
+  { code: 'RB', name: 'Right-back', line: 'DEF', flank: 'right' },
+  { code: 'LWB', name: 'Left wing-back', line: 'DEF', flank: 'left' },
+  { code: 'RWB', name: 'Right wing-back', line: 'DEF', flank: 'right' },
+  { code: 'DM', name: 'Defensive midfield', line: 'MID', flank: 'centre' },
+  { code: 'CM', name: 'Centre midfield', line: 'MID', flank: 'centre' },
+  { code: 'AM', name: 'Attacking midfield', line: 'MID', flank: 'centre' },
+  { code: 'LM', name: 'Left midfield', line: 'MID', flank: 'left' },
+  { code: 'RM', name: 'Right midfield', line: 'MID', flank: 'right' },
+  { code: 'LW', name: 'Left wing', line: 'FWD', flank: 'left' },
+  { code: 'RW', name: 'Right wing', line: 'FWD', flank: 'right' },
+  { code: 'SS', name: 'Second striker', line: 'FWD', flank: 'centre' },
+  { code: 'CF', name: 'Centre-forward', line: 'FWD', flank: 'centre' },
+  { code: 'ST', name: 'Striker', line: 'FWD', flank: 'centre' },
 ];
 
 /** The goalkeeper's code, named so nothing spells it twice. */
@@ -105,5 +109,26 @@ const LINE_ORDER: Record<PositionLine, number> = { GK: 0, DEF: 1, MID: 2, FWD: 3
 export function byPosition<T extends { name: string; position: string | null }>(players: readonly T[]): T[] {
   return [...players].sort((a, b) =>
     LINE_ORDER[lineFor(a.position)] - LINE_ORDER[lineFor(b.position)]
+    || a.name.localeCompare(b.name));
+}
+
+/** Left to right, looking up the pitch. */
+const FLANK_ORDER: Record<PositionFlank, number> = { left: 0, centre: 1, right: 2 };
+
+/** Which side of its line a position stands on; centre for anything unknown. */
+export function flankFor(code: string | null | undefined): PositionFlank {
+  return (code ? BY_CODE.get(code)?.flank : undefined) ?? 'centre';
+}
+
+/**
+ * One row of the pitch, in the order it is stood in: left, centre, then right.
+ *
+ * A right-back belongs on the right of the defence, not wherever the squad list
+ * happened to put them. Names break a tie, so two centre-backs keep a stable
+ * order between renders rather than swapping about.
+ */
+export function acrossThePitch<T extends { name: string; position: string }>(players: readonly T[]): T[] {
+  return [...players].sort((a, b) =>
+    FLANK_ORDER[flankFor(a.position)] - FLANK_ORDER[flankFor(b.position)]
     || a.name.localeCompare(b.name));
 }

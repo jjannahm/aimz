@@ -13,7 +13,8 @@ import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
-import { byPosition } from '@/src/lib/positions';
+import { canStart, toggleStarter, type SquadShape } from '@/src/lib/lineupSelection';
+import { byPosition, isGoalkeeper } from '@/src/lib/positions';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { FORMATIONS, LINEUP_FORMATS, type LineupFormat, type Player } from '@/src/types/api';
@@ -138,17 +139,28 @@ export default function LineupScreen() {
   const bench = roster.filter((player) => !starters.has(player.id));
   const selected = starters.size;
   const complete = format !== null && selected === format;
+  const byId = new Map(roster.map((player) => [player.id, player]));
+  const keeperId = roster.find((player) => isGoalkeeper(player.position) && starters.has(player.id))?.id ?? null;
+  // A squad with nobody who can go in goal is not held back for the want of
+  // somebody who is not there.
+  const shape: SquadShape = {
+    format,
+    positionOf: (playerId) => byId.get(playerId)?.position,
+    hasKeepers: roster.some((player) => isGoalkeeper(player.position)),
+  };
+  const needsKeeper = shape.hasKeepers && keeperId === null;
   // The formation is what draws the pitch, so a lineup is not finished without it.
-  const ready = complete && formation !== null;
+  const ready = complete && formation !== null && !needsKeeper;
   const locked = Boolean(match && match.status !== 'scheduled');
 
-  const toggle = (playerId: string) => setStarters((current) => {
-    const next = new Set(current);
-    if (next.has(playerId)) { next.delete(playerId); setCaptain((current) => (current === playerId ? null : current)); }
-    else if (format === null || next.size < format) next.add(playerId);
-    else return current; // Full: deselect someone first rather than silently swapping.
-    return next;
-  });
+  const toggle = (playerId: string) => setStarters((current) => toggleStarter(current, playerId, shape));
+
+  // The captain has to be on the pitch, so one who leaves the starters stops
+  // being captain. Done here rather than inside the toggle, because a state
+  // update belongs in an effect and not in another update's reducer.
+  useEffect(() => {
+    if (captain && !starters.has(captain)) setCaptain(null);
+  }, [captain, starters]);
 
   return <Screen action={<CloseButton />} title="Set lineup">
     {matchQuery.isLoading || playersQuery.isLoading ? <LoadingState label="Loading squad" />
@@ -172,7 +184,9 @@ export default function LineupScreen() {
           <Text style={styles.groupTitle}>Starting {format}</Text>
           {roster.map((player) => {
             const isStarter = starters.has(player.id);
-            const full = !isStarter && selected >= format;
+            // Another keeper is never out of reach: it takes the standing
+            // keeper's place rather than needing a slot of its own.
+            const full = !canStart(starters, player.id, shape);
             return <Pressable accessibilityLabel={`${player.name}, ${player.position}`} accessibilityRole="checkbox" accessibilityState={{ checked: isStarter, disabled: full }} key={player.id} onPress={() => toggle(player.id)} style={({ pressed }) => [styles.row, isStarter && styles.rowActive, full && styles.rowFull, pressed && styles.pressed]}>
               <View style={[styles.check, isStarter && styles.checkOn]}>{isStarter ? <Ionicons color={colors.onAccent} name="checkmark" size={16} /> : null}</View>
               <View style={styles.copy}>
@@ -186,7 +200,7 @@ export default function LineupScreen() {
           {complete ? <ChoiceField label="Formation" onChange={setFormation} options={FORMATIONS[format].map((shape) => ({ label: shape, value: shape }))} placeholder={`Shapes for ${format - 1} outfield players`} value={formation ?? undefined} /> : null}
           {complete ? <ChoiceField label="Captain (optional)" onChange={(value) => setCaptain(value || null)} options={[{ label: 'No captain', value: '' }, ...roster.filter((player) => starters.has(player.id)).map((player) => ({ label: `#${player.jersey_number ?? '–'} ${player.name}`, value: player.id }))]} placeholder="Choose a captain" value={captain ?? ''} /> : null}
           <AppButton disabled={!ready || save.isPending} label={save.isPending ? 'Saving…' : 'Save lineup'} onPress={() => save.mutate()} />
-          {!complete ? <Text style={styles.hint}>Select exactly {format} starters to save.</Text> : !formation ? <Text style={styles.hint}>Choose a formation to save.</Text> : null}
+          {!complete ? <Text style={styles.hint}>Select exactly {format} starters to save.{needsKeeper ? ' One of them has to be a goalkeeper.' : ''}</Text> : needsKeeper ? <Text style={styles.hint}>Pick a goalkeeper to save.</Text> : !formation ? <Text style={styles.hint}>Choose a formation to save.</Text> : null}
         </>}
       </>}
   </Screen>;

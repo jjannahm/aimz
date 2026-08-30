@@ -1,7 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { JerseyIcon } from '@/src/components/JerseyIcon';
-import { lineFor, type PositionLine } from '@/src/lib/positions';
+import { acrossThePitch, lineFor, type PositionLine } from '@/src/lib/positions';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { formationRows, type Player } from '@/src/types/api';
@@ -45,7 +45,9 @@ export function arrangeByFormation(starters: Player[], formation: string): { kee
     index += count;
   }
   if (index < outfield.length && rows.length) rows[rows.length - 1]!.push(...outfield.slice(index));
-  return { keeper: keeper.slice(0, 1), rows };
+  // Each line is then stood in across the pitch, so a right-back is on the
+  // right of the defence rather than wherever the squad list left them.
+  return { keeper: keeper.slice(0, 1), rows: rows.map((row) => acrossThePitch(row)) };
 }
 
 /**
