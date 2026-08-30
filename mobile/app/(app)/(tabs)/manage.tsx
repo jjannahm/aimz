@@ -20,6 +20,7 @@ import { FamilyIcon } from '@/src/components/FamilyIcon';
 import { FormField } from '@/src/components/FormField';
 import { PlayerPickerField } from '@/src/components/PlayerPickerField';
 import { PositionField } from '@/src/components/PositionField';
+import { AccountsSection } from '@/src/components/manage/AccountsSection';
 import { BulkPlayerImport } from '@/src/components/manage/BulkPlayerImport';
 import { AnnouncementsManager, ScheduleManager } from '@/src/components/manage/HubManagers';
 import { Screen } from '@/src/components/Screen';
@@ -397,6 +398,10 @@ export default function ManageScreen() {
       {query.isError ? <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} /> : <CollapsibleSection count={items.length} search={{ label: `Search ${listLabel}`, onChange: setSearch, placeholder: `Search ${listLabel}…`, resultCount: shown.length, value: search }} title={`Current ${listLabel}`}>
       {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : shown.length === 0 ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shown.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text></View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'kickoff_datetime' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={!item.home_team?.is_aimz && !item.away_team?.is_aimz ? (item.status === 'finished' ? 'Edit final score' : 'Enter final score') : (item.status === 'scheduled' ? 'Start' : 'Score')} onPress={() => router.push({ pathname: !item.home_team?.is_aimz && !item.away_team?.is_aimz ? '/result/[id]' : '/live/[id]', params: { id: item.id } })} variant="secondary" /> : null}{resource === 'players' ? <AppButton compact icon={<FamilyIcon color={colors.textPrimary} />} iconOnly label="Private roster details" onPress={() => router.push({ pathname: '/roster/[id]', params: { id: item.id } })} variant="secondary" /> : null}{appConfig.enableMedia && resource === 'teams' ? <AppButton compact icon="camera" iconOnly label="Photo" onPress={() => uploadPhoto(item as Team, 'team')} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => remove(item)} variant="danger" /></View></View>)}</View>}
       </CollapsibleSection>}
+      {/* An invitation says who an account will be; the accounts below say who
+          took one up, and are where a link made against the wrong player is put
+          right. */}
+      {resource === 'invites' ? <AccountsSection players={players.data?.items ?? []} /> : null}
     </View>
   </Screen>;
 }
