@@ -81,6 +81,12 @@ describe('theme palettes', () => {
       expect(contrast(colors.onAccent, colors.accent)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(colors.accentSoft, colors.background)).toBeGreaterThanOrEqual(4.5);
       expect(contrast(colors.leaderAccent, colors.leaderSurface)).toBeGreaterThanOrEqual(4.5);
+      // An availability answer is read as a colour, so each status has to work
+      // both as a label on a card and as a fill under `onStatus`.
+      for (const status of [colors.live, colors.warning, colors.error]) {
+        expect(contrast(status, colors.surface)).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(colors.onStatus, status)).toBeGreaterThanOrEqual(4.5);
+      }
     }
   });
 });

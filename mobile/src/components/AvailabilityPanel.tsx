@@ -10,13 +10,20 @@ import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
-import { useThemedStyles } from '@/src/theme/ThemeProvider';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AvailabilityStatus, TrainingSession } from '@/src/types/api';
 
-const options: { label: string; value: AvailabilityStatus }[] = [{ label: 'Going', value: 'going' }, { label: 'Maybe', value: 'maybe' }, { label: 'Not going', value: 'not_going' }];
+/**
+ * Each answer carries its own colour: green for going, amber for maybe, red for
+ * not going. The tone names a palette entry rather than a hex, so a pill and the
+ * tally heading underneath it are the same colour by construction, in both
+ * modes, and neither can drift from the other.
+ */
+const options: { label: string; tone: 'live' | 'warning' | 'error'; value: AvailabilityStatus }[] = [{ label: 'Going', tone: 'live', value: 'going' }, { label: 'Maybe', tone: 'warning', value: 'maybe' }, { label: 'Not going', tone: 'error', value: 'not_going' }];
 
 export function AvailabilityPanel({ session }: { session: TrainingSession }) {
   const styles = useThemedStyles(stylesheet);
+  const colors = useColors();
   const { user } = useAuth();
   const client = useQueryClient();
   const availability = useQuery({ queryKey: ['training-availability', session.id], queryFn: () => api.trainingAvailability(session.id) });
@@ -34,9 +41,14 @@ export function AvailabilityPanel({ session }: { session: TrainingSession }) {
     <Text style={styles.heading}>Availability</Text>
     {user?.role === 'admin' ? <ChoiceField label="Player" onChange={setAdminPlayer} options={(players.data?.items ?? []).map((player) => ({ label: player.name, value: player.id }))} placeholder="Choose a player" value={adminPlayer} /> : null}
     <FormField label="Note (optional)" onChangeText={setNote} value={note} />
-    <View accessibilityRole="radiogroup" style={styles.segments}>{options.map((option) => <Pressable accessibilityRole="radio" accessibilityState={{ checked: mine?.status === option.value, disabled: !target || save.isPending }} disabled={!target || save.isPending} key={option.value} onPress={() => save.mutate(option.value)} style={({ pressed }) => [styles.segment, mine?.status === option.value && styles.active, pressed && styles.pressed]}><Text style={[styles.segmentText, mine?.status === option.value && styles.activeText]}>{option.label}</Text></Pressable>)}</View>
-    {options.map((option) => { const rows = availability.data?.filter((row) => row.status === option.value) ?? []; return <View key={option.value} style={styles.group}><Text style={styles.groupTitle}>{option.label} · {rows.length}</Text>{rows.length ? rows.map((row) => <Text key={row.id} style={styles.person}>{row.player.name}{row.note ? ` — ${row.note}` : ''}</Text>) : <Text style={styles.empty}>No responses</Text>}</View>; })}
+    <View accessibilityRole="radiogroup" style={styles.segments}>{options.map((option) => { const tone = colors[option.tone]; const chosen = mine?.status === option.value; return <Pressable accessibilityRole="radio" accessibilityState={{ checked: chosen, disabled: !target || save.isPending }} disabled={!target || save.isPending} key={option.value} onPress={() => save.mutate(option.value)} style={({ pressed }) => [styles.segment, { borderColor: tone }, chosen && { backgroundColor: tone }, pressed && styles.pressed]}><Text style={[styles.segmentText, { color: chosen ? colors.onStatus : tone }, chosen && styles.chosenText]}>{option.label}</Text></Pressable>; })}</View>
+    {options.map((option) => { const rows = availability.data?.filter((row) => row.status === option.value) ?? []; return <View key={option.value} style={styles.group}><Text style={[styles.groupTitle, { color: colors[option.tone] }]}>{option.label} · {rows.length}</Text>{rows.length ? rows.map((row) => <Text key={row.id} style={styles.person}>{row.player.name}{row.note ? ` — ${row.note}` : ''}</Text>) : <Text style={styles.empty}>No responses</Text>}</View>; })}
   </View>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ active: { backgroundColor: colors.accent, borderColor: colors.accent }, activeText: { color: colors.onAccent, fontWeight: '900' }, empty: { color: colors.textMuted }, group: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, groupTitle: { color: colors.textPrimary, fontWeight: '900' }, heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, panel: { gap: theme.spacing.sm }, person: { color: colors.textSecondary }, pressed: { opacity: 0.7 }, segment: { alignItems: 'center', borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.xs }, segmentText: { color: colors.textSecondary, fontSize: theme.type.caption, fontWeight: '800', textAlign: 'center' }, segments: { flexDirection: 'row', gap: theme.spacing.xs } });
+// The pill borders, the pill labels and the group titles are all coloured from
+// the option's own tone, so they are set where the option is in hand rather
+// than here. An unanswered pill is filled in `surface` rather than left clear:
+// light mode's background is a saturated blue that a dark green or red label
+// cannot hold contrast against, and the fill also matches the tally cards.
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ chosenText: { fontWeight: '900' }, empty: { color: colors.textMuted }, group: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, groupTitle: { fontWeight: '900' }, heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' }, panel: { gap: theme.spacing.sm }, person: { color: colors.textSecondary }, pressed: { opacity: 0.7 }, segment: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: theme.radius.pill, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.xs }, segmentText: { fontSize: theme.type.caption, fontWeight: '800', textAlign: 'center' }, segments: { flexDirection: 'row', gap: theme.spacing.xs } });
