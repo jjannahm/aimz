@@ -149,7 +149,15 @@ export type PlayerHonours = { player: Player; honours: Honour[] };
 
 export type Page<T> = { items: T[]; total: number; limit: number; offset: number };
 
-export type AdminAccount = User & { player: Player | null; team: Team | null };
+/**
+ * One registered account, as an administrator sees it.
+ *
+ * `player` and `team` come from `users.player_id`, which only a player account
+ * uses. A parent reaches the roster through `children` instead, and reads as
+ * `player: null` however many children they speak for — so the two must be told
+ * apart before an empty `player` is called a broken link.
+ */
+export type AdminAccount = User & { player: Player | null; team: Team | null; children: LinkedChild[] };
 
 export type TrainingSession = {
   id: string;

@@ -177,6 +177,18 @@ describe('parent accounts', () => {
     expect(father.status).toBe(201);
     const his = await (await request('/api/v1/users/me/children', json('GET', undefined, (await father.json<{ access_token: string }>()).access_token))).json<{ items: { name: string }[] }>();
     expect(his.items.map((child) => child.name)).toEqual(['Salma Nabil']);
+
+    // The accounts list joins on users.player_id, which is null for every
+    // parent. Without the children beside it an administrator reads a linked
+    // family as unlinked, and "fixes" it by writing a field parents never read.
+    const accounts = await (await request('/api/v1/admin/users?limit=100', json('GET', undefined, admin.token))).json<{ items: { id: string; name: string; player: unknown; children: { name: string; team_name: string }[] }[] }>();
+    const hala = accounts.items.find((account) => account.name === 'Hala Nabil');
+    expect(hala).toMatchObject({ player: null });
+    expect(hala?.children.map((child) => child.name)).toEqual(['Mariam Adel', 'Salma Nabil']);
+    expect(hala?.children.map((child) => child.team_name)).toEqual(['AIMZ U13', 'AIMZ U9']);
+    // An administrator speaks for nobody, so the field is present and empty
+    // rather than missing.
+    expect(accounts.items.find((account) => account.id === admin.id)?.children).toEqual([]);
   });
 });
 
