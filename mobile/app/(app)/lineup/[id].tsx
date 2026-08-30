@@ -13,8 +13,10 @@ import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showMessage } from '@/src/lib/platformAlert';
-import { canStart, toggleStarter, type SquadShape } from '@/src/lib/lineupSelection';
-import { byPosition, isGoalkeeper } from '@/src/lib/positions';
+import { LineupPitch } from '@/src/components/lineup/LineupPitch';
+import { SlotPicker } from '@/src/components/lineup/SlotPicker';
+import { placeOnSlots, slotsFor, type FormationSlot } from '@/src/lib/formationSlots';
+import { byPosition } from '@/src/lib/positions';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import { FORMATIONS, LINEUP_FORMATS, type LineupFormat, type Player } from '@/src/types/api';
@@ -28,7 +30,9 @@ export default function LineupScreen() {
   const matchQuery = useQuery({ queryKey: ['live-match', id], queryFn: () => api.live(id), enabled: Boolean(id) });
   const playersQuery = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
   const [format, setFormat] = useState<LineupFormat | null>(null);
-  const [starters, setStarters] = useState<Set<string>>(new Set());
+  /** Who stands in each place, by slot id. */
+  const [placed, setPlaced] = useState<Record<string, string>>({});
+  const [openSlot, setOpenSlot] = useState<FormationSlot | null>(null);
   const [formation, setFormation] = useState<string | null>(null);
   const [captain, setCaptain] = useState<string | null>(null);
   const match = matchQuery.data?.match;
@@ -75,8 +79,10 @@ export default function LineupScreen() {
         .map((entry) => entry.player_id);
       const nextFormat = (snapshot.match.lineup_format as LineupFormat | null) ?? format;
       if (nextFormat) setFormat(nextFormat);
-      setFormation(nextFormat === snapshot.match.lineup_format ? snapshot.match.formation : null);
-      setStarters(new Set(nextFormat ? eligible.slice(0, nextFormat) : eligible));
+      const nextShape = (nextFormat === snapshot.match.lineup_format ? snapshot.match.formation : null)
+        ?? (nextFormat ? FORMATIONS[nextFormat][0] ?? null : null);
+      setFormation(nextShape);
+      setPlaced(placeOnSlots(slotsFor(nextShape), snapshot.lineup.filter((entry) => entry.is_starter && eligible.includes(entry.player_id))));
       const previousCaptain = snapshot.lineup.find((entry) => entry.is_captain)?.player_id ?? null;
       setCaptain(previousCaptain && eligible.includes(previousCaptain) ? previousCaptain : null);
       const dropped = snapshot.lineup.filter((entry) => entry.is_starter).length - eligible.length;
@@ -93,11 +99,15 @@ export default function LineupScreen() {
   // Pre-fill from whatever is already saved so an edit does not start blank.
   useEffect(() => {
     if (!matchQuery.data || format !== null) return;
-    setFormat((match?.lineup_format as LineupFormat | null) ?? null);
-    setFormation(match?.formation ?? null);
+    const savedFormat = (match?.lineup_format as LineupFormat | null) ?? null;
+    setFormat(savedFormat);
+    // A format with no shape stored yet opens on the first one it offers, so
+    // there are places on the pitch to fill from the outset.
+    const shape = match?.formation ?? (savedFormat ? FORMATIONS[savedFormat][0] ?? null : null);
+    setFormation(shape);
     setCaptain(matchQuery.data.lineup.find((entry) => entry.is_captain)?.player_id ?? null);
-    const saved = matchQuery.data.lineup.filter((entry) => entry.is_starter).map((entry) => entry.player_id);
-    if (saved.length) setStarters(new Set(saved));
+    const saved = matchQuery.data.lineup.filter((entry) => entry.is_starter);
+    if (saved.length) setPlaced(placeOnSlots(slotsFor(shape), saved));
   }, [matchQuery.data, match, format]);
 
   const save = useMutation({
@@ -105,10 +115,13 @@ export default function LineupScreen() {
     // `onSuccess` reported a failed format update as "Lineup not saved" even
     // though the entries were already stored, and swallowed the redirect with it.
     mutationFn: async () => {
+      // The place a player was put in is the position recorded for them, which
+      // is what lets the match's own team sheet draw the shape that was picked.
+      const slotOf = new Map([...assigned.entries()].map(([slotId, player]) => [player.id, slots.find((slot) => slot.id === slotId)!.code]));
       await api.lineup(id, roster.map((player) => ({
-        player_id: player.id, team_id: player.team_id, is_starter: starters.has(player.id),
-        is_captain: captain === player.id && starters.has(player.id),
-        position: player.position, jersey_number: player.jersey_number,
+        player_id: player.id, team_id: player.team_id, is_starter: takenIds.has(player.id),
+        is_captain: captain === player.id && takenIds.has(player.id),
+        position: slotOf.get(player.id) ?? player.position, jersey_number: player.jersey_number,
       })));
       // The format lives on the match, so it is saved alongside the entries.
       if (match && format) {
@@ -136,31 +149,32 @@ export default function LineupScreen() {
 
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
 
-  const bench = roster.filter((player) => !starters.has(player.id));
-  const selected = starters.size;
-  const complete = format !== null && selected === format;
-  const byId = new Map(roster.map((player) => [player.id, player]));
-  const keeperId = roster.find((player) => isGoalkeeper(player.position) && starters.has(player.id))?.id ?? null;
-  // A squad with nobody who can go in goal is not held back for the want of
-  // somebody who is not there.
-  const shape: SquadShape = {
-    format,
-    positionOf: (playerId) => byId.get(playerId)?.position,
-    hasKeepers: roster.some((player) => isGoalkeeper(player.position)),
-  };
-  const needsKeeper = shape.hasKeepers && keeperId === null;
-  // The formation is what draws the pitch, so a lineup is not finished without it.
-  const ready = complete && formation !== null && !needsKeeper;
+  // A formation lays out the places; the assignment says who stands in each.
+  const slots = useMemo(() => (format === null ? [] : slotsFor(formation)), [format, formation]);
+  const byId = useMemo(() => new Map(roster.map((player) => [player.id, player])), [roster]);
+  const assigned = useMemo(() => {
+    const filled = new Map<string, Player>();
+    for (const slot of slots) {
+      const player = byId.get(placed[slot.id] ?? '');
+      if (player) filled.set(slot.id, player);
+    }
+    return filled;
+  }, [slots, placed, byId]);
+  const takenIds = useMemo(() => new Set([...assigned.values()].map((player) => player.id)), [assigned]);
+  const bench = roster.filter((player) => !takenIds.has(player.id));
+  const selected = takenIds.size;
+  const complete = format !== null && formation !== null && selected === format;
+  const ready = complete;
   const locked = Boolean(match && match.status !== 'scheduled');
 
-  const toggle = (playerId: string) => setStarters((current) => toggleStarter(current, playerId, shape));
-
-  // The captain has to be on the pitch, so one who leaves the starters stops
-  // being captain. Done here rather than inside the toggle, because a state
-  // update belongs in an effect and not in another update's reducer.
-  useEffect(() => {
-    if (captain && !starters.has(captain)) setCaptain(null);
-  }, [captain, starters]);
+  /** Put a player in a place, taking them out of any other they were in. */
+  const place = (slotId: string, playerId: string | null) => setPlaced((current) => {
+    const next = { ...current };
+    // Nobody stands in two places, so an earlier one is vacated.
+    for (const [id, held] of Object.entries(next)) if (held === playerId) delete next[id];
+    if (playerId === null) delete next[slotId]; else next[slotId] = playerId;
+    return next;
+  });
 
   return <Screen action={<CloseButton />} title="Set lineup">
     {matchQuery.isLoading || playersQuery.isLoading ? <LoadingState label="Loading squad" />
@@ -175,32 +189,41 @@ export default function LineupScreen() {
           onPress={copyLast}
           variant="secondary"
         /> : null}
-        <ChoiceField label="Format" onChange={(value) => { const next = Number(value) as LineupFormat; setFormat(next); setFormation(null); setStarters((current) => new Set([...current].slice(0, next))); }} options={LINEUP_FORMATS.map((size) => ({ label: `${size}-a-side`, value: String(size) }))} placeholder="Choose a format" value={format === null ? undefined : String(format)} />
+        <ChoiceField label="Format" onChange={(value) => { const next = Number(value) as LineupFormat; setFormat(next); setFormation(FORMATIONS[next][0] ?? null); setPlaced({}); }} options={LINEUP_FORMATS.map((size) => ({ label: `${size}-a-side`, value: String(size) }))} placeholder="Choose a format" value={format === null ? undefined : String(format)} />
         {format === null ? <Text style={styles.hint}>Choose a format to pick the starting players.</Text> : <>
           <View style={styles.counterRow}>
             <Text accessibilityLiveRegion="polite" style={[styles.counter, complete && styles.counterDone]}>{selected} of {format} selected</Text>
             {complete ? <Ionicons color={colors.live} name="checkmark-circle" size={20} /> : null}
           </View>
-          <Text style={styles.groupTitle}>Starting {format}</Text>
-          {roster.map((player) => {
-            const isStarter = starters.has(player.id);
-            // Another keeper is never out of reach: it takes the standing
-            // keeper's place rather than needing a slot of its own.
-            const full = !canStart(starters, player.id, shape);
-            return <Pressable accessibilityLabel={`${player.name}, ${player.position}`} accessibilityRole="checkbox" accessibilityState={{ checked: isStarter, disabled: full }} key={player.id} onPress={() => toggle(player.id)} style={({ pressed }) => [styles.row, isStarter && styles.rowActive, full && styles.rowFull, pressed && styles.pressed]}>
-              <View style={[styles.check, isStarter && styles.checkOn]}>{isStarter ? <Ionicons color={colors.onAccent} name="checkmark" size={16} /> : null}</View>
-              <View style={styles.copy}>
-                <Text style={styles.name}>{player.name}</Text>
-                <Text style={styles.meta}>{player.position}{player.jersey_number == null ? '' : ` · #${player.jersey_number}`}</Text>
-              </View>
-            </Pressable>;
-          })}
+          <LineupPitch
+            assigned={assigned}
+            captainId={captain}
+            formation={formation}
+            formations={FORMATIONS[format]}
+            onFormation={(next) => {
+              // Trying another shape should not empty the sheet: everyone
+              // already picked is stood in the nearest place the new one has.
+              const standing = slots.filter((slot) => assigned.has(slot.id)).map((slot) => ({ player_id: assigned.get(slot.id)!.id, position: slot.code }));
+              setFormation(next);
+              setPlaced(placeOnSlots(slotsFor(next), standing));
+            }}
+            onSlot={setOpenSlot}
+            slots={slots}
+          />
           <Text style={styles.groupTitle}>Substitutes ({bench.length})</Text>
           <Text style={styles.hint}>{bench.length ? bench.map((player) => player.name).join(', ') : 'Everyone is starting.'}</Text>
-          {complete ? <ChoiceField label="Formation" onChange={setFormation} options={FORMATIONS[format].map((shape) => ({ label: shape, value: shape }))} placeholder={`Shapes for ${format - 1} outfield players`} value={formation ?? undefined} /> : null}
-          {complete ? <ChoiceField label="Captain (optional)" onChange={(value) => setCaptain(value || null)} options={[{ label: 'No captain', value: '' }, ...roster.filter((player) => starters.has(player.id)).map((player) => ({ label: `#${player.jersey_number ?? '–'} ${player.name}`, value: player.id }))]} placeholder="Choose a captain" value={captain ?? ''} /> : null}
+          {complete ? <ChoiceField label="Captain (optional)" onChange={(value) => setCaptain(value || null)} options={[{ label: 'No captain', value: '' }, ...[...assigned.values()].map((player) => ({ label: `#${player.jersey_number ?? '–'} ${player.name}`, value: player.id }))]} placeholder="Choose a captain" value={captain ?? ''} /> : null}
           <AppButton disabled={!ready || save.isPending} label={save.isPending ? 'Saving…' : 'Save lineup'} onPress={() => save.mutate()} />
-          {!complete ? <Text style={styles.hint}>Select exactly {format} starters to save.{needsKeeper ? ' One of them has to be a goalkeeper.' : ''}</Text> : needsKeeper ? <Text style={styles.hint}>Pick a goalkeeper to save.</Text> : !formation ? <Text style={styles.hint}>Choose a formation to save.</Text> : null}
+          {complete ? null : <Text style={styles.hint}>Fill every place on the pitch to save. {format - selected} to go.</Text>}
+          <SlotPicker
+            chosen={openSlot ? assigned.get(openSlot.id) ?? null : null}
+            onClear={() => { if (openSlot) place(openSlot.id, null); setOpenSlot(null); }}
+            onClose={() => setOpenSlot(null)}
+            onPick={(player) => { if (openSlot) place(openSlot.id, player.id); setOpenSlot(null); }}
+            slot={openSlot}
+            squad={roster}
+            taken={takenIds}
+          />
         </>}
       </>}
   </Screen>;
