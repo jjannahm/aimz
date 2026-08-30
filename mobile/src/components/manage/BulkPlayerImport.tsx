@@ -4,6 +4,7 @@ import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { AppButton } from '@/src/components/AppButton';
 import { ChoiceField } from '@/src/components/ChoiceField';
+import { CollapsibleCard } from '@/src/components/CollapsibleCard';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
 import { showToast } from '@/src/lib/platformAlert';
@@ -87,8 +88,7 @@ export function BulkPlayerImport({ teams }: { teams: Team[] }) {
 
   const blocked = !teamId || !good.length || bad.length > 0;
 
-  return <View style={styles.card}>
-    <Text style={styles.heading}>Add many players</Text>
+  return <CollapsibleCard summary="A whole squad at once, one player per line." title="Add many players" tone="raised">
     <Text style={styles.copy}>One player per line, as <Text style={styles.code}>Name, Position, Number</Text>. The number is optional.</Text>
     <ChoiceField
       label="Squad"
@@ -129,12 +129,10 @@ export function BulkPlayerImport({ teams }: { teams: Team[] }) {
       loading={save.isPending}
       onPress={() => save.mutate()}
     />
-  </View>;
+  </CollapsibleCard>;
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  card: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.lg },
-  heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontFamily: theme.font.bold },
   copy: { color: colors.textSecondary, lineHeight: 22 },
   code: { color: colors.accentSoft, fontFamily: theme.font.semibold },
   input: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: colors.textPrimary, fontSize: theme.type.body, minHeight: 140, padding: theme.spacing.md, textAlignVertical: 'top' },
