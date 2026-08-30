@@ -39,6 +39,10 @@ const dark = {
   errorSurface: '#7F1D1D',
   errorText: '#FCA5A5',
   onError: '#F8FAFC',
+  // A label printed on top of `live`, `warning` or `error` used as a fill. Those
+  // three are bright here and dark in light mode, so the label has to flip with
+  // the palette and can follow neither `onAccent` nor `onError` on its own.
+  onStatus: '#08080C',
   leaderSurface: '#1A1A20',
   leaderAccent: palette.blue,
   // The trophy is the one thing in the app that is won rather than shown, and
@@ -78,6 +82,7 @@ export const lightColors: ThemeColors = {
   errorSurface: '#E7000A',
   errorText: '#991B1B',
   onError: '#FFFFFF',
+  onStatus: '#FFFFFF',
   leaderSurface: '#E7EDF6',
   leaderAccent: palette.deepBlue,
   // Bright gold on a near-white card is barely there, so light mode wins its
