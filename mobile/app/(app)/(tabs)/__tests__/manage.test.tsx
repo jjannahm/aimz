@@ -55,6 +55,10 @@ function wrapper({ children }: { children: ReactNode }) {
 
 const emptyPage = { items: [], total: 0, limit: 100, offset: 0 };
 
+/** Every Manage section arrives with its Add form folded away. */
+const openForm = async (screen: Awaited<ReturnType<typeof render>>, section: string) =>
+  fireEvent.press(await screen.findByRole('button', { name: `Show add ${section} form` }));
+
 describe('ManageScreen navigation', () => {
   beforeEach(() => {
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
@@ -91,20 +95,54 @@ describe('ManageScreen navigation', () => {
 
   it('changes section, clears the previous form, and reaches hub sections', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
+    await openForm(screen, 'squads');
     const teamName = await screen.findByLabelText('Team or squad name');
     await fireEvent.changeText(teamName, 'Unsaved squad');
 
     await fireEvent.press(screen.getByRole('tab', { name: 'Opponents' }));
+    // The new section arrives folded, so the previous form is gone from the page.
+    expect(screen.queryByLabelText('Opponent name')).toBeNull();
+    await openForm(screen, 'opponents');
     expect(await screen.findByLabelText('Opponent name')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Opponents' }).props.accessibilityState.selected).toBe(true);
 
     await fireEvent.press(screen.getByRole('tab', { name: 'Squads' }));
+    await openForm(screen, 'squads');
     await waitFor(() => expect(screen.getByLabelText('Team or squad name').props.value).toBe(''));
 
     await fireEvent.press(screen.getByRole('tab', { name: 'Schedule' }));
     expect(await screen.findByText('Schedule manager content')).toBeTruthy();
     await fireEvent.press(screen.getByRole('tab', { name: 'Announcements' }));
     expect(await screen.findByText('Announcements manager content')).toBeTruthy();
+  });
+
+  it('opens every section with its form folded away', async () => {
+    const screen = await render(<ManageScreen />, { wrapper });
+    expect(await screen.findByText('Add squads')).toBeTruthy();
+    // Folded, the card still says what it holds.
+    expect(screen.getByText('A squad’s name, age group, competition and coaches.')).toBeTruthy();
+    expect(screen.queryByLabelText('Team or squad name')).toBeNull();
+
+    await openForm(screen, 'squads');
+    expect(await screen.findByLabelText('Team or squad name')).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Hide add squads form' }));
+    await waitFor(() => expect(screen.queryByLabelText('Team or squad name')).toBeNull());
+  });
+
+  // Pressing Edit against a closed form would scroll to nothing and read as the
+  // button doing nothing at all, so the row unfolds the card on its way in.
+  it('unfolds the form when a row is edited', async () => {
+    jest.mocked(api.players).mockResolvedValue({ ...emptyPage, items: [{ id: 'player-1', name: 'Amina Adel', team_id: 'team-1', position: 'CM', jersey_number: 14 }] } as never);
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Players' }));
+    expect(screen.queryByLabelText('Player name')).toBeNull();
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Show current players' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Edit' }));
+
+    expect(await screen.findByText('Edit players')).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText('Player name').props.value).toBe('Amina Adel'));
   });
 
   it('uses the family glyph for a player’s private roster details', async () => {
@@ -170,6 +208,7 @@ describe('ManageScreen confirmations', () => {
   it('confirms a new squad in the same words the schedule already used', async () => {
     jest.mocked(api.createTeam).mockResolvedValue({ id: 't-1' } as never);
     const screen = await render(<ManageScreen />, { wrapper });
+    await openForm(screen, 'squads');
     await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
     await fireEvent.press(screen.getByText('Add item'));
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('Squad created'));
@@ -181,6 +220,7 @@ describe('ManageScreen confirmations', () => {
     jest.mocked(api.createTeam).mockResolvedValue({ id: 't-2' } as never);
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(await screen.findByRole('tab', { name: 'Opponents' }));
+    await openForm(screen, 'opponents');
     await fireEvent.changeText(await screen.findByLabelText('Opponent name'), 'Cairo Stars');
     await fireEvent.press(screen.getByText('Add item'));
     await waitFor(() => expect(showToast).toHaveBeenCalledWith('Opponent created'));
@@ -189,6 +229,7 @@ describe('ManageScreen confirmations', () => {
   it('says nothing at all when the save fails', async () => {
     jest.mocked(api.createTeam).mockRejectedValue(new Error('The server refused it.'));
     const screen = await render(<ManageScreen />, { wrapper });
+    await openForm(screen, 'squads');
     await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
     await fireEvent.press(screen.getByText('Add item'));
     await waitFor(() => expect(screen.getByText('The server refused it.')).toBeTruthy());
@@ -197,6 +238,7 @@ describe('ManageScreen confirmations', () => {
 
   it('says nothing when the form is rejected before anything is sent', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
+    await openForm(screen, 'squads');
     await screen.findByLabelText('Team or squad name');
     // No name typed, so it never reaches the API.
     await fireEvent.press(screen.getByText('Add item'));
@@ -234,6 +276,7 @@ describe('ManageScreen invite player picker', () => {
   it('searches both invite modes and clears a player when the type changes', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(await screen.findByRole('tab', { name: 'Invites' }));
+    await openForm(screen, 'invites');
     expect(await screen.findByText('Choose a player')).toBeTruthy();
 
     fireEvent.press(screen.getByRole('button', { name: 'Player' }));
@@ -259,6 +302,7 @@ describe('ManageScreen invite player picker', () => {
   it('keeps the existing player and parent selection validation', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(await screen.findByRole('tab', { name: 'Invites' }));
+    await openForm(screen, 'invites');
     await fireEvent.changeText(await screen.findByLabelText('Invite label'), 'Family invite');
     await fireEvent.changeText(screen.getByLabelText('Invite code'), 'FAMILY-26');
 

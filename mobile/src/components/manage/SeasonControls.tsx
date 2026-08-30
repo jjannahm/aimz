@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/src/components/AppButton';
 import { ChoiceField } from '@/src/components/ChoiceField';
+import { CollapsibleCard } from '@/src/components/CollapsibleCard';
 import { FormField } from '@/src/components/FormField';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
@@ -63,59 +64,59 @@ export function SeasonControls({ competitions }: { competitions: Competition[] }
   });
 
   if (!competition) return null;
-  return <View style={styles.card}>
-    <Text style={styles.heading}>Seasons</Text>
-    <ChoiceField
-      label="Competition"
-      onChange={setChosen}
-      options={competitions.map((item) => ({ label: `${item.name} ${item.season}${item.status === 'completed' ? ' · ended' : ''}`, value: item.id }))}
-      value={competition.id}
-    />
-    <Text style={styles.note}>
+  return <CollapsibleCard summary={`${competition.name} ${competition.season}${completed ? ' · ended' : ''}`} title="Seasons">
+    <View style={styles.body}>
+      <ChoiceField
+        label="Competition"
+        onChange={setChosen}
+        options={competitions.map((item) => ({ label: `${item.name} ${item.season}${item.status === 'completed' ? ' · ended' : ''}`, value: item.id }))}
+        value={competition.id}
+      />
+      <Text style={styles.note}>
+        {completed
+          ? 'This season has ended. Its table, results and statistics are final, and nothing can be scored into it until it is reopened.'
+          : 'Ending a season keeps everything it holds and stops anything new being scored into it.'}
+      </Text>
       {completed
-        ? 'This season has ended. Its table, results and statistics are final, and nothing can be scored into it until it is reopened.'
-        : 'Ending a season keeps everything it holds and stops anything new being scored into it.'}
-    </Text>
-    {completed
-      ? <AppButton
-        disabled={reopen.isPending}
-        label="Reopen this season"
-        onPress={() => confirmAction('Reopen this season?', 'Results and statistics can be changed again while it is open.', 'Reopen', () => reopen.mutate())}
-        variant="secondary"
-      />
-      : <AppButton
-        disabled={end.isPending}
-        label="End this season"
-        onPress={() => confirmAction(`End ${competition.name} ${competition.season}?`, 'Nothing is deleted. The table, results and statistics stay as they are, and no more can be scored into the season until you reopen it.', 'End season', () => end.mutate())}
-        variant="secondary"
-      />}
+        ? <AppButton
+          disabled={reopen.isPending}
+          label="Reopen this season"
+          onPress={() => confirmAction('Reopen this season?', 'Results and statistics can be changed again while it is open.', 'Reopen', () => reopen.mutate())}
+          variant="secondary"
+        />
+        : <AppButton
+          disabled={end.isPending}
+          label="End this season"
+          onPress={() => confirmAction(`End ${competition.name} ${competition.season}?`, 'Nothing is deleted. The table, results and statistics stay as they are, and no more can be scored into the season until you reopen it.', 'End season', () => end.mutate())}
+          variant="secondary"
+        />}
 
-    <View style={styles.divider} />
-    <Text style={styles.subheading}>Start the next season</Text>
-    <FormField label="Season" onChangeText={setSeason} placeholder={nextSeasonName(competition.season) || '2027/28'} value={season} />
-    <Text style={styles.note}>
-      A new season of {competition.name}, with the same format. {competition.season} is left exactly as it is.
-    </Text>
-    <View style={styles.actions}>
-      <AppButton
-        disabled={!season.trim() || start.isPending}
-        label="Start with the same clubs"
-        onPress={() => confirmAction(`Start ${competition.name} ${season.trim()}?`, `The clubs in ${competition.season} are copied across — names, crests and age groups. Players are not, since a squad is not the same people a year later.`, 'Start season', () => start.mutate(true))}
-        style={styles.flexButton}
-      />
-      <AppButton
-        disabled={!season.trim() || start.isPending}
-        label="Start empty"
-        onPress={() => start.mutate(false)}
-        variant="ghost"
-      />
+      <View style={styles.divider} />
+      <Text style={styles.subheading}>Start the next season</Text>
+      <FormField label="Season" onChangeText={setSeason} placeholder={nextSeasonName(competition.season) || '2027/28'} value={season} />
+      <Text style={styles.note}>
+        A new season of {competition.name}, with the same format. {competition.season} is left exactly as it is.
+      </Text>
+      <View style={styles.actions}>
+        <AppButton
+          disabled={!season.trim() || start.isPending}
+          label="Start with the same clubs"
+          onPress={() => confirmAction(`Start ${competition.name} ${season.trim()}?`, `The clubs in ${competition.season} are copied across — names, crests and age groups. Players are not, since a squad is not the same people a year later.`, 'Start season', () => start.mutate(true))}
+          style={styles.flexButton}
+        />
+        <AppButton
+          disabled={!season.trim() || start.isPending}
+          label="Start empty"
+          onPress={() => start.mutate(false)}
+          variant="ghost"
+        />
+      </View>
     </View>
-  </View>;
+  </CollapsibleCard>;
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
-  heading: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading },
+  body: { gap: theme.spacing.sm },
   subheading: { color: colors.textPrimary, fontFamily: theme.font.bold },
   note: { color: colors.textMuted, fontSize: theme.type.caption, lineHeight: 18 },
   divider: { backgroundColor: colors.border, height: StyleSheet.hairlineWidth, marginVertical: theme.spacing.xs },

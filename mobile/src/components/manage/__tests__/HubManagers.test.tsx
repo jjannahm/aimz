@@ -49,6 +49,7 @@ describe('AnnouncementsManager', () => {
     const screen = await render(<AnnouncementsManager teams={teams} />, { wrapper });
     await screen.findByText('Post announcement');
     await waitFor(() => expect(api.announcements).toHaveBeenCalledWith('?limit=100'));
+    await fireEvent.press(screen.getByRole('button', { name: 'Show post announcement form' }));
 
     fireEvent.press(screen.getByRole('button', { name: 'U11' }));
     await waitFor(() => expect(screen.getByTestId('choice-value-Audience').props.children).toBe('team-u11'));
@@ -66,5 +67,22 @@ describe('AnnouncementsManager', () => {
       }));
     });
     await waitFor(() => expect(screen.getByLabelText('Title').props.value).toBe(''));
+  });
+
+  it('starts folded, and unfolds when a notice is edited', async () => {
+    jest.mocked(api.announcements).mockResolvedValue({
+      items: [{ id: 'a-1', team_id: null, title: 'Kit collection', body: 'Collect on Sunday.', pinned: false, team: null, author_name: 'Coach', created_at: '', updated_at: '' }],
+      total: 1, limit: 100, offset: 0,
+    } as never);
+    const screen = await render(<AnnouncementsManager teams={teams} />, { wrapper });
+    await screen.findByText('Post announcement');
+    expect(screen.queryByLabelText('Title')).toBeNull();
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Show current announcements' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Edit' }));
+
+    expect(await screen.findByLabelText('Title')).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText('Title').props.value).toBe('Kit collection'));
+    expect(screen.getByText('Edit announcement')).toBeTruthy();
   });
 });

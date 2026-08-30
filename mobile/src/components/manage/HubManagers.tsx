@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/src/components/AppButton';
 import { ChoiceField } from '@/src/components/ChoiceField';
+import { CollapsibleCard } from '@/src/components/CollapsibleCard';
 import { CollapsibleSection } from '@/src/components/CollapsibleSection';
 import { DateTimeField } from '@/src/components/DateTimeField';
 import { FormField } from '@/src/components/FormField';
@@ -45,6 +46,8 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
   const sessions = useQuery({ queryKey: ['training', 'admin'], queryFn: () => api.trainingSessions('?limit=100') });
   const [draft, setDraft] = React.useState<ScheduleDraft>(freshSchedule);
   const [editing, setEditing] = React.useState<TrainingSession | null>(null);
+  /** The form is folded away until it is wanted; editing an occurrence unfolds it. */
+  const [formOpen, setFormOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const save = useMutation({
     mutationFn: async () => {
@@ -85,15 +88,20 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
     }
     catch (error) { showMessage('Session not deleted', (error as ApiError).message); }
   };
-  const beginEdit = (session: TrainingSession) => { setEditing(session); setDraft({ teamId: session.team_id, startsAt: session.starts_at, duration: String(session.duration_minutes), venue: session.venue, notes: session.notes ?? '', recurrence: 'once', weekdays: [], endsOn: '' }); };
+  const beginEdit = (session: TrainingSession) => { setEditing(session); setFormOpen(true); setDraft({ teamId: session.team_id, startsAt: session.starts_at, duration: String(session.duration_minutes), venue: session.venue, notes: session.notes ?? '', recurrence: 'once', weekdays: [], endsOn: '' }); };
   const toggleWeekday = (day: number) => setDraft((current) => ({ ...current, weekdays: current.weekdays.includes(day) ? current.weekdays.filter((value) => value !== day) : [...current.weekdays, day].sort() }));
   // One weekly schedule can lay down a couple of hundred occurrences, so the
   // squad, the date and the venue are all searchable.
   const sessionItems = sessions.data?.items ?? [];
   const shownSessions = narrowBySearch(sessionItems, search, (session) => `${session.team.name} ${formatEgyptDateTime(session.starts_at)} ${session.venue}`);
   return <View style={styles.stack}>
-    <View style={styles.formCard}>
-      <Text style={styles.heading}>{editing ? 'Edit this occurrence' : 'Add training sessions'}</Text>
+    <CollapsibleCard
+      onOpenChange={setFormOpen}
+      open={formOpen}
+      summary={editing ? `${formatEgyptDateTime(editing.starts_at)} · ${editing.venue}` : 'One-off or weekly sessions for a squad.'}
+      title={editing ? 'Edit this occurrence' : 'Add training sessions'}
+      tone="raised"
+    >
       <ChoiceField label="Squad" onChange={(teamId) => setDraft((current) => ({ ...current, teamId }))} options={teams.map((team) => ({ label: team.name, value: team.id }))} value={draft.teamId} />
       <DateTimeField label="First session (Egypt time)" onChange={(startsAt) => setDraft((current) => ({ ...current, startsAt }))} value={draft.startsAt} />
       {!editing ? <ChoiceField label="Repeat" onChange={(recurrence) => setDraft((current) => ({ ...current, recurrence: recurrence as ScheduleDraft['recurrence'] }))} options={[{ label: 'One-off', value: 'once' }, { label: 'Weekly', value: 'weekly' }]} value={draft.recurrence} /> : null}
@@ -106,7 +114,7 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
       <FormField label="Venue" onChangeText={(venue) => setDraft((current) => ({ ...current, venue }))} value={draft.venue} />
       <FormField label="Notes (optional)" multiline onChangeText={(notes) => setDraft((current) => ({ ...current, notes }))} value={draft.notes} />
       <View style={styles.formActions}><AppButton label={editing ? 'Save occurrence' : 'Create schedule'} loading={save.isPending} onPress={() => save.mutate()} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); setDraft(freshSchedule()); }} variant="ghost" /> : null}</View>
-    </View>
+    </CollapsibleCard>
     {/* Each session row opens the session; the buttons beside it edit and delete
       * it. They are siblings rather than nested, because a pressable inside a
       * pressable is a button inside a button once this renders on the web. */}
@@ -127,6 +135,7 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
   const announcements = useQuery({ queryKey: ['announcements', 'admin'], queryFn: () => api.announcements('?limit=100') });
   const [draft, setDraft] = React.useState(blankAnnouncement);
   const [editing, setEditing] = React.useState<Announcement | null>(null);
+  const [formOpen, setFormOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const save = useMutation({
     mutationFn: () => {
@@ -137,21 +146,26 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
     onError: (error) => showMessage('Announcement not saved', (error as Error).message),
     onSuccess: async () => { const wasEditing = editing; await invalidateAfterWrite(client, 'announcement'); setEditing(null); setDraft(blankAnnouncement); confirmManageSave('announcement', wasEditing); },
   });
-  const beginEdit = (announcement: Announcement) => { setEditing(announcement); setDraft({ teamId: announcement.team_id ?? '', title: announcement.title, body: announcement.body, pinned: announcement.pinned }); };
+  const beginEdit = (announcement: Announcement) => { setEditing(announcement); setFormOpen(true); setDraft({ teamId: announcement.team_id ?? '', title: announcement.title, body: announcement.body, pinned: announcement.pinned }); };
   const remove = (announcement: Announcement) => confirmAction('Delete this announcement?', 'Players will no longer see it.', 'Delete', async () => { try { await api.deleteAnnouncement(announcement.id); await invalidateAfterWrite(client, 'announcement'); confirmManageWrite('announcement', 'deleted'); } catch (error) { showMessage('Announcement not deleted', (error as ApiError).message); } }, { destructive: true });
   // A season's worth of notices piles up, and the wording is often the only
   // thing remembered about one, so the message itself is searched too.
   const announcementItems = announcements.data?.items ?? [];
   const shownAnnouncements = narrowBySearch(announcementItems, search, (item) => `${item.title} ${item.body} ${item.team?.name ?? 'Whole academy'} ${item.author_name ?? ''}`);
   return <View style={styles.stack}>
-    <View style={styles.formCard}>
-      <Text style={styles.heading}>{editing ? 'Edit announcement' : 'Post announcement'}</Text>
+    <CollapsibleCard
+      onOpenChange={setFormOpen}
+      open={formOpen}
+      summary={editing ? editing.title : 'A notice for one squad, or the whole academy.'}
+      title={editing ? 'Edit announcement' : 'Post announcement'}
+      tone="raised"
+    >
       <ChoiceField label="Audience" onChange={(teamId) => setDraft((current) => ({ ...current, teamId }))} options={[{ label: 'Whole academy', value: '' }, ...teams.map((team) => ({ label: team.name, value: team.id }))]} value={draft.teamId} />
       <FormField label="Title" onChangeText={(title) => setDraft((current) => ({ ...current, title }))} value={draft.title} />
       <FormField label="Message" multiline onChangeText={(body) => setDraft((current) => ({ ...current, body }))} value={draft.body} />
       <ChoiceField label="Priority" onChange={(value) => setDraft((current) => ({ ...current, pinned: value === 'pinned' }))} options={[{ label: 'Standard', value: 'standard' }, { label: 'Pinned', value: 'pinned' }]} value={draft.pinned ? 'pinned' : 'standard'} />
       <View style={styles.formActions}><AppButton label={editing ? 'Save changes' : 'Publish'} loading={save.isPending} onPress={() => save.mutate()} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); setDraft(blankAnnouncement); }} variant="ghost" /> : null}</View>
-    </View>
+    </CollapsibleCard>
     {announcements.isError ? <ErrorState message={(announcements.error as ApiError).message} onRetry={() => announcements.refetch()} /> : <CollapsibleSection count={announcementItems.length} search={{ label: 'Search announcements', onChange: setSearch, placeholder: 'Search a title, message or squad…', resultCount: shownAnnouncements.length, value: search }} title="Current announcements">
       {announcements.isLoading ? <LoadingState /> : !announcementItems.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : !shownAnnouncements.length ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shownAnnouncements.map((announcement) => <View key={announcement.id} style={styles.card}>
         <View style={styles.copy}><Text style={styles.title}>{announcement.pinned ? 'Pinned · ' : ''}{announcement.title}</Text><Text style={styles.meta}>{announcement.team?.name ?? 'Whole academy'} · {announcement.author_name ?? 'Administrator'}</Text><Text style={styles.body}>{announcement.body}</Text></View>
@@ -183,8 +197,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // sets the primary action apart from the last field rather than continuing the
   // run of them. Kept in step with the same row on the Manage resource form.
   formActions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
-  formCard: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, padding: theme.spacing.lg },
-  heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' },
   label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
   meta: { color: colors.textMuted, marginTop: 4 },
   pressedRow: { opacity: 0.6 },
