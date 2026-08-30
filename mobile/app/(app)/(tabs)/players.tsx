@@ -14,6 +14,7 @@ import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
 import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonFilter';
 import { SearchField } from '@/src/components/SearchField';
+import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { copy } from '@/src/i18n/en';
@@ -231,7 +232,7 @@ function AwardRow({ award, competitionId }: { award: PlayerAward; competitionId:
       style={({ pressed }) => pressed && styles.pressed}
     >
       <FlatCard radius={theme.radius.md} style={styles.award}>
-      <Ionicons accessibilityElementsHidden color={colors.leaderAccent} name="trophy" size={20} />
+      <TrophyIcon size={20} />
       <View style={styles.copy}><Text style={styles.awardLabel}>{award.label}</Text><Text style={styles.name}>{award.player.name}</Text><Text style={styles.position}>{award.team.name}</Text></View>
       <Text accessibilityElementsHidden style={styles.tally}>{award.value}</Text>
       <Ionicons accessibilityElementsHidden color={colors.textMuted} name={expanded ? 'chevron-up' : 'chevron-down'} size={18} />

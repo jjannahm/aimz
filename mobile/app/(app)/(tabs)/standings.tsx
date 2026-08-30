@@ -14,6 +14,7 @@ import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { FormStrip } from '@/src/components/FormStrip';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
+import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -192,7 +193,7 @@ export default function StandingsScreen() {
                 <View style={styles.team}>
                   <View style={styles.nameRow}>
                     <Text numberOfLines={1} style={[styles.teamName, row.rank === 1 && styles.leaderName]}>{row.team.name}</Text>
-                    {row.rank === 1 ? <Ionicons accessibilityLabel="First place" color={colors.leaderAccent} name="trophy" size={16} /> : null}
+                    {row.rank === 1 ? <TrophyIcon accessibilityLabel="First place" size={16} /> : null}
                   </View>
                   {row.team.squad_code ? <Text numberOfLines={1} style={styles.code}>{row.team.squad_code}</Text> : null}
                   <View style={styles.formRow}><FormStrip form={row.form ?? []} /></View>

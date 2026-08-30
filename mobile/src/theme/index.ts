@@ -12,6 +12,8 @@ export const palette = {
   green: '#22C55E',
   amber: '#F59E0B',
   red: '#EF4444',
+  gold: '#FFC53D',
+  deepGold: '#A16207',
 } as const;
 
 /** AIMZ editorial dark mode: warm ink, flat cards, and the academy blue. */
@@ -39,6 +41,12 @@ const dark = {
   onError: '#F8FAFC',
   leaderSurface: '#1A1A20',
   leaderAccent: palette.blue,
+  // The trophy is the one thing in the app that is won rather than shown, and
+  // it was reading as another blue glyph among many. `trophyGlow` is the halo
+  // burnt around the glyph rather than a second fill: warmer and more saturated
+  // than the gold itself, so the spread reads as light and not as a fat outline.
+  trophy: palette.gold,
+  trophyGlow: '#FFAA00',
   progressTrack: '#2C2B32',
   highlightedSurface: '#1A1A20',
 } as const;
@@ -72,6 +80,11 @@ export const lightColors: ThemeColors = {
   onError: '#FFFFFF',
   leaderSurface: '#E7EDF6',
   leaderAccent: palette.deepBlue,
+  // Bright gold on a near-white card is barely there, so light mode wins its
+  // contrast back by going down to the deeper end of the same metal, and glows
+  // in amber rather than in white light nobody would see.
+  trophy: palette.deepGold,
+  trophyGlow: palette.amber,
   progressTrack: '#D8DFE9',
   highlightedSurface: '#E7EDF6',
 };
