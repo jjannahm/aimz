@@ -36,4 +36,16 @@ describe('HubScreen navigation', () => {
     expect(screen.getByText('Calendar button')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Announcements' }).props.accessibilityState.selected).toBe(true);
   });
+
+  /**
+   * Screen puts its own settings button ahead of whatever a screen passes, so
+   * the Hub composes the cluster itself to get the calendar in first. Nothing
+   * else would notice if that regressed, hence pinning the order here.
+   */
+  it('puts the calendar left of the gear', async () => {
+    const screen = await render(<HubScreen />);
+    const header = JSON.stringify(screen.toJSON());
+    expect(header).toContain('Calendar button');
+    expect(header.indexOf('Calendar button')).toBeLessThan(header.indexOf('"accessibilityLabel":"Settings"'));
+  });
 });
