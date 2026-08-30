@@ -1,4 +1,4 @@
-import { byPosition, GOALKEEPER, isGoalkeeper, lineFor, matchPositions, POSITIONS, positionLabel, positionName } from '@/src/lib/positions';
+import { acrossThePitch, byPosition, GOALKEEPER, isGoalkeeper, lineFor, matchPositions, POSITIONS, positionLabel, positionName } from '@/src/lib/positions';
 
 describe('the position vocabulary', () => {
   it('matches the one the worker validates against', () => {
@@ -95,5 +95,37 @@ describe('byPosition', () => {
     const squad = [player('Striker', 'ST'), player('Keeper', 'GK')];
     byPosition(squad);
     expect(squad.map((entry) => entry.name)).toEqual(['Striker', 'Keeper']);
+  });
+});
+
+describe('acrossThePitch', () => {
+  const player = (name: string, position: string) => ({ name, position });
+
+  it('stands a line left, centre, then right', () => {
+    const defence = [player('Righty', 'RB'), player('Centre', 'CB'), player('Lefty', 'LB')];
+    expect(acrossThePitch(defence).map((entry) => entry.name)).toEqual(['Lefty', 'Centre', 'Righty']);
+  });
+
+  // A wing-back is the same flank as the full-back it plays instead of.
+  it('puts a wing-back on the side its name gives it', () => {
+    const defence = [player('Right', 'RWB'), player('Left', 'LWB')];
+    expect(acrossThePitch(defence).map((entry) => entry.name)).toEqual(['Left', 'Right']);
+  });
+
+  it('spreads a forward line by its wings', () => {
+    const attack = [player('RightWing', 'RW'), player('Striker', 'ST'), player('LeftWing', 'LW')];
+    expect(acrossThePitch(attack).map((entry) => entry.name)).toEqual(['LeftWing', 'Striker', 'RightWing']);
+  });
+
+  // Depth is the row's business, not the order across it, so these are all
+  // central and stay in a settled order.
+  it('keeps the central midfield in a stable order', () => {
+    const midfield = [player('Zara', 'AM'), player('Amira', 'DM'), player('Mona', 'CM')];
+    expect(acrossThePitch(midfield).map((entry) => entry.name)).toEqual(['Amira', 'Mona', 'Zara']);
+  });
+
+  it('treats an unknown position as central rather than dropping it', () => {
+    const row = [player('Right', 'RM'), player('Mystery', 'ZZ'), player('Left', 'LM')];
+    expect(acrossThePitch(row).map((entry) => entry.name)).toEqual(['Left', 'Mystery', 'Right']);
   });
 });

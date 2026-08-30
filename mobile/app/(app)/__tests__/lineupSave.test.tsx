@@ -84,3 +84,62 @@ describe('LineupScreen — saving', () => {
     expect(router.replace).not.toHaveBeenCalled();
   });
 });
+
+
+// A squad written in position codes, with two keepers in it.
+const fiveASide = { ...match, lineup_format: 5, formation: '2-2' } as Match;
+const keepersSquad = [
+  { id: 'gk1', name: 'Amal Keeper', position: 'GK' },
+  { id: 'gk2', name: 'Basma Keeper', position: 'GK' },
+  { id: 'd1', name: 'Cara Back', position: 'CB' },
+  { id: 'd2', name: 'Dina Back', position: 'LB' },
+  { id: 'm1', name: 'Eman Mid', position: 'CM' },
+  { id: 'f1', name: 'Farah Front', position: 'ST' },
+].map((entry, index) => ({
+  ...entry, team_id: 'home', jersey_number: index + 1,
+  photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '',
+}));
+
+describe('LineupScreen — one goalkeeper', () => {
+  beforeEach(() => {
+    jest.mocked(api.live).mockResolvedValue({ match: fiveASide, events: [], lineup: [], revision: 1 } as LiveMatchSnapshot);
+    jest.mocked(api.players).mockResolvedValue({ items: keepersSquad, total: keepersSquad.length, limit: 100, offset: 0 } as never);
+    jest.mocked(api.lineup).mockResolvedValue([] as never);
+    jest.mocked(api.updateMatch).mockResolvedValue(fiveASide as never);
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  const open = async () => {
+    const screen = await render(<LineupScreen />, { wrapper });
+    // The squad list is what these tests press on, so wait for it by name
+    // rather than for the heading that sits above it.
+    await screen.findByLabelText(/^Amal Keeper,/u, {}, { timeout: 5000 });
+    return screen;
+  };
+  const pick = (screen: Awaited<ReturnType<typeof open>>, name: string) =>
+    fireEvent.press(screen.getByLabelText(new RegExp(`^${name},`, 'u')));
+  // A side plays one keeper, so the second takes the first's place rather than
+  // being refused — nobody has to go and find the outgoing keeper first.
+  it('puts the standing keeper back on the bench when another is chosen', async () => {
+    const screen = await open();
+    pick(screen, 'Amal Keeper');
+    expect(await screen.findByText('1 of 5 selected')).toBeTruthy();
+
+    pick(screen, 'Basma Keeper');
+    // Still one, because the second keeper replaced the first rather than
+    // joining them.
+    expect(await screen.findByText('1 of 5 selected')).toBeTruthy();
+    // And the one who stepped aside is named back on the bench.
+    expect(screen.getByText(/^Amal Keeper, Cara Back/u)).toBeTruthy();
+  });
+
+  it('lets an outfielder join a keeper rather than replacing them', async () => {
+    const screen = await open();
+    pick(screen, 'Amal Keeper');
+    pick(screen, 'Cara Back');
+    expect(await screen.findByText('2 of 5 selected')).toBeTruthy();
+  });
+
+  // Fill a side with outfielders and the keeper would have nowhere left to go,
+  // so the last place is held for one until there is one.
+});

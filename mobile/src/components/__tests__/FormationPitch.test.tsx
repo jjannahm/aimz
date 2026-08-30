@@ -177,3 +177,32 @@ describe('FormationPitch shirts as buttons', () => {
     expect(screen.queryByLabelText('Aya Nabil, open stats')).toBeNull();
   });
 });
+
+
+describe('arrangeByFormation across the pitch', () => {
+  const at = (id: string, name: string, position: string) => player(id, name, position, 0);
+
+  // The reason a position is chosen at all: it says where on the pitch to stand.
+  it('stands a back four in its own order, whatever order it arrives in', () => {
+    const squad = [
+      at('gk', 'Keeper', 'GK'),
+      at('rb', 'Right', 'RB'), at('cb1', 'Bea', 'CB'), at('cb2', 'Ada', 'CB'), at('lb', 'Left', 'LB'),
+    ];
+    const { rows } = arrangeByFormation(squad, '4');
+    expect(rows[0]!.map((entry) => entry.name)).toEqual(['Left', 'Ada', 'Bea', 'Right']);
+  });
+
+  it('spreads each line of a shape by its own wings', () => {
+    const squad = [
+      at('gk', 'Keeper', 'GK'),
+      at('rb', 'DefRight', 'RB'), at('lb', 'DefLeft', 'LB'),
+      at('rm', 'MidRight', 'RM'), at('lm', 'MidLeft', 'LM'),
+      at('st', 'Striker', 'ST'),
+    ];
+    const { rows, keeper } = arrangeByFormation(squad, '2-2-1');
+    expect(keeper.map((entry) => entry.name)).toEqual(['Keeper']);
+    expect(rows[0]!.map((entry) => entry.name)).toEqual(['DefLeft', 'DefRight']);
+    expect(rows[1]!.map((entry) => entry.name)).toEqual(['MidLeft', 'MidRight']);
+    expect(rows[2]!.map((entry) => entry.name)).toEqual(['Striker']);
+  });
+});
