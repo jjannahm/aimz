@@ -190,3 +190,36 @@ describe('MatchDetailScreen — richer timeline', () => {
     expect(screen.queryByText(/^Reason:/)).toBeNull();
   });
 });
+
+
+describe('MatchDetailScreen — changing a lineup before kickoff', () => {
+  const named = Array.from({ length: 5 }, (unused, index) => ({
+    id: `l${index}`, match_id: 'match-1', player_id: `p${index}`, team_id: 'home',
+    is_starter: true, is_captain: false, position: index === 0 ? 'GK' : 'CB', jersey_number: index + 1,
+  })) as LineupEntry[];
+
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 } as never);
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  // The team sheet is where an admin lands after saving, so the way back to
+  // change it belongs there and not under the lists below.
+  it('offers the way back to the lineup from the team sheet itself', async () => {
+    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'scheduled', phase: 'not_started', phase_started_at: null }, named));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+
+    expect(await screen.findByText('Team sheet')).toBeTruthy();
+    expect(screen.getAllByText('Edit lineup').length).toBeGreaterThan(0);
+  });
+
+  // Once it has started the lineup is settled; a substitution is the way to
+  // change who is on.
+  it('takes the option away once the match is under way', async () => {
+    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'live' }, named));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+
+    await screen.findByText('Team sheet');
+    expect(screen.queryByText('Edit lineup')).toBeNull();
+  });
+});

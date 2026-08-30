@@ -52,7 +52,15 @@ export default function MatchDetailScreen() {
         const starters = current.length ? current : query.data.lineup.filter((entry) => entry.is_starter);
         if (!starters.length) return null;
         const asPlayer = (entry: typeof query.data.lineup[number]) => ({ id: entry.player_id, name: playerNames.get(entry.player_id) ?? 'Player', position: entry.position ?? '', jersey_number: entry.jersey_number } as never);
+        // A lineup is only settled once the match starts, so until then the
+        // team sheet carries the way back to change it — where an admin is
+        // already looking, rather than under the lists below.
+        const changeable = user?.role === 'admin' && query.data.match.status === 'scheduled';
         return <View style={styles.section}>
+          <View style={styles.lineupHeader}>
+            <Text style={styles.sectionTitle}>Team sheet</Text>
+            {changeable ? <AppButton compact icon="create-outline" label="Edit lineup" onPress={() => router.push(`/lineup/${id}`)} variant="secondary" /> : null}
+          </View>
           <FormationPitch captainId={query.data.lineup.find((entry) => entry.is_captain)?.player_id ?? null} formation={query.data.match.formation} onSelect={(playerId) => router.push(`/player/${playerId}`)} starters={starters.map(asPlayer)} />
           {squad && (squad.coach || squad.assistant_coach || user?.role === 'admin') ? <View style={styles.staffRow}>
             <View style={styles.staff}><Text style={styles.staffLabel}>Coach</Text><Text numberOfLines={1} style={[styles.staffName, !squad.coach && styles.staffUnset]}>{squad.coach ?? 'Set in Manage'}</Text></View>
