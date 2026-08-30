@@ -54,7 +54,8 @@ const squad = Array.from({ length: 11 }, (unused, index) => ({
 
 async function saveAValidLineup() {
   const screen = await render(<LineupScreen />, { wrapper });
-  fireEvent.press(await screen.findByText('Save lineup'));
+  // A lineup already stored is being changed, so the button says so.
+  fireEvent.press(await screen.findByText('Save changes'));
   return screen;
 }
 

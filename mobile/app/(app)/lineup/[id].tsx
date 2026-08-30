@@ -176,7 +176,10 @@ export default function LineupScreen() {
     return next;
   });
 
-  return <Screen action={<CloseButton />} title="Set lineup">
+  // A lineup already stored is being changed, not set for the first time, and
+  // saying so is what tells an admin they have not lost the one they saved.
+  const stored = Boolean(matchQuery.data?.lineup.some((entry) => entry.is_starter));
+  return <Screen action={<CloseButton />} title={stored ? 'Edit lineup' : 'Set lineup'}>
     {matchQuery.isLoading || playersQuery.isLoading ? <LoadingState label="Loading squad" />
       : matchQuery.isError ? <ErrorState message={(matchQuery.error as ApiError).message} onRetry={() => matchQuery.refetch()} />
       : locked ? <EmptyState body="The starting lineup is locked once the match begins. Log a substitution from live scoring instead." title="Match already started" />
@@ -213,7 +216,7 @@ export default function LineupScreen() {
           <Text style={styles.groupTitle}>Substitutes ({bench.length})</Text>
           <Text style={styles.hint}>{bench.length ? bench.map((player) => player.name).join(', ') : 'Everyone is starting.'}</Text>
           {complete ? <ChoiceField label="Captain (optional)" onChange={(value) => setCaptain(value || null)} options={[{ label: 'No captain', value: '' }, ...[...assigned.values()].map((player) => ({ label: `#${player.jersey_number ?? '–'} ${player.name}`, value: player.id }))]} placeholder="Choose a captain" value={captain ?? ''} /> : null}
-          <AppButton disabled={!ready || save.isPending} label={save.isPending ? 'Saving…' : 'Save lineup'} onPress={() => save.mutate()} />
+          <AppButton disabled={!ready || save.isPending} label={save.isPending ? 'Saving…' : stored ? 'Save changes' : 'Save lineup'} onPress={() => save.mutate()} />
           {complete ? null : <Text style={styles.hint}>Fill every place on the pitch to save. {format - selected} to go.</Text>}
           <SlotPicker
             chosen={openSlot ? assigned.get(openSlot.id) ?? null : null}
