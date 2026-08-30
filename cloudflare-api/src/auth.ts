@@ -215,7 +215,10 @@ export function registerAuthRoutes(app: App): void {
     await adminUser(c);
     const url = new URL(c.req.url);
     const { limit, offset } = parsePagination(url);
-    const [count, rows] = await Promise.all([
+    // A parent's roster link lives in user_children, never in users.player_id,
+    // so the join below reports every parent as unlinked. Their children are
+    // read alongside and grouped here, the way the invitations list does.
+    const [count, rows, children] = await Promise.all([
       c.env.DB.prepare("SELECT COUNT(*) total FROM users").first<{ total: number }>(),
       c.env.DB.prepare(`SELECT u.*, p.name player_name, p.team_id player_team_id,
         p.position player_position, p.jersey_number player_jersey_number,
@@ -228,8 +231,14 @@ export function registerAuthRoutes(app: App): void {
         t.created_at team_created_at, t.updated_at team_updated_at
         FROM users u LEFT JOIN players p ON p.id=u.player_id LEFT JOIN teams t ON t.id=p.team_id
         ORDER BY u.name LIMIT ? OFFSET ?`).bind(limit, offset).all<AdminAccountRow>(),
+      c.env.DB.prepare(`SELECT uc.user_id, p.id, p.name, p.team_id, t.name team_name
+        FROM user_children uc JOIN players p ON p.id=uc.player_id LEFT JOIN teams t ON t.id=p.team_id
+        ORDER BY p.name`).all<{ user_id: string; id: string; name: string; team_id: string; team_name: string | null }>(),
     ]);
-    return c.json({ items: rows.results.map(publicAdminAccount), total: count?.total ?? 0, limit, offset });
+    const byUser = new Map<string, { id: string; name: string; team_id: string; team_name: string | null }[]>();
+    for (const { user_id, ...child } of children.results) byUser.set(user_id, [...(byUser.get(user_id) ?? []), child]);
+    const items = rows.results.map((row) => ({ ...publicAdminAccount(row), children: byUser.get(row.id) ?? [] }));
+    return c.json({ items, total: count?.total ?? 0, limit, offset });
   });
   app.post("/api/v1/admin/users", async (c) => {
     await adminUser(c);

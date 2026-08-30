@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { FlatCard } from '@/src/components/FlatCard';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
+import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -42,7 +43,7 @@ export function HonoursSection({ playerId }: { playerId: string }) {
       <Text style={styles.seasonLabel}>{season}</Text>
       <FlatCard radius={theme.radius.md} style={styles.list}>
         {won.map((honour, index) => <View key={`${honour.competition.id}-${honour.metric}`} style={[styles.row, index > 0 && styles.rowDivider]} testID={`honour-${honour.metric}`}>
-          <Ionicons accessibilityElementsHidden color={honour.is_final ? colors.leaderAccent : colors.textMuted} name="trophy" size={20} />
+          <TrophyIcon dimmed={!honour.is_final} size={20} />
           <View style={styles.copy}>
             <Text style={styles.label}>{honour.label}</Text>
             <Text style={styles.meta}>

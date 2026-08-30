@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -15,15 +14,15 @@ import { MatchProgressRail, MatchStatusIndicator } from '@/src/components/MatchS
 import { MatchTimeline } from '@/src/components/MatchTimeline';
 import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
+import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { api, ApiError } from '@/src/lib/api';
 import { computeMinutesPlayed } from '@/src/lib/matchMinutes';
 import { useMatchClock } from '@/src/lib/matchClock';
 import { isOpponentOnly } from '@/src/lib/matchKind';
 import { theme, type ThemeColors } from '@/src/theme';
-import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
+import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 export default function MatchDetailScreen() {
-  const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
@@ -37,7 +36,7 @@ export default function MatchDetailScreen() {
       <View style={styles.hero}><View style={styles.statusRow}><MatchStatusIndicator clock={clock} muted={query.data.match.status !== 'live'} /><Text style={styles.competition}>{query.data.match.competition?.name}</Text></View><View style={styles.scoreRow}><View style={styles.team}><Text style={styles.teamName}>{query.data.match.home_team?.name}</Text></View><ScoreLine away={query.data.match.away_score} home={query.data.match.home_score} /><View style={[styles.team, styles.away]}><Text style={[styles.teamName, styles.alignRight]}>{query.data.match.away_team?.name}</Text></View></View><Text style={styles.meta}>{new Intl.DateTimeFormat('en-EG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(query.data.match.kickoff_datetime))} · {query.data.match.venue}</Text>{query.data.match.status === 'live' ? <MatchProgressRail clock={clock} /> : null}
       {!opponentOnly || query.data.events.length ? <MatchTimeline awayTeamName={query.data.match.away_team?.name ?? 'Away'} events={query.data.events} homeTeamId={query.data.match.home_team_id} homeTeamName={query.data.match.home_team?.name ?? 'Home'} playerNames={playerNames} /> : <Text style={styles.intentionalEmpty}>No team sheet or timeline is recorded for matches between two opponent clubs.</Text>}
       {query.data.match.man_of_the_match_player_id ? <View style={styles.award}>
-        <Ionicons color={colors.leaderAccent} name="trophy" size={18} />
+        <TrophyIcon size={18} />
         <View style={styles.eventCopy}><Text style={styles.awardLabel}>Man of the match</Text><Text style={styles.awardName}>{playerNames.get(query.data.match.man_of_the_match_player_id) ?? 'Player'}</Text></View>
       </View> : null}
       {user?.role === 'admin' ? <View style={styles.adminActions}><AppButton label={opponentOnly ? query.data.match.status === 'finished' ? 'Edit final score' : 'Enter final score' : query.data.match.status === 'scheduled' ? 'Open match management' : 'Open live scoring'} onPress={() => router.push({ pathname: opponentOnly ? '/result/[id]' : '/live/[id]', params: { id } })} /></View> : null}

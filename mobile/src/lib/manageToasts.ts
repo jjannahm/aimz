@@ -27,6 +27,7 @@ export type ManageEntity =
   | 'series'
   | 'photo'
   | 'roster'
+  | 'account'
   | 'result';
 
 export type ManageAction = 'created' | 'saved' | 'deleted';
@@ -54,6 +55,9 @@ const WORDING: Record<ManageEntity, { noun: string; created?: string; deleted?: 
   series: { noun: 'Series' },
   photo: { noun: 'Photo' },
   roster: { noun: 'Private roster details' },
+  // Unlinking removes the link rather than deleting the account, and saying
+  // "Account deleted" over a link change would frighten an administrator.
+  account: { noun: 'Account link', deleted: 'removed' },
   result: { noun: 'Final score' },
 };
 
