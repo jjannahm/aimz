@@ -116,6 +116,40 @@ describe('ManageScreen navigation', () => {
     expect(await screen.findByRole('button', { name: 'Private roster details' })).toBeTruthy();
     expect(screen.getByTestId('family-icon', { includeHiddenElements: true })).toBeTruthy();
   });
+
+  it('searches the current players rather than scrolling them', async () => {
+    jest.mocked(api.players).mockResolvedValue({ ...emptyPage, items: [
+      { id: 'player-1', name: 'Amina Adel', position: 'CM', jersey_number: 14 },
+      { id: 'player-2', name: 'Nour Hassan', position: 'GK', jersey_number: 1 },
+    ] } as never);
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Players' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Search current players' }));
+
+    await fireEvent.changeText(screen.getByTestId('search-input'), 'nour');
+    await waitFor(() => expect(screen.queryByText('Amina Adel')).toBeNull());
+    expect(screen.getByText('Nour Hassan')).toBeTruthy();
+
+    // A row is matched on the line beneath the name too, so a position or a
+    // shirt number finds it.
+    await fireEvent.changeText(screen.getByTestId('search-input'), '#14');
+    await waitFor(() => expect(screen.getByText('Amina Adel')).toBeTruthy());
+    expect(screen.queryByText('Nour Hassan')).toBeNull();
+  });
+
+  it('leaves a search behind when the section changes', async () => {
+    jest.mocked(api.players).mockResolvedValue({ ...emptyPage, items: [{ id: 'player-1', name: 'Amina Adel', position: 'CM', jersey_number: 14 }] } as never);
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Players' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Search current players' }));
+    await fireEvent.changeText(screen.getByTestId('search-input'), 'nobody');
+    await waitFor(() => expect(screen.getByText('Nothing matches that.')).toBeTruthy());
+
+    await fireEvent.press(screen.getByRole('tab', { name: 'Squads' }));
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Players' }));
+    expect(await screen.findByText('Amina Adel')).toBeTruthy();
+    expect(screen.getByTestId('search-input').props.value).toBe('');
+  });
 });
 
 describe('ManageScreen confirmations', () => {

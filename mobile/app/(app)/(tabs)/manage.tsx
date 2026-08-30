@@ -23,6 +23,7 @@ import { PositionField } from '@/src/components/PositionField';
 import { BulkPlayerImport } from '@/src/components/manage/BulkPlayerImport';
 import { AnnouncementsManager, ScheduleManager } from '@/src/components/manage/HubManagers';
 import { Screen } from '@/src/components/Screen';
+import { narrowBySearch } from '@/src/components/SearchField';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { appConfig } from '@/src/config';
 import { api, ApiError } from '@/src/lib/api';
@@ -218,6 +219,8 @@ export default function ManageScreen() {
   const [resource, setResource] = React.useState<Resource>('teams');
   const [editing, setEditing] = React.useState<Entity | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
+  /** What the list below is narrowed to, which each section starts free of. */
+  const [search, setSearch] = React.useState('');
   /** Knockouts created in this sitting, whose next save completes their setup. */
   const [drawnUp, setDrawnUp] = React.useState<string[]>([]);
   const pageRef = React.useRef<ScrollView | null>(null);
@@ -229,7 +232,7 @@ export default function ManageScreen() {
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: defaults });
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
 
-  const switchResource = (next: Resource) => { setResource(next); setEditing(null); form.reset(defaults); setFormError(null); };
+  const switchResource = (next: Resource) => { setResource(next); setEditing(null); form.reset(defaults); setFormError(null); setSearch(''); };
   // Eight sections stay visible in a fixed two-by-four grid. Every cell keeps
   // its quarter of the width whatever it holds, so the two rows line up, and
   // the cells stretch their pills to an even row height.
@@ -249,6 +252,10 @@ export default function ManageScreen() {
   const query = resource === 'teams' || resource === 'opponents' ? teams : resource === 'competitions' ? competitions : resource === 'players' ? players : resource === 'matches' ? matches : invites;
   const allTeams = teams.data?.items ?? [];
   const items: Entity[] = resource === 'teams' ? allTeams.filter((team) => team.is_aimz) : resource === 'opponents' ? allTeams.filter((team) => !team.is_aimz) : resource === 'competitions' ? competitions.data?.items ?? [] : resource === 'players' ? players.data?.items ?? [] : resource === 'matches' ? matches.data?.items ?? [] : invites.data ?? [];
+  const listLabel = resources.find((item) => item.value === resource)?.label.toLowerCase() ?? 'items';
+  // A hundred players is quicker to search than to scroll. A row is matched on
+  // the two lines it actually shows, so a position or a shirt number finds one.
+  const shown = narrowBySearch(items, search, (item) => `${entityTitle(item)} ${entityMeta(item)}`);
   // Every admin write clears the views built on it, including derived ones
   // like standings, leaderboards and squad counts.
   const entityFor: Record<LegacyResource, Parameters<typeof invalidateAfterWrite>[1]> = { teams: 'team', opponents: 'team', players: 'player', competitions: 'competition', matches: 'match', invites: 'invite' };
@@ -384,11 +391,11 @@ export default function ManageScreen() {
     {resourceChips}
     <View style={styles.content} testID="manage-content">
       {!appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}
-      <View style={styles.formCard}><Text style={styles.heading}>{editing ? 'Edit' : 'Add'} {resources.find((item) => item.value === resource)?.label.toLowerCase()}</Text>{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields competitions={competitions.data?.items ?? []} control={form.control} editingId={editing && resource === 'competitions' ? editing.id : null} errors={form.formState.errors} players={players.data?.items ?? []} resource={resource} setValue={form.setValue} teams={teams.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></View>
+      <View style={styles.formCard}><Text style={styles.heading}>{editing ? 'Edit' : 'Add'} {listLabel}</Text>{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields competitions={competitions.data?.items ?? []} control={form.control} editingId={editing && resource === 'competitions' ? editing.id : null} errors={form.formState.errors} players={players.data?.items ?? []} resource={resource} setValue={form.setValue} teams={teams.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></View>
       {resource === 'players' ? <BulkPlayerImport teams={allTeams} /> : null}
       {resource === 'competitions' ? <SeasonControls competitions={competitions.data?.items ?? []} /> : null}
-      {query.isError ? <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} /> : <CollapsibleSection count={items.length} title={`Current ${resources.find((item) => item.value === resource)?.label.toLowerCase()}`}>
-      {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{items.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text></View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'kickoff_datetime' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={!item.home_team?.is_aimz && !item.away_team?.is_aimz ? (item.status === 'finished' ? 'Edit final score' : 'Enter final score') : (item.status === 'scheduled' ? 'Start' : 'Score')} onPress={() => router.push({ pathname: !item.home_team?.is_aimz && !item.away_team?.is_aimz ? '/result/[id]' : '/live/[id]', params: { id: item.id } })} variant="secondary" /> : null}{resource === 'players' ? <AppButton compact icon={<FamilyIcon color={colors.textPrimary} />} iconOnly label="Private roster details" onPress={() => router.push({ pathname: '/roster/[id]', params: { id: item.id } })} variant="secondary" /> : null}{appConfig.enableMedia && resource === 'teams' ? <AppButton compact icon="camera" iconOnly label="Photo" onPress={() => uploadPhoto(item as Team, 'team')} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => remove(item)} variant="danger" /></View></View>)}</View>}
+      {query.isError ? <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} /> : <CollapsibleSection count={items.length} search={{ label: `Search ${listLabel}`, onChange: setSearch, placeholder: `Search ${listLabel}…`, resultCount: shown.length, value: search }} title={`Current ${listLabel}`}>
+      {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : shown.length === 0 ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shown.map((item) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text></View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'kickoff_datetime' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={!item.home_team?.is_aimz && !item.away_team?.is_aimz ? (item.status === 'finished' ? 'Edit final score' : 'Enter final score') : (item.status === 'scheduled' ? 'Start' : 'Score')} onPress={() => router.push({ pathname: !item.home_team?.is_aimz && !item.away_team?.is_aimz ? '/result/[id]' : '/live/[id]', params: { id: item.id } })} variant="secondary" /> : null}{resource === 'players' ? <AppButton compact icon={<FamilyIcon color={colors.textPrimary} />} iconOnly label="Private roster details" onPress={() => router.push({ pathname: '/roster/[id]', params: { id: item.id } })} variant="secondary" /> : null}{appConfig.enableMedia && resource === 'teams' ? <AppButton compact icon="camera" iconOnly label="Photo" onPress={() => uploadPhoto(item as Team, 'team')} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => remove(item)} variant="danger" /></View></View>)}</View>}
       </CollapsibleSection>}
     </View>
   </Screen>;
