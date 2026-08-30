@@ -5,6 +5,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { narrowBySearch, SearchField } from '@/src/components/SearchField';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
+import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -79,7 +80,11 @@ export function AuditTrail({ matchId, limit }: Props) {
     {narrowed && !entries.length ? <Text style={styles.empty}>Nothing matches that.</Text> : null}
     {entries.map((entry: AuditEntry) => <View key={entry.id} style={styles.entry}>
       <View style={styles.icon}>
-        <Ionicons accessibilityElementsHidden color={colors.accentSoft} name={actionIcon[entry.action] ?? 'ellipse-outline'} size={18} />
+        {/* Naming a man of the match is the one entry in the log that records
+            something won, so it carries the same gold as the award it made. */}
+        {entry.action === 'man_of_the_match_set'
+          ? <TrophyIcon outline size={18} />
+          : <Ionicons accessibilityElementsHidden color={colors.accentSoft} name={actionIcon[entry.action] ?? 'ellipse-outline'} size={18} />}
       </View>
       <View style={styles.copy}>
         <Text style={styles.summary}>{entry.summary}</Text>
