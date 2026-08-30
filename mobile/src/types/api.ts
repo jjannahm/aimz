@@ -185,7 +185,7 @@ export type Announcement = {
   updated_at: string;
 };
 
-export type AvailabilityStatus = 'going' | 'maybe' | 'not_going';
+export type AvailabilityStatus = 'going' | 'not_going';
 export type TrainingAvailability = {
   id: string;
   training_session_id: string;

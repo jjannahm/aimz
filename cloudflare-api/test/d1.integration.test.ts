@@ -28,7 +28,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0025_calendar_tokens.sql');
+    expect(applied.results.at(-1)?.name).toBe('0026_availability_two_way.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -81,9 +81,12 @@ describe('team hub authorization and roster privacy', () => {
 
     const firstRsvp = await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('PUT', { status: 'going', note: null }, playerUser.token));
     expect(firstRsvp.status).toBe(200);
-    await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('PUT', { status: 'maybe', note: 'School' }, playerUser.token));
+    await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('PUT', { status: 'not_going', note: 'School' }, playerUser.token));
     const rsvps = await (await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('GET', undefined, playerUser.token))).json<{ status: string; note: string }[]>();
-    expect(rsvps).toEqual([expect.objectContaining({ status: 'maybe', note: 'School' })]);
+    expect(rsvps).toEqual([expect.objectContaining({ status: 'not_going', note: 'School' })]);
+    // Availability is a two-way answer; "maybe" is no longer one of them.
+    const undecided = await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('PUT', { status: 'maybe', note: null }, playerUser.token));
+    expect(undecided.status).toBe(422);
 
     const slot = await request(`/api/v1/training-sessions/${sessions[0]!.id}/assignments`, json('POST', { title: 'Bring bibs', assigned_player_id: null }, admin.token));
     expect(slot.status).toBe(201);

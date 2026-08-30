@@ -128,7 +128,7 @@ export function registerTrainingRoutes(app: App): void {
       : actor.player_id!;
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=? AND team_id=?").bind(playerId, session.team_id).first<PlayerRow>();
     if (!player) throw new ApiProblem(422, "player_not_found", "Choose a player from this squad.");
-    const status = enumField(body, "status", ["going", "maybe", "not_going"] as const);
+    const status = enumField(body, "status", ["going", "not_going"] as const);
     const note = stringField(body, "note", { optional: true, nullable: true, max: 500 }) ?? null;
     const existing = await c.env.DB.prepare("SELECT * FROM training_availability WHERE training_session_id=? AND player_id=?").bind(session.id, playerId).first<AvailabilityRow>();
     const now = nowIso();

@@ -107,11 +107,14 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
       <FormField label="Notes (optional)" multiline onChangeText={(notes) => setDraft((current) => ({ ...current, notes }))} value={draft.notes} />
       <View style={styles.formActions}><AppButton label={editing ? 'Save occurrence' : 'Create schedule'} loading={save.isPending} onPress={() => save.mutate()} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); setDraft(freshSchedule()); }} variant="ghost" /> : null}</View>
     </View>
+    {/* Each session row opens the session; the buttons beside it edit and delete
+      * it. They are siblings rather than nested, because a pressable inside a
+      * pressable is a button inside a button once this renders on the web. */}
     {sessions.isError ? <ErrorState message={(sessions.error as ApiError).message} onRetry={() => sessions.refetch()} /> : <CollapsibleSection count={sessionItems.length} search={{ label: 'Search training sessions', onChange: setSearch, placeholder: 'Search a squad, date or venue…', resultCount: shownSessions.length, value: search }} title="Current training sessions">
-      {sessions.isLoading ? <LoadingState /> : !sessionItems.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : !shownSessions.length ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shownSessions.map((session) => <Pressable key={session.id} onPress={() => router.push({ pathname: '/training/[id]', params: { id: session.id } })} style={styles.card}>
-        <View style={styles.copy}><Text style={styles.title}>{session.team.name}</Text><Text style={styles.meta}>{formatEgyptDateTime(session.starts_at)} · {session.venue}</Text></View>
+      {sessions.isLoading ? <LoadingState /> : !sessionItems.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : !shownSessions.length ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shownSessions.map((session) => <View key={session.id} style={styles.card}>
+        <Pressable accessibilityHint="Opens the session, its availability and its assignments" accessibilityLabel={`${session.team.name}, ${formatEgyptDateTime(session.starts_at)} at ${session.venue}`} accessibilityRole="button" onPress={() => router.push({ pathname: '/training/[id]', params: { id: session.id } })} style={({ pressed }) => [styles.copy, pressed && styles.pressedRow]}><Text style={styles.title}>{session.team.name}</Text><Text style={styles.meta}>{formatEgyptDateTime(session.starts_at)} · {session.venue}</Text></Pressable>
         <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit occurrence" onPress={() => beginEdit(session)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete occurrence" onPress={() => confirmAction('Delete this session?', 'Only this occurrence will be removed.', 'Delete one', () => remove(session, 'one'), { destructive: true })} variant="danger" />{session.series_id ? <AppButton compact label="Delete series" onPress={() => confirmAction('Delete the full series?', 'Every occurrence in this series will be removed.', 'Delete series', () => remove(session, 'series'), { destructive: true })} variant="danger" /> : null}</View>
-      </Pressable>)}</View>}
+      </View>)}</View>}
     </CollapsibleSection>}
   </View>;
 }
@@ -184,6 +187,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   heading: { color: colors.textPrimary, fontSize: theme.type.heading, fontWeight: '900' },
   label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
   meta: { color: colors.textMuted, marginTop: 4 },
+  pressedRow: { opacity: 0.6 },
   stack: { gap: theme.spacing.md },
   title: { color: colors.textPrimary, fontWeight: '900' },
 });

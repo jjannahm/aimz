@@ -15,12 +15,12 @@ import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AvailabilityStatus, TrainingSession } from '@/src/types/api';
 
 /**
- * Each answer carries its own colour: green for going, amber for maybe, red for
- * not going. The tone names a palette entry rather than a hex, so a pill and the
- * tally heading underneath it are the same colour by construction, in both
- * modes, and neither can drift from the other.
+ * Availability is a two-way answer: green for going, red for not going. The
+ * tone names a palette entry rather than a hex, so a pill and the tally heading
+ * underneath it are the same colour by construction, in both modes, and neither
+ * can drift from the other.
  */
-const options: { label: string; tone: 'live' | 'warning' | 'error'; value: AvailabilityStatus }[] = [{ label: 'Going', tone: 'live', value: 'going' }, { label: 'Maybe', tone: 'warning', value: 'maybe' }, { label: 'Not going', tone: 'error', value: 'not_going' }];
+const options: { label: string; tone: 'live' | 'error'; value: AvailabilityStatus }[] = [{ label: 'Going', tone: 'live', value: 'going' }, { label: 'Not going', tone: 'error', value: 'not_going' }];
 
 export function AvailabilityPanel({ session }: { session: TrainingSession }) {
   const styles = useThemedStyles(stylesheet);
@@ -45,6 +45,8 @@ export function AvailabilityPanel({ session }: { session: TrainingSession }) {
   const save = useMutation({ mutationFn: (status: AvailabilityStatus) => api.setTrainingAvailability(session.id, status, note || null, user?.role === 'admin' ? adminPlayer : undefined), onError: (error) => showMessage('Availability not saved', (error as ApiError).message), onSuccess: async () => { await invalidateAfterWrite(client, 'availability'); } });
   if (availability.isLoading) return <LoadingState label="Loading availability" />;
   if (availability.isError) return <ErrorState message={(availability.error as ApiError).message} onRetry={() => availability.refetch()} />;
+  const answered = new Set((availability.data ?? []).map((row) => row.player_id));
+  const waiting = players.data ? players.data.items.filter((player) => !answered.has(player.id)) : null;
   return <View style={styles.panel}>
     <Text style={styles.heading}>Availability</Text>
     {user?.role === 'admin' ? <ChoiceField label="Player" onChange={setAdminPlayer} options={(players.data?.items ?? []).map((player) => ({ label: player.name, value: player.id }))} placeholder="Choose a player" value={adminPlayer} /> : null}
@@ -52,6 +54,11 @@ export function AvailabilityPanel({ session }: { session: TrainingSession }) {
     {mine ? <AppButton compact disabled={!noteChanged || save.isPending} label="Save note" loading={save.isPending} onPress={() => save.mutate(mine.status)} variant="secondary" /> : null}
     <View accessibilityRole="radiogroup" style={styles.segments}>{options.map((option) => { const tone = colors[option.tone]; const chosen = mine?.status === option.value; return <Pressable accessibilityRole="radio" accessibilityState={{ checked: chosen, disabled: !target || save.isPending }} disabled={!target || save.isPending} key={option.value} onPress={() => save.mutate(option.value)} style={({ pressed }) => [styles.segment, { borderColor: tone }, chosen && { backgroundColor: tone }, pressed && styles.pressed]}><Text style={[styles.segmentText, { color: chosen ? colors.onStatus : tone }, chosen && styles.chosenText]}>{option.label}</Text></Pressable>; })}</View>
     {options.map((option) => { const rows = availability.data?.filter((row) => row.status === option.value) ?? []; return <View key={option.value} style={styles.group}><Text style={[styles.groupTitle, { color: colors[option.tone] }]}>{option.label} · {rows.length}</Text>{rows.length ? rows.map((row) => <Text key={row.id} style={styles.person}>{row.player.name}{row.note ? ` — ${row.note}` : ''}</Text>) : <Text style={styles.empty}>No responses</Text>}</View>; })}
+    {/* Who has not answered at all. Without this an unanswered player is simply
+      * absent from the panel, and a coach counting a squad cannot tell someone
+      * staying away from someone who has yet to look. Only an admin has the
+      * squad list to compare against. */}
+    {waiting ? <View style={styles.group}><Text style={[styles.groupTitle, { color: colors.textMuted }]}>No response · {waiting.length}</Text>{waiting.length ? waiting.map((player) => <Text key={player.id} style={styles.person}>{player.name}</Text>) : <Text style={styles.empty}>Everybody has answered</Text>}</View> : null}
   </View>;
 }
 
