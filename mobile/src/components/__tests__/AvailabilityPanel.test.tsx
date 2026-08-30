@@ -58,10 +58,10 @@ describe('AvailabilityPanel note', () => {
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
     await waitFor(() => expect(noteField(screen).props.value).toBe('Back injury'));
 
-    await fireEvent.press(screen.getByRole('radio', { name: 'Maybe' }));
+    await fireEvent.press(screen.getByRole('radio', { name: 'Not going' }));
 
     await waitFor(() => expect(api.setTrainingAvailability).toHaveBeenCalled());
-    expect(api.setTrainingAvailability).toHaveBeenCalledWith('t-1', 'maybe', 'Back injury', undefined);
+    expect(api.setTrainingAvailability).toHaveBeenCalledWith('t-1', 'not_going', 'Back injury');
     await settle();
   });
 
@@ -86,25 +86,56 @@ describe('AvailabilityPanel note', () => {
     await fireEvent.press(screen.getByText('Save note'));
 
     await waitFor(() => expect(api.setTrainingAvailability).toHaveBeenCalled());
-    expect(api.setTrainingAvailability).toHaveBeenCalledWith('t-1', 'going', 'Fit again', undefined);
+    expect(api.setTrainingAvailability).toHaveBeenCalledWith('t-1', 'going', 'Fit again');
     await settle();
   });
 
-  it('reseeds the field when an admin moves to another player', async () => {
+});
+
+describe('AvailabilityPanel answers', () => {
+  beforeEach(() => {
     mockUser = { role: 'admin' };
-    jest.mocked(api.trainingAvailability).mockResolvedValue([row({ note: 'Back injury' })]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue([]);
+    jest.mocked(api.players).mockResolvedValue({ items: squad, total: squad.length } as Awaited<ReturnType<typeof api.players>>);
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('asks only whether a player is going or not', async () => {
+    mockUser = { role: 'player', player_id: 'p-1' };
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Player' })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Going' })).toBeTruthy());
+    expect(screen.getByRole('radio', { name: 'Not going' })).toBeTruthy();
+    expect(screen.queryByRole('radio', { name: 'Maybe' })).toBeNull();
+  });
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Player' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Amina Adel' })).toBeTruthy());
-    await fireEvent.press(screen.getByRole('button', { name: 'Amina Adel' }));
-    await waitFor(() => expect(noteField(screen).props.value).toBe('Back injury'));
+  // A coach counting a squad has to tell someone staying away from someone who
+  // has not looked yet, so the unanswered are named rather than simply absent.
+  it('names the players who have not answered', async () => {
+    jest.mocked(api.trainingAvailability).mockResolvedValue([row()]);
+    const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
+    await waitFor(() => expect(screen.getByText('Going · 1')).toBeTruthy());
+    expect(screen.getByText('No response · 1')).toBeTruthy();
+    expect(screen.getByText('Nour Hassan')).toBeTruthy();
+  });
 
-    await fireEvent.press(screen.getByRole('button', { name: 'Player' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Nour Hassan' })).toBeTruthy());
-    await fireEvent.press(screen.getByRole('button', { name: 'Nour Hassan' }));
+  it('says so when the whole squad has answered', async () => {
+    jest.mocked(api.trainingAvailability).mockResolvedValue([row(), row({ id: 'a-2', player_id: 'p-2', player: squad[1], status: 'not_going' })]);
+    const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
+    await waitFor(() => expect(screen.getByText('No response · 0')).toBeTruthy());
+    expect(screen.getByText('Everybody has answered')).toBeTruthy();
+  });
 
-    await waitFor(() => expect(noteField(screen).props.value).toBe(''));
+  // An admin reads the replies rather than answering in their place, so the
+  // panel they open carries the tallies and nothing to fill in.
+  it('gives an admin the replies to read, not a vote to cast', async () => {
+    jest.mocked(api.trainingAvailability).mockResolvedValue([row()]);
+    const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
+    await waitFor(() => expect(screen.getByText('Going · 1')).toBeTruthy());
+    expect(screen.queryByRole('radio', { name: 'Going' })).toBeNull();
+    expect(screen.queryByRole('radio', { name: 'Not going' })).toBeNull();
+    expect(screen.queryByLabelText('Note (optional)')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Player' })).toBeNull();
+    expect(screen.queryByText('Save note')).toBeNull();
   });
 });

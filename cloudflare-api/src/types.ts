@@ -129,7 +129,7 @@ export interface AvailabilityRow {
   id: string;
   training_session_id: string;
   player_id: string;
-  status: "going" | "maybe" | "not_going";
+  status: "going" | "not_going";
   note: string | null;
   created_at: string;
   updated_at: string;
