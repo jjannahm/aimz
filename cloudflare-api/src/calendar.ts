@@ -205,19 +205,58 @@ export function registerCalendarRoutes(app: Hono<{ Bindings: Env }>): void {
     });
   });
 
+  /**
+   * The feed as it stands, which may be no feed at all.
+   *
+   * Reading deliberately does not write. It used to mint a token when there was
+   * none, which made removing a subscription impossible to express: the row
+   * went, the screen reopened, and a new feed quietly took its place. It also
+   * means a live feed URL now exists only for an account that asked for one,
+   * rather than for everyone who ever opened the screen.
+   */
   app.get("/api/v1/users/me/calendar", async (c) => {
     const user = await currentUser(c);
     refuseAdmin(user);
     const existing = await c.env.DB.prepare("SELECT * FROM calendar_tokens WHERE user_id = ?").bind(user.id).first<CalendarTokenRow>();
-    // Minted on first ask rather than at registration, so an account that never
-    // opens this never has a live feed URL at all.
-    const token = existing?.token ?? await issueToken(c.env, user);
-    return c.json({ url: feedUrl(c.req.url, token), subscribed_at: existing?.first_fetched_at ?? null });
+    return c.json({ url: existing ? feedUrl(c.req.url, existing.token) : null, subscribed_at: existing?.first_fetched_at ?? null });
+  });
+
+  /**
+   * Asks for a feed, and is happy if there already is one.
+   *
+   * Idempotent on purpose: this is what the Hub's calendar button presses, and
+   * pressing it twice should hand back the same address rather than quietly
+   * revoking the one already added to a calendar. Replacing is `regenerate`.
+   */
+  app.post("/api/v1/users/me/calendar", async (c) => {
+    const user = await currentUser(c);
+    refuseAdmin(user);
+    const existing = await c.env.DB.prepare("SELECT * FROM calendar_tokens WHERE user_id = ?").bind(user.id).first<CalendarTokenRow>();
+    if (existing) return c.json({ url: feedUrl(c.req.url, existing.token), subscribed_at: existing.first_fetched_at });
+    return c.json({ url: feedUrl(c.req.url, await issueToken(c.env, user)), subscribed_at: null }, 201);
   });
 
   app.post("/api/v1/users/me/calendar/regenerate", async (c) => {
     const user = await currentUser(c);
     refuseAdmin(user);
     return c.json({ url: feedUrl(c.req.url, await issueToken(c.env, user)), subscribed_at: null });
+  });
+
+  /**
+   * Takes the feed away entirely.
+   *
+   * The address stops resolving for every calendar that already has it, which
+   * is the same 404 a wrong token gets — a client polling a removed feed cannot
+   * tell it was ever real. Setting one up again mints a different address, so
+   * this is not undo.
+   *
+   * Removing a feed that is not there is a success: it leaves the account in
+   * exactly the state the caller asked for.
+   */
+  app.delete("/api/v1/users/me/calendar", async (c) => {
+    const user = await currentUser(c);
+    refuseAdmin(user);
+    await c.env.DB.prepare("DELETE FROM calendar_tokens WHERE user_id = ?").bind(user.id).run();
+    return c.body(null, 204);
   });
 }
