@@ -100,7 +100,7 @@ const keepersSquad = [
   photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '',
 }));
 
-describe('LineupScreen — one goalkeeper', () => {
+describe('LineupScreen — filling the pitch', () => {
   beforeEach(() => {
     jest.mocked(api.live).mockResolvedValue({ match: fiveASide, events: [], lineup: [], revision: 1 } as LiveMatchSnapshot);
     jest.mocked(api.players).mockResolvedValue({ items: keepersSquad, total: keepersSquad.length, limit: 100, offset: 0 } as never);
@@ -111,35 +111,69 @@ describe('LineupScreen — one goalkeeper', () => {
 
   const open = async () => {
     const screen = await render(<LineupScreen />, { wrapper });
-    // The squad list is what these tests press on, so wait for it by name
-    // rather than for the heading that sits above it.
-    await screen.findByLabelText(/^Amal Keeper,/u, {}, { timeout: 5000 });
+    await screen.findByTestId('slot-gk');
     return screen;
   };
-  const pick = (screen: Awaited<ReturnType<typeof open>>, name: string) =>
-    fireEvent.press(screen.getByLabelText(new RegExp(`^${name},`, 'u')));
-  // A side plays one keeper, so the second takes the first's place rather than
-  // being refused — nobody has to go and find the outgoing keeper first.
-  it('puts the standing keeper back on the bench when another is chosen', async () => {
-    const screen = await open();
-    pick(screen, 'Amal Keeper');
-    expect(await screen.findByText('1 of 5 selected')).toBeTruthy();
 
-    pick(screen, 'Basma Keeper');
-    // Still one, because the second keeper replaced the first rather than
-    // joining them.
-    expect(await screen.findByText('1 of 5 selected')).toBeTruthy();
-    // And the one who stepped aside is named back on the bench.
-    expect(screen.getByText(/^Amal Keeper, Cara Back/u)).toBeTruthy();
+  // A place asks for a line, so that line is offered first.
+  it('offers the keepers for the place in goal', async () => {
+    const screen = await open();
+    fireEvent.press(screen.getByTestId('slot-gk'));
+
+    expect(await screen.findByText('Goalkeepers')).toBeTruthy();
+    expect(screen.getByTestId('pick-gk1')).toBeTruthy();
+    expect(screen.getByTestId('pick-gk2')).toBeTruthy();
+    // Everyone else is still reachable, so a squad can always field a side.
+    expect(screen.getByText('Other positions')).toBeTruthy();
   });
 
-  it('lets an outfielder join a keeper rather than replacing them', async () => {
+  it('stands the player picked in the place that was tapped', async () => {
     const screen = await open();
-    pick(screen, 'Amal Keeper');
-    pick(screen, 'Cara Back');
-    expect(await screen.findByText('2 of 5 selected')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('slot-gk'));
+    fireEvent.press(await screen.findByTestId('pick-gk1'));
+
+    expect(await screen.findByLabelText('GK: Amal Keeper')).toBeTruthy();
+    expect(screen.getByText('1 of 5 selected')).toBeTruthy();
   });
 
-  // Fill a side with outfielders and the keeper would have nowhere left to go,
-  // so the last place is held for one until there is one.
+  // Nobody stands in two places at once, so somebody already on the pitch is
+  // not offered for a second one.
+  it('keeps a player who is already on the pitch out of the other lists', async () => {
+    const screen = await open();
+    fireEvent.press(screen.getByTestId('slot-gk'));
+    fireEvent.press(await screen.findByTestId('pick-gk1'));
+    expect(await screen.findByLabelText('GK: Amal Keeper')).toBeTruthy();
+
+    fireEvent.press(screen.getByTestId('slot-0-0'));
+    await screen.findByText('Defenders');
+    expect(screen.queryByTestId('pick-gk1')).toBeNull();
+    expect(screen.getByTestId('pick-gk2')).toBeTruthy();
+  });
+
+  it('lets a place be emptied again', async () => {
+    const screen = await open();
+    fireEvent.press(screen.getByTestId('slot-gk'));
+    fireEvent.press(await screen.findByTestId('pick-gk1'));
+    fireEvent.press(await screen.findByLabelText('GK: Amal Keeper'));
+    fireEvent.press(await screen.findByText('Take Amal out'));
+
+    expect(await screen.findByLabelText('GK, empty')).toBeTruthy();
+    expect(screen.getByText('0 of 5 selected')).toBeTruthy();
+  });
+
+  // Changing the shape is what moves the places about.
+  it('lays out new places when the formation changes', async () => {
+    const screen = await open();
+    // 2-2 is two centre-backs and two strikers, and no midfield at all.
+    expect(screen.getAllByLabelText('CB, empty')).toHaveLength(2);
+    expect(screen.queryByLabelText('CM, empty')).toBeNull();
+
+    fireEvent.press(screen.getByTestId('formation-picker'));
+    fireEvent.press(await screen.findByTestId('formation-option-1-2-1'));
+
+    // 1-2-1 is one back, two in midfield and one up front.
+    await screen.findAllByLabelText('CM, empty');
+    expect(screen.getAllByLabelText('CM, empty')).toHaveLength(2);
+    expect(screen.getAllByLabelText('CB, empty')).toHaveLength(1);
+  });
 });
