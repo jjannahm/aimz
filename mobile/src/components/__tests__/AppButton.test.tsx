@@ -1,4 +1,5 @@
 import { fireEvent, render } from '@testing-library/react-native';
+import { Text } from 'react-native';
 
 import { AppButton } from '@/src/components/AppButton';
 
@@ -26,5 +27,14 @@ describe('AppButton', () => {
     expect(onPress).toHaveBeenCalledTimes(1);
     // The word itself is gone from the row; only the glyph remains.
     expect(screen.queryByText('Delete')).toBeNull();
+  });
+
+  it('accepts a custom icon without changing the button semantics', async () => {
+    const onPress = jest.fn();
+    const screen = await render(<AppButton icon={<Text testID="custom-icon">Family</Text>} iconOnly label="Private roster details" onPress={onPress} />);
+    expect(screen.getByTestId('custom-icon')).toBeTruthy();
+    fireEvent.press(screen.getByRole('button', { name: 'Private roster details' }));
+    expect(onPress).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Private roster details')).toBeNull();
   });
 });

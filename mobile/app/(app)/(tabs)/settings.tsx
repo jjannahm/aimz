@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AppButton } from '@/src/components/AppButton';
 import { AuditTrail } from '@/src/components/AuditTrail';
+import { CalendarSubscription } from '@/src/components/CalendarSubscription';
 import { ChoiceField } from '@/src/components/ChoiceField';
 import { CloseButton } from '@/src/components/CloseButton';
 import { CollapsibleCard } from '@/src/components/CollapsibleCard';
@@ -44,6 +45,7 @@ export default function SettingsScreen() {
   return <Screen action={<CloseButton onPress={closeSettings} />} hideSettings title="Settings">
     <View style={styles.card}><Text style={styles.heading}>Profile</Text><Text style={styles.meta}>{user?.email}</Text>{profile.formState.errors.root ? <Text style={styles.error}>{profile.formState.errors.root.message}</Text> : null}<Controller control={profile.control} name="name" render={({ field }) => <FormField error={profile.formState.errors.name?.message} label="Name" onChangeText={field.onChange} value={field.value} />} /><AppButton label="Save profile" loading={profile.formState.isSubmitting} onPress={saveProfile} /></View>
     <View style={styles.card}><Text style={styles.heading}>Appearance</Text><ChoiceField label="Theme" onChange={(value) => setPreference(value as ThemePreference)} options={themeOptions} value={preference} /><Text style={styles.meta}>{preference === 'system' ? `Following your device, currently ${mode}.` : 'Set for this app only.'}</Text></View>
+    {user?.role !== 'admin' ? <CalendarSubscription /> : null}
     {user?.role === 'admin' ? <CollapsibleCard summary="Every change an admin made to a match." title="Admin activity"><AuditTrail limit={20} /><AppButton label="See the full log" onPress={() => router.push('/audit')} variant="secondary" /></CollapsibleCard> : null}
     <CollapsibleCard onCollapse={() => password.reset()} summary="Update your sign-in password." title="Change password">{password.formState.errors.root ? <Text style={styles.error}>{password.formState.errors.root.message}</Text> : null}<Controller control={password.control} name="current" render={({ field }) => <FormField autoComplete="current-password" error={password.formState.errors.current?.message} label="Current password" onChangeText={field.onChange} secureTextEntry value={field.value} />} /><Controller control={password.control} name="next" render={({ field }) => <FormField autoComplete="new-password" error={password.formState.errors.next?.message} label="New password" onChangeText={field.onChange} secureTextEntry value={field.value} />} /><AppButton label="Update password" loading={password.formState.isSubmitting} onPress={savePassword} variant="secondary" /></CollapsibleCard>
     <View style={styles.card}><Text style={styles.heading}>Session</Text><AppButton label="Sign out" onPress={() => signOut()} variant="secondary" /><AppButton label="Delete account" onPress={confirmDelete} variant="danger" /></View>

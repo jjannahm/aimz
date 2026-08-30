@@ -1,4 +1,5 @@
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { useState } from 'react';
 import { Text } from 'react-native';
 
 import { CollapsibleSection } from '@/src/components/CollapsibleSection';
@@ -31,5 +32,33 @@ describe('CollapsibleSection', () => {
       </CollapsibleSection>,
     );
     expect(screen.getByText('Nour Hassan')).toBeTruthy();
+  });
+
+  it('opens a search box from the header, and clears it on the way out', async () => {
+    const onChange = jest.fn();
+    function Host() {
+      const [value, setValue] = useState('');
+      return (
+        <CollapsibleSection count={2} search={{ onChange: (next) => { onChange(next); setValue(next); }, resultCount: 1, value }} title="Current players">
+          <Text>Amina Adel</Text>
+        </CollapsibleSection>
+      );
+    }
+    const screen = await render(<Host />);
+
+    // The magnifier unfolds the section as well: a search that hid its own
+    // results would be no use.
+    expect(screen.queryByText('Amina Adel')).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Search current players' }));
+    await waitFor(() => expect(screen.getByText('Amina Adel')).toBeTruthy());
+
+    await fireEvent.changeText(screen.getByTestId('search-input'), 'amina');
+    expect(onChange).toHaveBeenLastCalledWith('amina');
+    expect(screen.getByText('1 match')).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Hide the search for current players' }));
+    await waitFor(() => expect(screen.queryByTestId('search-input')).toBeNull());
+    expect(onChange).toHaveBeenLastCalledWith('');
+    expect(screen.getByText('Amina Adel')).toBeTruthy();
   });
 });

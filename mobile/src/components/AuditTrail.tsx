@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { narrowBySearch, SearchField } from '@/src/components/SearchField';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -43,6 +45,7 @@ type Props = {
 export function AuditTrail({ matchId, limit }: Props) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
+  const [search, setSearch] = useState('');
   const trail = useQuery({
     queryKey: ['audit-log', matchId ?? 'all'],
     queryFn: () => api.auditLog(matchId),
@@ -54,12 +57,26 @@ export function AuditTrail({ matchId, limit }: Props) {
   if (!all.length) {
     return <EmptyState body="Scoring a match, saving a lineup or correcting an event will show up here." title="Nothing recorded yet" />;
   }
-  const entries = limit === undefined ? all : all.slice(0, limit);
+  // Only the full log carries a search: the Settings card is a fixed slice of
+  // twenty, and a box over those would be furniture. A season of scoring runs to
+  // hundreds of lines, where finding one correction means reading every one.
+  const full = limit === undefined;
+  const matches = full ? narrowBySearch(all, search, (entry) => `${entry.summary} ${entry.actor_name}`) : all;
+  const entries = full ? matches : matches.slice(0, limit);
   const total = trail.data?.total ?? all.length;
+  const narrowed = full && Boolean(search.trim());
   return <View style={styles.list}>
+    {full ? <SearchField
+      label="Search the activity log"
+      onChange={setSearch}
+      placeholder="Search an action or an admin…"
+      resultCount={entries.length}
+      value={search}
+    /> : null}
     <Text style={styles.count}>
-      {entries.length < total ? `Latest ${entries.length} of ${total} actions` : `${total} ${total === 1 ? 'action' : 'actions'} recorded`}
+      {narrowed ? `${entries.length} of ${total} actions` : entries.length < total ? `Latest ${entries.length} of ${total} actions` : `${total} ${total === 1 ? 'action' : 'actions'} recorded`}
     </Text>
+    {narrowed && !entries.length ? <Text style={styles.empty}>Nothing matches that.</Text> : null}
     {entries.map((entry: AuditEntry) => <View key={entry.id} style={styles.entry}>
       <View style={styles.icon}>
         <Ionicons accessibilityElementsHidden color={colors.accentSoft} name={actionIcon[entry.action] ?? 'ellipse-outline'} size={18} />
@@ -75,6 +92,7 @@ export function AuditTrail({ matchId, limit }: Props) {
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   list: { gap: theme.spacing.sm },
   count: { color: colors.textMuted, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 0.8, textTransform: 'uppercase' },
+  empty: { color: colors.textMuted, fontFamily: theme.font.regular },
   entry: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.md, minHeight: 64, padding: theme.spacing.md },
   icon: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 18, height: 36, justifyContent: 'center', width: 36 },
   copy: { flex: 1 },

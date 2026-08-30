@@ -8,6 +8,7 @@ import { ChoiceField } from '@/src/components/ChoiceField';
 import { CollapsibleSection } from '@/src/components/CollapsibleSection';
 import { DateTimeField } from '@/src/components/DateTimeField';
 import { FormField } from '@/src/components/FormField';
+import { narrowBySearch } from '@/src/components/SearchField';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { invalidateAfterWrite } from '@/src/lib/cache';
@@ -44,6 +45,7 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
   const sessions = useQuery({ queryKey: ['training', 'admin'], queryFn: () => api.trainingSessions('?limit=100') });
   const [draft, setDraft] = React.useState<ScheduleDraft>(freshSchedule);
   const [editing, setEditing] = React.useState<TrainingSession | null>(null);
+  const [search, setSearch] = React.useState('');
   const save = useMutation({
     mutationFn: async () => {
       if (!draft.teamId || !draft.venue.trim()) throw new Error('Choose a squad and enter a venue.');
@@ -85,6 +87,10 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
   };
   const beginEdit = (session: TrainingSession) => { setEditing(session); setDraft({ teamId: session.team_id, startsAt: session.starts_at, duration: String(session.duration_minutes), venue: session.venue, notes: session.notes ?? '', recurrence: 'once', weekdays: [], endsOn: '' }); };
   const toggleWeekday = (day: number) => setDraft((current) => ({ ...current, weekdays: current.weekdays.includes(day) ? current.weekdays.filter((value) => value !== day) : [...current.weekdays, day].sort() }));
+  // One weekly schedule can lay down a couple of hundred occurrences, so the
+  // squad, the date and the venue are all searchable.
+  const sessionItems = sessions.data?.items ?? [];
+  const shownSessions = narrowBySearch(sessionItems, search, (session) => `${session.team.name} ${formatEgyptDateTime(session.starts_at)} ${session.venue}`);
   return <View style={styles.stack}>
     <View style={styles.formCard}>
       <Text style={styles.heading}>{editing ? 'Edit this occurrence' : 'Add training sessions'}</Text>
@@ -101,8 +107,8 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
       <FormField label="Notes (optional)" multiline onChangeText={(notes) => setDraft((current) => ({ ...current, notes }))} value={draft.notes} />
       <View style={styles.formActions}><AppButton label={editing ? 'Save occurrence' : 'Create schedule'} loading={save.isPending} onPress={() => save.mutate()} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); setDraft(freshSchedule()); }} variant="ghost" /> : null}</View>
     </View>
-    {sessions.isError ? <ErrorState message={(sessions.error as ApiError).message} onRetry={() => sessions.refetch()} /> : <CollapsibleSection count={sessions.data?.items.length ?? 0} title="Current training sessions">
-      {sessions.isLoading ? <LoadingState /> : !sessions.data?.items.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{sessions.data.items.map((session) => <Pressable key={session.id} onPress={() => router.push({ pathname: '/training/[id]', params: { id: session.id } })} style={styles.card}>
+    {sessions.isError ? <ErrorState message={(sessions.error as ApiError).message} onRetry={() => sessions.refetch()} /> : <CollapsibleSection count={sessionItems.length} search={{ label: 'Search training sessions', onChange: setSearch, placeholder: 'Search a squad, date or venue…', resultCount: shownSessions.length, value: search }} title="Current training sessions">
+      {sessions.isLoading ? <LoadingState /> : !sessionItems.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : !shownSessions.length ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shownSessions.map((session) => <Pressable key={session.id} onPress={() => router.push({ pathname: '/training/[id]', params: { id: session.id } })} style={styles.card}>
         <View style={styles.copy}><Text style={styles.title}>{session.team.name}</Text><Text style={styles.meta}>{formatEgyptDateTime(session.starts_at)} · {session.venue}</Text></View>
         <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit occurrence" onPress={() => beginEdit(session)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete occurrence" onPress={() => confirmAction('Delete this session?', 'Only this occurrence will be removed.', 'Delete one', () => remove(session, 'one'), { destructive: true })} variant="danger" />{session.series_id ? <AppButton compact label="Delete series" onPress={() => confirmAction('Delete the full series?', 'Every occurrence in this series will be removed.', 'Delete series', () => remove(session, 'series'), { destructive: true })} variant="danger" /> : null}</View>
       </Pressable>)}</View>}
@@ -118,6 +124,7 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
   const announcements = useQuery({ queryKey: ['announcements', 'admin'], queryFn: () => api.announcements('?limit=100') });
   const [draft, setDraft] = React.useState(blankAnnouncement);
   const [editing, setEditing] = React.useState<Announcement | null>(null);
+  const [search, setSearch] = React.useState('');
   const save = useMutation({
     mutationFn: () => {
       if (!draft.title.trim() || !draft.body.trim()) throw new Error('Enter a title and message.');
@@ -129,6 +136,10 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
   });
   const beginEdit = (announcement: Announcement) => { setEditing(announcement); setDraft({ teamId: announcement.team_id ?? '', title: announcement.title, body: announcement.body, pinned: announcement.pinned }); };
   const remove = (announcement: Announcement) => confirmAction('Delete this announcement?', 'Players will no longer see it.', 'Delete', async () => { try { await api.deleteAnnouncement(announcement.id); await invalidateAfterWrite(client, 'announcement'); confirmManageWrite('announcement', 'deleted'); } catch (error) { showMessage('Announcement not deleted', (error as ApiError).message); } }, { destructive: true });
+  // A season's worth of notices piles up, and the wording is often the only
+  // thing remembered about one, so the message itself is searched too.
+  const announcementItems = announcements.data?.items ?? [];
+  const shownAnnouncements = narrowBySearch(announcementItems, search, (item) => `${item.title} ${item.body} ${item.team?.name ?? 'Whole academy'} ${item.author_name ?? ''}`);
   return <View style={styles.stack}>
     <View style={styles.formCard}>
       <Text style={styles.heading}>{editing ? 'Edit announcement' : 'Post announcement'}</Text>
@@ -138,8 +149,8 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
       <ChoiceField label="Priority" onChange={(value) => setDraft((current) => ({ ...current, pinned: value === 'pinned' }))} options={[{ label: 'Standard', value: 'standard' }, { label: 'Pinned', value: 'pinned' }]} value={draft.pinned ? 'pinned' : 'standard'} />
       <View style={styles.formActions}><AppButton label={editing ? 'Save changes' : 'Publish'} loading={save.isPending} onPress={() => save.mutate()} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); setDraft(blankAnnouncement); }} variant="ghost" /> : null}</View>
     </View>
-    {announcements.isError ? <ErrorState message={(announcements.error as ApiError).message} onRetry={() => announcements.refetch()} /> : <CollapsibleSection count={announcements.data?.items.length ?? 0} title="Current announcements">
-      {announcements.isLoading ? <LoadingState /> : !announcements.data?.items.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : <View style={styles.list}>{announcements.data.items.map((announcement) => <View key={announcement.id} style={styles.card}>
+    {announcements.isError ? <ErrorState message={(announcements.error as ApiError).message} onRetry={() => announcements.refetch()} /> : <CollapsibleSection count={announcementItems.length} search={{ label: 'Search announcements', onChange: setSearch, placeholder: 'Search a title, message or squad…', resultCount: shownAnnouncements.length, value: search }} title="Current announcements">
+      {announcements.isLoading ? <LoadingState /> : !announcementItems.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : !shownAnnouncements.length ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shownAnnouncements.map((announcement) => <View key={announcement.id} style={styles.card}>
         <View style={styles.copy}><Text style={styles.title}>{announcement.pinned ? 'Pinned · ' : ''}{announcement.title}</Text><Text style={styles.meta}>{announcement.team?.name ?? 'Whole academy'} · {announcement.author_name ?? 'Administrator'}</Text><Text style={styles.body}>{announcement.body}</Text></View>
         <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(announcement)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete" onPress={() => remove(announcement)} variant="danger" /></View>
       </View>)}</View>}

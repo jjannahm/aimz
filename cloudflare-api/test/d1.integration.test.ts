@@ -28,7 +28,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0023_parent_role.sql');
+    expect(applied.results.at(-1)?.name).toBe('0025_calendar_tokens.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -214,6 +214,198 @@ describe('the users rebuild keeps what points at it', () => {
     const rejected = testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, 1, ?, ?)')
       .bind(crypto.randomUUID(), 'Nobody', 'nobody@aimz.test', 'unused', 'coach', now, now).run();
     await expect(rejected, 'the CHECK still refuses a role nobody defined').rejects.toThrow();
+  });
+});
+
+// The feed is the one route with no bearer token: the secret is the URL. These
+// cover what a calendar client actually depends on — that an edited fixture
+// keeps its identity, and that the URL shows one family's fixtures and no more.
+describe('parent calendar feed', () => {
+  const uids = (ics: string) => ics.split('\r\n').filter((line) => line.startsWith('UID:')).map((line) => line.slice(4));
+  const field = (ics: string, name: string) => ics.split('\r\n').filter((line) => line.startsWith(`${name}:`)).map((line) => line.slice(name.length + 1));
+
+  // Storage is not reset between tests in this file, so every account and code
+  // has to be its own — the same reason seedUser builds its email from a UUID.
+  async function family() {
+    const unique = crypto.randomUUID().slice(0, 8);
+    const longVenue = 'ملعب أكاديمية إيمز الرئيسي في القاهرة الجديدة';
+    const admin = await seedUser('admin');
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U13', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const other = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U18', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const rivals = await (await request('/api/v1/teams', json('POST', { name: 'Al Ahly', is_aimz: false }, admin.token))).json<{ id: string }>();
+    const child = await (await request('/api/v1/players', json('POST', { name: 'Farida Sami', team_id: squad.id, position: 'CM' }, admin.token))).json<{ id: string }>();
+    const stranger = await (await request('/api/v1/players', json('POST', { name: 'Someone Else', team_id: other.id, position: 'GK' }, admin.token))).json<{ id: string }>();
+    // Competitions are unique by name and season, and this integration file
+    // intentionally keeps its D1 state between tests.
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: `Cairo League ${unique}`, season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const soon = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const oursResponse = await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: rivals.id, kickoff_datetime: soon, venue: longVenue, status: 'scheduled' }, admin.token));
+    expect(oursResponse.status, await oursResponse.clone().text()).toBe(201);
+    const ours = await oursResponse.json<{ id: string }>();
+    const theirsResponse = await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: other.id, away_team_id: rivals.id, kickoff_datetime: soon, venue: 'Elsewhere', status: 'scheduled' }, admin.token));
+    expect(theirsResponse.status, await theirsResponse.clone().text()).toBe(201);
+    const theirs = await theirsResponse.json<{ id: string }>();
+    await request('/api/v1/training-sessions', json('POST', { team_id: squad.id, venue: 'AIMZ Ground', notes: 'Bring shin pads', duration_minutes: 90, occurrences: [new Date(Date.now() + 86_400_000).toISOString()] }, admin.token));
+    await request('/api/v1/admin/registration-invites', json('POST', { label: 'Sami family', code: `SAMI-CAL-${unique}`, kind: 'parent', player_ids: [child.id] }, admin.token));
+    const parent = await (await request('/api/v1/auth/register', json('POST', { name: 'Sami Farid', email: `cal-${unique}@aimz.test`, password: 'long-secure-password', invite_code: `SAMI-CAL-${unique}` }))).json<{ access_token: string }>();
+    // Asking for a feed is a POST now: reading one no longer conjures it.
+    const feed = await (await request('/api/v1/users/me/calendar', json('POST', {}, parent.access_token))).json<{ url: string; subscribed_at: string | null }>();
+    return { admin, parent, feed, ours, theirs, stranger, competition, rivals, other, soon, longVenue };
+  }
+
+  /**
+   * A parent with a child but no calendar feed, which is the starting state
+   * every account now has until it asks for one.
+   */
+  async function freshParent(): Promise<{ id: string; token: string }> {
+    const unique = crypto.randomUUID().slice(0, 8);
+    const admin = await seedUser('admin');
+    const squad = await (await request('/api/v1/teams', json('POST', { name: `AIMZ U15 ${unique}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+    const child = await (await request('/api/v1/players', json('POST', { name: `Child ${unique}`, team_id: squad.id, position: 'CM' }, admin.token))).json<{ id: string }>();
+    await request('/api/v1/admin/registration-invites', json('POST', { label: `Family ${unique}`, code: `FRESH-${unique}`, kind: 'parent', player_ids: [child.id] }, admin.token));
+    const registered = await (await request('/api/v1/auth/register', json('POST', { name: `Parent ${unique}`, email: `fresh-${unique}@aimz.test`, password: 'long-secure-password', invite_code: `FRESH-${unique}` }))).json<{ access_token: string }>();
+    const me = await (await request('/api/v1/users/me', json('GET', undefined, registered.access_token))).json<{ id: string }>();
+    return { id: me.id, token: registered.access_token };
+  }
+
+  /** The feed is fetched the way a calendar client would: no Authorization header. */
+  const fetchFeed = (url: string) => request(new URL(url).pathname);
+
+  it('serves one family fixtures, and nobody else’s', async () => {
+    const { feed, ours, theirs, longVenue } = await family();
+    expect(feed.url).toMatch(/\/api\/v1\/calendar\/[\w-]{20,}\/aimz\.ics$/u);
+    expect(feed.subscribed_at).toBeNull();
+
+    const response = await fetchFeed(feed.url);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('text/calendar; charset=utf-8');
+    const ics = await response.text();
+
+    expect(ics.startsWith('BEGIN:VCALENDAR\r\n')).toBe(true);
+    expect(ics.trimEnd().endsWith('END:VCALENDAR')).toBe(true);
+    // Every line ends CRLF, which clients are stricter about than they look.
+    expect(ics.split('\r\n').join('')).not.toContain('\n');
+    expect(uids(ics)).toEqual([`match-${ours.id}@aimz-egypt`, 'training-'.concat(uids(ics)[1]!.slice(9))]);
+    expect(uids(ics)).not.toContain(`match-${theirs.id}@aimz-egypt`);
+    expect(ics).toContain('SUMMARY:AIMZ U13 vs Al Ahly');
+    expect(ics).toContain('SUMMARY:AIMZ U13 training');
+    expect(ics).toContain('LOCATION:AIMZ Ground');
+    expect(ics).toContain('X-WR-CALNAME:AIMZ · Farida Sami');
+    // Folding is by UTF-8 octet, not JavaScript character: Arabic reaches the
+    // limit well before 75 visible letters. Unfolding recovers the full value.
+    expect(ics.split('\r\n').every((line) => new TextEncoder().encode(line).length <= 75)).toBe(true);
+    expect(ics.replace(/\r\n /gu, '')).toContain(`LOCATION:${longVenue}`);
+  });
+
+  // The whole point of a stable UID: a moved kick-off must edit the entry
+  // already in the parent's calendar, not add a second one beside it.
+  it('keeps a fixture’s identity when it moves, and drops it when deleted', async () => {
+    const { admin, feed, ours } = await family();
+    const before = await (await fetchFeed(feed.url)).text();
+    const wasSequence = Number(field(before, 'SEQUENCE')[0]);
+
+    const moved = new Date(Date.now() + 5 * 86_400_000).toISOString();
+    expect((await request(`/api/v1/matches/${ours.id}`, json('PATCH', { kickoff_datetime: moved, venue: 'New Ground' }, admin.token))).status).toBe(200);
+    const after = await (await fetchFeed(feed.url)).text();
+
+    expect(uids(after)).toContain(`match-${ours.id}@aimz-egypt`);
+    expect(uids(after).filter((uid) => uid === `match-${ours.id}@aimz-egypt`)).toHaveLength(1);
+    expect(after).toContain('LOCATION:New Ground');
+    expect(Number(field(after, 'SEQUENCE')[0])).toBeGreaterThanOrEqual(wasSequence);
+
+    // No cancellation flag exists in the API, so a deleted fixture simply stops
+    // being published and the client reconciles it away.
+    expect((await request(`/api/v1/matches/${ours.id}`, json('DELETE', undefined, admin.token))).status).toBe(204);
+    expect(uids(await (await fetchFeed(feed.url)).text())).not.toContain(`match-${ours.id}@aimz-egypt`);
+  });
+
+  it('records the first fetch once, and regenerating revokes the old address', async () => {
+    const { parent, feed } = await family();
+    await fetchFeed(feed.url);
+    const seen = await (await request('/api/v1/users/me/calendar', json('GET', undefined, parent.access_token))).json<{ url: string; subscribed_at: string | null }>();
+    expect(seen.subscribed_at).not.toBeNull();
+    // The same URL comes back, so a parent can add it on a second device.
+    expect(seen.url).toBe(feed.url);
+
+    await fetchFeed(feed.url);
+    const again = await (await request('/api/v1/users/me/calendar', json('GET', undefined, parent.access_token))).json<{ subscribed_at: string }>();
+    expect(again.subscribed_at).toBe(seen.subscribed_at);
+
+    const fresh = await (await request('/api/v1/users/me/calendar/regenerate', json('POST', {}, parent.access_token))).json<{ url: string; subscribed_at: string | null }>();
+    expect(fresh.url).not.toBe(feed.url);
+    expect(fresh.subscribed_at).toBeNull();
+    expect((await fetchFeed(feed.url)).status).toBe(404);
+    expect((await fetchFeed(fresh.url)).status).toBe(200);
+  });
+
+  it('gives nothing away for an address that was never real', async () => {
+    await family();
+    const response = await fetchFeed('http://aimz.test/api/v1/calendar/not-a-real-token-at-all/aimz.ics');
+    expect(response.status).toBe(404);
+    // An admin has no roster of their own, so there are no fixtures to follow.
+    const admin = await seedUser('admin');
+    expect((await request('/api/v1/users/me/calendar', json('GET', undefined, admin.token))).status).toBe(403);
+  });
+
+  /**
+   * The one that makes removing mean anything. Reading used to mint a token,
+   * so a deleted row came straight back and the subscription could never
+   * actually be taken away.
+   */
+  it('does not conjure a feed just because someone looked', async () => {
+    const { parent } = await family();
+    const fresh = await freshParent();
+
+    const before = await (await request('/api/v1/users/me/calendar', json('GET', undefined, fresh.token))).json<{ url: string | null; subscribed_at: string | null }>();
+    expect(before).toEqual({ url: null, subscribed_at: null });
+    // Not merely absent from the response — absent from the table.
+    const rows = await testEnv.DB.prepare('SELECT COUNT(*) total FROM calendar_tokens WHERE user_id = ?').bind(fresh.id).first<{ total: number }>();
+    expect(rows?.total).toBe(0);
+
+    // The family that did ask still has theirs.
+    const theirs = await (await request('/api/v1/users/me/calendar', json('GET', undefined, parent.access_token))).json<{ url: string | null }>();
+    expect(theirs.url).toMatch(/\/aimz\.ics$/u);
+  });
+
+  it('hands back the same address when asked for one twice', async () => {
+    const fresh = await freshParent();
+    const first = await request('/api/v1/users/me/calendar', json('POST', {}, fresh.token));
+    expect(first.status).toBe(201);
+    const created = await first.json<{ url: string }>();
+
+    const second = await request('/api/v1/users/me/calendar', json('POST', {}, fresh.token));
+    // Already there, so nothing was created and the address is unchanged: a
+    // second press of the Hub button must not revoke a working subscription.
+    expect(second.status).toBe(200);
+    expect((await second.json<{ url: string }>()).url).toBe(created.url);
+  });
+
+  it('takes the feed away, and leaves the old address answering like a stranger', async () => {
+    const fresh = await freshParent();
+    const created = await (await request('/api/v1/users/me/calendar', json('POST', {}, fresh.token))).json<{ url: string }>();
+    expect((await fetchFeed(created.url)).status).toBe(200);
+
+    expect((await request('/api/v1/users/me/calendar', json('DELETE', undefined, fresh.token))).status).toBe(204);
+
+    // Gone from the account, and gone for anything still polling it.
+    expect(await (await request('/api/v1/users/me/calendar', json('GET', undefined, fresh.token))).json()).toEqual({ url: null, subscribed_at: null });
+    expect((await fetchFeed(created.url)).status).toBe(404);
+
+    // Removing what is already gone is the state the caller asked for.
+    expect((await request('/api/v1/users/me/calendar', json('DELETE', undefined, fresh.token))).status).toBe(204);
+
+    // Setting up again is a different address, so removing is not undo.
+    const again = await (await request('/api/v1/users/me/calendar', json('POST', {}, fresh.token))).json<{ url: string }>();
+    expect(again.url).not.toBe(created.url);
+    expect((await fetchFeed(again.url)).status).toBe(200);
+  });
+
+  it('refuses an admin on every one of them', async () => {
+    const admin = await seedUser('admin');
+    for (const init of [json('GET', undefined, admin.token), json('POST', {}, admin.token), json('DELETE', undefined, admin.token)]) {
+      expect((await request('/api/v1/users/me/calendar', init)).status).toBe(403);
+    }
+    expect((await request('/api/v1/users/me/calendar/regenerate', json('POST', {}, admin.token))).status).toBe(403);
   });
 });
 

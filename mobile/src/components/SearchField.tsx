@@ -4,14 +4,26 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { noFocusRingText, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
+/**
+ * Narrows a list to the rows whose own words contain the search text, `words`
+ * being what each row puts on screen. Every list this box sits over is already
+ * in hand, so searching is filtering rather than fetching.
+ */
+export function narrowBySearch<T>(items: T[], search: string, words: (item: T) => string): T[] {
+  const needle = search.trim().toLowerCase();
+  return needle ? items.filter((item) => words(item).toLowerCase().includes(needle)) : items;
+}
+
 /** A search box, with a clear control that only appears once there is something to clear. */
-export function SearchField({ value, onChange, placeholder = 'Search', label = 'Search', resultCount }: {
+export function SearchField({ value, onChange, placeholder = 'Search', label = 'Search', resultCount, autoFocus = false }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   label?: string;
   /** Announced to a screen reader as the list narrows. */
   resultCount?: number;
+  /** For a box that a control has just opened, where typing is the next move. */
+  autoFocus?: boolean;
 }) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
@@ -22,6 +34,7 @@ export function SearchField({ value, onChange, placeholder = 'Search', label = '
         accessibilityLabel={label}
         autoCapitalize="none"
         autoCorrect={false}
+        autoFocus={autoFocus}
         clearButtonMode="never"
         onChangeText={onChange}
         placeholder={placeholder}
