@@ -85,3 +85,40 @@ describe('DateTimeField', () => {
     expect(onChange).toHaveBeenCalledWith('2012-05-12');
   });
 });
+
+describe('DateTimeField meridiem', () => {
+  // Egypt is UTC+3 in September, so 09:00 Cairo is 06:00 UTC.
+  const morning = '2026-09-10T06:00:00.000Z';
+
+  const openPicker = async (onChange: jest.Mock, value = morning) => {
+    const screen = await render(<DateTimeField label="First session (Egypt time)" onChange={onChange} value={value} />);
+    await fireEvent.press(screen.getByRole('button', { name: 'First session (Egypt time)' }));
+    return screen;
+  };
+
+  it('turns a morning session into an afternoon one in a single press', async () => {
+    const onChange = jest.fn();
+    const screen = await openPicker(onChange);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Afternoon' }));
+    expect(onChange).toHaveBeenCalledWith('2026-09-10T18:00:00.000Z');
+  });
+
+  it('leaves the time alone when the half already chosen is pressed again', async () => {
+    const onChange = jest.fn();
+    const screen = await openPicker(onChange);
+    await fireEvent.press(screen.getByRole('radio', { name: 'Morning' }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('marks the half the time falls in', async () => {
+    const screen = await openPicker(jest.fn());
+    expect(screen.getByRole('radio', { name: 'Morning' }).props.accessibilityState.checked).toBe(true);
+    expect(screen.getByRole('radio', { name: 'Afternoon' }).props.accessibilityState.checked).toBe(false);
+  });
+
+  it('offers no half to choose on a date-only field', async () => {
+    const screen = await render(<DateTimeField dateOnly label="End date" onChange={jest.fn()} value="2026-09-10" />);
+    await fireEvent.press(screen.getByRole('button', { name: 'End date' }));
+    expect(screen.queryByRole('radio', { name: 'Morning' })).toBeNull();
+  });
+});

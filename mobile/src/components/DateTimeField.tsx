@@ -73,6 +73,9 @@ export function DateTimeField({ label, value, onChange, error, dateOnly = false 
   ];
   const hour12 = wall.hour % 12 === 0 ? 12 : wall.hour % 12;
   const meridiem = wall.hour < 12 ? 'AM' : 'PM';
+  // Half a day in one press. Stepping the hour button across noon took twelve,
+  // which is how a session meant for the evening ends up booked for the morning.
+  const setMeridiem = (want: 'AM' | 'PM') => { if (want !== meridiem) commit({ hour: (wall.hour + 12) % 24 }); };
 
   return (
     // An open panel has to paint over the fields after it. Later siblings win
@@ -138,6 +141,20 @@ export function DateTimeField({ label, value, onChange, error, dateOnly = false 
           </View>
         </View> : null}
 
+        {!dateOnly ? <View accessibilityRole="radiogroup" style={styles.meridiemRow}>{(['AM', 'PM'] as const).map((option) => {
+          const chosen = option === meridiem;
+          return <Pressable
+            accessibilityLabel={option === 'AM' ? 'Morning' : 'Afternoon'}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: chosen }}
+            key={option}
+            onPress={() => setMeridiem(option)}
+            style={({ pressed }) => [styles.meridiem, chosen && styles.meridiemSelected, pressed && styles.pressed]}
+          >
+            <Text style={[styles.meridiemText, chosen && styles.meridiemSelectedText]}>{option}</Text>
+          </Pressable>;
+        })}</View> : null}
+
         <Pressable accessibilityLabel="Done choosing the date and time" accessibilityRole="button" onPress={() => setOpen(false)} style={({ pressed }) => [styles.done, pressed && styles.pressed]}>
           <Text style={styles.doneText}>Done</Text>
         </Pressable>
@@ -175,6 +192,13 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   minuteGroup: { flexDirection: 'row', gap: theme.spacing.xs },
   minuteStep: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.sm, borderWidth: 1, justifyContent: 'center', minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.sm },
   minuteStepText: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.label },
+  // Its own row rather than squeezed alongside the steppers: the time row is
+  // already four controls wide, and a fifth wraps at phone width.
+  meridiemRow: { flexDirection: 'row', gap: theme.spacing.xs },
+  meridiem: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flex: 1, justifyContent: 'center', minHeight: theme.touch.minimum },
+  meridiemSelected: { backgroundColor: colors.accent, borderColor: colors.accent },
+  meridiemText: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.label },
+  meridiemSelectedText: { color: colors.onAccent },
   done: { alignItems: 'center', backgroundColor: colors.accent, borderRadius: theme.radius.md, justifyContent: 'center', minHeight: theme.touch.minimum },
   doneText: { color: colors.onAccent, fontFamily: theme.font.bold },
   error: { color: colors.errorText, fontFamily: theme.font.regular, fontSize: theme.type.caption },
