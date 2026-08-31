@@ -26,14 +26,18 @@ const open = (session: TrainingSession) => router.push({ pathname: '/training/[i
  * The session to come next, given the room to be read at a glance rather than
  * buried at the top of a list of its equals.
  */
-function NextTraining({ session }: { session: TrainingSession }) {
+function NextTraining({ session, openable }: { session: TrainingSession; openable: boolean }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
   const when = new Date(session.starts_at);
+  // A parent reads the schedule rather than working it: there is nothing for
+  // them on the session itself, so the card does not pretend to lead anywhere.
+  const Card = openable ? Pressable : View;
+  const opens = openable ? { accessibilityLabel: spoken(session), accessibilityRole: 'button' as const, onPress: () => open(session), style: ({ pressed }: { pressed: boolean }) => pressed && styles.pressed } : { accessibilityLabel: spoken(session) };
   return (
     <View style={styles.section}>
       <Text style={styles.sectionLabel}>NEXT TRAINING</Text>
-      <Pressable accessibilityLabel={spoken(session)} accessibilityRole="button" onPress={() => open(session)} style={({ pressed }) => pressed && styles.pressed}>
+      <Card {...opens}>
         <FlatCard radius={theme.radius.lg} style={styles.feature}>
           <View style={styles.featureTop}>
             <View>
@@ -47,21 +51,23 @@ function NextTraining({ session }: { session: TrainingSession }) {
               <Text numberOfLines={1} style={styles.venue}>{session.venue}</Text>
               <Text style={styles.meta}>{describeDuration(session.duration_minutes)}</Text>
             </View>
-            <Ionicons accessibilityElementsHidden color={colors.textMuted} name="chevron-forward" size={20} />
+            {openable ? <Ionicons accessibilityElementsHidden color={colors.textMuted} name="chevron-forward" size={20} /> : null}
           </View>
         </FlatCard>
-      </Pressable>
+      </Card>
     </View>
   );
 }
 
 /** One row of the schedule: a dot on the thread, the day, and where and when. */
-function SessionRow({ session, last }: { session: TrainingSession; last: boolean }) {
+function SessionRow({ session, last, openable }: { session: TrainingSession; last: boolean; openable: boolean }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
   const when = new Date(session.starts_at);
+  const Row = openable ? Pressable : View;
+  const opens = openable ? { accessibilityLabel: spoken(session), accessibilityRole: 'button' as const, onPress: () => open(session), style: ({ pressed }: { pressed: boolean }) => [styles.row, pressed && styles.pressed] } : { accessibilityLabel: spoken(session), style: styles.row };
   return (
-    <Pressable accessibilityLabel={spoken(session)} accessibilityRole="button" onPress={() => open(session)} style={({ pressed }) => [styles.row, pressed && styles.pressed]}>
+    <Row {...opens}>
       {/* The thread the dots hang on, drawn per row so it stops at the last. */}
       <View style={styles.thread}>
         {/* On the last row the line stops at its dot instead of vanishing, or
@@ -78,8 +84,8 @@ function SessionRow({ session, last }: { session: TrainingSession; last: boolean
         <Text style={styles.meta}>{describeDuration(session.duration_minutes)}</Text>
       </View>
       <Text style={styles.rowTime}>{clock.format(when)}</Text>
-      <Ionicons accessibilityElementsHidden color={colors.textMuted} name="chevron-forward" size={18} />
-    </Pressable>
+      {openable ? <Ionicons accessibilityElementsHidden color={colors.textMuted} name="chevron-forward" size={18} /> : null}
+    </Row>
   );
 }
 
@@ -97,9 +103,10 @@ export function ScheduleSection() {
   if (!query.data?.items.length) return <EmptyState body="Your coach has not scheduled an upcoming training session." title="No training scheduled" />;
 
   const { next, months } = groupSessionsByMonth(query.data.items);
+  const openable = user?.role !== 'parent';
   return (
     <View style={styles.screen}>
-      {next ? <NextTraining session={next} /> : null}
+      {next ? <NextTraining openable={openable} session={next} /> : null}
       {months.map((month) => (
         <View key={month.monthKey} style={styles.section}>
           <Text accessibilityRole="header" style={styles.sectionLabel}>{month.label.toUpperCase()}</Text>
@@ -107,7 +114,7 @@ export function ScheduleSection() {
             {month.sessions.map((session, index) => (
               <View key={session.id}>
                 {index ? <View style={styles.rule} /> : null}
-                <SessionRow last={index === month.sessions.length - 1} session={session} />
+                <SessionRow last={index === month.sessions.length - 1} openable={openable} session={session} />
               </View>
             ))}
           </FlatCard>

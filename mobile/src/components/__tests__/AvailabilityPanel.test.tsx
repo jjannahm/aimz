@@ -6,7 +6,7 @@ import { AvailabilityPanel } from '@/src/components/AvailabilityPanel';
 import { api } from '@/src/lib/api';
 import type { Player, TrainingAvailability, TrainingSession } from '@/src/types/api';
 
-let mockUser: { role: 'admin' | 'player'; player_id?: string } = { role: 'player', player_id: 'p-1' };
+let mockUser: { role: 'admin' | 'player' | 'parent'; player_id?: string } = { role: 'player', player_id: 'p-1' };
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: mockUser }) }));
@@ -137,5 +137,16 @@ describe('AvailabilityPanel answers', () => {
     expect(screen.queryByLabelText('Note (optional)')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Player' })).toBeNull();
     expect(screen.queryByText('Save note')).toBeNull();
+  });
+
+  // A parent has children rather than a place in the squad, so there is no one
+  // answer of theirs to record.
+  it('gives a parent the replies to read, not a vote to cast', async () => {
+    mockUser = { role: 'parent' };
+    jest.mocked(api.trainingAvailability).mockResolvedValue([row()]);
+    const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
+    await waitFor(() => expect(screen.getByText('Going · 1')).toBeTruthy());
+    expect(screen.queryByRole('radio', { name: 'Going' })).toBeNull();
+    expect(screen.queryByLabelText('Note (optional)')).toBeNull();
   });
 });
