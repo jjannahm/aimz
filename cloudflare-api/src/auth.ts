@@ -1,5 +1,5 @@
 import type { Context, Hono } from "hono";
-import { ApiProblem, adminUser, currentUser, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
+import { ApiProblem, USER_SELECT, adminUser, assertNotExpired, currentUser, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
 import {
   createAccessToken,
   hashPassword,
@@ -12,6 +12,39 @@ import { linkedPlayerIds } from "./team-access";
 import type { InviteKind, InviteRow, UserRole, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
+
+/**
+ * The deadline named on a request, as an instant, or null for no deadline.
+ *
+ * A date already gone is refused rather than stored: it would create an account
+ * that could never be signed into, which is a mistake worth reporting at the
+ * moment it is made rather than a state worth allowing.
+ */
+/** Writes a deadline beside an account, or takes it away when given null. */
+async function setAccountExpiry(env: Env, userId: string, expiresAt: string | null): Promise<void> {
+  if (!expiresAt) {
+    await env.DB.prepare("DELETE FROM account_expiry WHERE user_id = ?").bind(userId).run();
+    return;
+  }
+  const now = nowIso();
+  await env.DB.prepare(
+    `INSERT INTO account_expiry (user_id, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET expires_at = excluded.expires_at, updated_at = excluded.updated_at`,
+  ).bind(userId, expiresAt, now, now).run();
+}
+
+function expiryField(body: Record<string, unknown>): string | null {
+  const raw = body.expires_at;
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string" || Number.isNaN(Date.parse(raw))) {
+    throw new ApiProblem(422, "validation_error", "Enter a valid expiry date.", [{ field: "expires_at", message: "Enter a valid date and time." }]);
+  }
+  const when = new Date(raw).toISOString();
+  if (when <= nowIso()) {
+    throw new ApiProblem(422, "validation_error", "An expiry has to be in the future.", [{ field: "expires_at", message: "Choose a date still to come." }]);
+  }
+  return when;
+}
 
 async function ensureSeeded(env: Env): Promise<void> {
   if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD || !env.INITIAL_INVITE_CODE) return;
@@ -63,10 +96,13 @@ async function passwordLogin(c: Context<{ Bindings: Env }>): Promise<Response> {
   const body = await jsonObject(c);
   const email = emailField(body);
   const password = stringField(body, "password", { min: 1, max: 128 });
-  const user = await c.env.DB.prepare("SELECT * FROM users WHERE email = ? AND is_active = 1").bind(email).first<UserRow>();
+  const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.email = ? AND u.is_active = 1`).bind(email).first<UserRow>();
   if (!user || !password || !(await verifyPassword(password, user.password_hash))) {
     throw new ApiProblem(401, "invalid_credentials", "Email or password is incorrect.");
   }
+  // After the password, so an expired account cannot be told apart from a wrong
+  // one by anybody who does not already hold the password for it.
+  assertNotExpired(user);
   return c.json(await issueTokens(c.env, user));
 }
 
@@ -153,8 +189,9 @@ export function registerAuthRoutes(app: App): void {
       "SELECT id, user_id FROM refresh_sessions WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?",
     ).bind(tokenHash, nowIso()).first<{ id: string; user_id: string }>();
     if (!session) throw new ApiProblem(401, "invalid_refresh_token", "Your session has expired. Sign in again.");
-    const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ? AND is_active = 1").bind(session.user_id).first<UserRow>();
+    const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.id = ? AND u.is_active = 1`).bind(session.user_id).first<UserRow>();
     if (!user) throw new ApiProblem(401, "invalid_refresh_token", "Your account is unavailable.");
+    assertNotExpired(user);
     await c.env.DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").bind(nowIso(), session.id).run();
     return c.json(await issueTokens(c.env, user));
   });
@@ -246,14 +283,16 @@ export function registerAuthRoutes(app: App): void {
     const name = stringField(body, "name", { min: 2, max: 120 });
     const email = emailField(body);
     const password = stringField(body, "password", { min: 10, max: 128 });
-    const role = body.role === "player" ? "player" : "admin" satisfies UserRole;
+    const role: UserRole = body.role === "player" ? "player" : body.role === "parent" ? "parent" : "admin";
+    const expiresAt = expiryField(body);
     const now = nowIso();
-    const user: UserRow = { id: crypto.randomUUID(), name: name!, email, password_hash: await hashPassword(password!), role, player_id: null, is_active: 1, created_at: now, updated_at: now };
+    const user: UserRow = { id: crypto.randomUUID(), name: name!, email, password_hash: await hashPassword(password!), role, player_id: null, is_active: 1, expires_at: expiresAt, created_at: now, updated_at: now };
     try {
       await c.env.DB.prepare("INSERT INTO users (id, name, email, password_hash, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)").bind(user.id, user.name, user.email, user.password_hash, user.role, now, now).run();
     } catch {
       throw new ApiProblem(409, "email_exists", "An account already uses this email address.");
     }
+    if (expiresAt) await setAccountExpiry(c.env, user.id, expiresAt);
     return c.json(publicUser(user), 201);
   });
 
@@ -269,6 +308,13 @@ export function registerAuthRoutes(app: App): void {
     const target = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(c.req.param("id")).first<UserRow>();
     if (!target) throw new ApiProblem(404, "user_not_found", "Account not found.");
     const body = await jsonObject(c);
+    // A deadline is set on its own, so an account created from an invitation —
+    // a parent's, which this endpoint cannot create — can still be given one.
+    if ("expires_at" in body) {
+      const expiresAt = expiryField(body);
+      await setAccountExpiry(c.env, target.id, expiresAt);
+      return c.json(publicUser({ ...target, expires_at: expiresAt }));
+    }
     if (!("player_id" in body)) return c.json(publicUser(target));
     const playerId = await claimablePlayer(c.env, stringField(body, "player_id", { nullable: true, max: 36 }) ?? null, target.id);
     const updated = nowIso();

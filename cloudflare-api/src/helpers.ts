@@ -187,14 +187,37 @@ export function publicMatch(
   };
 }
 
+/**
+ * Refuses an account whose date has passed.
+ *
+ * Checked wherever an account is picked up rather than only at sign-in: an
+ * access token already in hand outlives the moment of expiry by up to its own
+ * lifetime, and a refresh token by a month, so a deadline enforced at the door
+ * alone would not be a deadline at all.
+ */
+/**
+ * An account with its deadline attached.
+ *
+ * Every path that loads an account to act as it goes through this, so a deadline
+ * cannot be enforced in one door and forgotten in another.
+ */
+export const USER_SELECT = "SELECT u.*, ae.expires_at expires_at FROM users u LEFT JOIN account_expiry ae ON ae.user_id = u.id";
+
+export function assertNotExpired(user: UserRow): UserRow {
+  if (user.expires_at && user.expires_at <= nowIso()) {
+    throw new ApiProblem(401, "account_expired", "This account has expired. Ask an AIMZ administrator to renew it.");
+  }
+  return user;
+}
+
 export async function currentUser(c: Context<{ Bindings: Env }>): Promise<UserRow> {
   const authorization = c.req.header("Authorization");
   if (!authorization?.startsWith("Bearer ")) throw new ApiProblem(401, "authentication_required", "Sign in to continue.");
   const payload = await verifyAccessToken(authorization.slice(7), c.env.JWT_SECRET);
   if (!payload) throw new ApiProblem(401, "invalid_token", "Your session has expired. Sign in again.");
-  const user = await c.env.DB.prepare("SELECT * FROM users WHERE id = ? AND is_active = 1").bind(payload.sub).first<UserRow>();
+  const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.id = ? AND u.is_active = 1`).bind(payload.sub).first<UserRow>();
   if (!user) throw new ApiProblem(401, "invalid_token", "Your account is unavailable.");
-  return user;
+  return assertNotExpired(user);
 }
 
 export async function adminUser(c: Context<{ Bindings: Env }>): Promise<UserRow> {

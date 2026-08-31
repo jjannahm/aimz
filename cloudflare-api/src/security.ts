@@ -184,6 +184,7 @@ export function publicUser(user: UserRow): Record<string, unknown> {
     email: user.email,
     role: user.role,
     player_id: user.player_id,
+    expires_at: user.expires_at ?? null,
     created_at: user.created_at,
   };
 }

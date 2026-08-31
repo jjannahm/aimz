@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User } from '@/src/types/api';
+import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -283,6 +283,9 @@ export const api = {
   myChildren: () => request<{ items: LinkedChild[] }>('/api/v1/users/me/children'),
   adminUsers: (query = '?limit=100') => request<Page<AdminAccount>>(`/api/v1/admin/users${query}`),
   linkUserPlayer: (id: string, player_id: string | null) => request<User>(`/api/v1/admin/users/${id}`, { method: 'PATCH', body: { player_id } }),
+  createUser: (body: { name: string; email: string; password: string; role: UserRole; expires_at: string | null }) =>
+    request<User>('/api/v1/admin/users', { method: 'POST', body }),
+  setUserExpiry: (id: string, expires_at: string | null) => request<User>(`/api/v1/admin/users/${id}`, { method: 'PATCH', body: { expires_at } }),
   trainingSessions: (query = '') => request<Page<TrainingSession>>(`/api/v1/training-sessions${query}`),
   trainingSession: (id: string) => request<TrainingSession>(`/api/v1/training-sessions/${id}`),
   createTrainingSessions: (payload: { team_id: string; venue: string; notes: string | null; duration_minutes: number; occurrences: string[] }) => request<TrainingSession[]>('/api/v1/training-sessions', { method: 'POST', body: payload }),

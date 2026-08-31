@@ -28,7 +28,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0026_availability_two_way.sql');
+    expect(applied.results.at(-1)?.name).toBe('0027_account_expiry.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -730,5 +730,89 @@ describe('the appearance backfill', () => {
     await testEnv.DB.prepare("UPDATE matches SET status='scheduled', phase='not_started' WHERE id=?").bind(ids.match).run();
     await runBackfill();
     expect((await appearances(ids.match)).has(quiet.id)).toBe(false);
+  });
+});
+
+describe('accounts that expire', () => {
+  const hoursFromNow = (hours: number) => new Date(Date.now() + hours * 3_600_000).toISOString();
+  const password = 'a-long-enough-password';
+  const signIn = (email: string) => request('/api/v1/auth/login', json('POST', { email, password }));
+
+  const makeAccount = async (token: string, over: Record<string, unknown> = {}) => {
+    const response = await request('/api/v1/admin/users', json('POST', {
+      name: 'Weekend Guest', email: `guest-${crypto.randomUUID()}@aimz.test`, password, role: 'admin', ...over,
+    }, token));
+    return { response, body: await response.json<Record<string, unknown>>() };
+  };
+
+  it('opens an account that lasts 48 hours, in any of the three roles', async () => {
+    const admin = await seedUser('admin');
+    for (const role of ['admin', 'player', 'parent'] as const) {
+      const { response, body } = await makeAccount(admin.token, { role, expires_at: hoursFromNow(48) });
+      expect(response.status).toBe(201);
+      expect(body).toMatchObject({ role });
+      expect(Date.parse(body.expires_at as string)).toBeGreaterThan(Date.now());
+      expect((await signIn(body.email as string)).status).toBe(200);
+    }
+  });
+
+  it('turns the account away once its date has gone', async () => {
+    const admin = await seedUser('admin');
+    const { body } = await makeAccount(admin.token, { expires_at: hoursFromNow(48) });
+    await testEnv.DB.prepare('UPDATE account_expiry SET expires_at = ? WHERE user_id = ?').bind(hoursFromNow(-1), body.id).run();
+    const late = await signIn(body.email as string);
+    expect(late.status).toBe(401);
+    expect(await late.json()).toMatchObject({ detail: { code: 'account_expired' } });
+  });
+
+  // A token already in hand outlives the deadline by its own lifetime, and a
+  // refresh token by a month, so the date is checked on every request too.
+  it('turns away a token minted before the date passed', async () => {
+    const admin = await seedUser('admin');
+    const { body } = await makeAccount(admin.token, { role: 'player', expires_at: hoursFromNow(48) });
+    const token = await createAccessToken(body.id as string, 'player', testEnv.JWT_SECRET, 900);
+    expect((await request('/api/v1/users/me', json('GET', undefined, token))).status).toBe(200);
+
+    await testEnv.DB.prepare('UPDATE account_expiry SET expires_at = ? WHERE user_id = ?').bind(hoursFromNow(-1), body.id).run();
+    const after = await request('/api/v1/users/me', json('GET', undefined, token));
+    expect(after.status).toBe(401);
+    expect(await after.json()).toMatchObject({ detail: { code: 'account_expired' } });
+  });
+
+  it('lets an administrator lift the date or set a new one', async () => {
+    const admin = await seedUser('admin');
+    const { body } = await makeAccount(admin.token, { role: 'parent', expires_at: hoursFromNow(48) });
+
+    const lifted = await request(`/api/v1/admin/users/${body.id}`, json('PATCH', { expires_at: null }, admin.token));
+    expect(await lifted.json()).toMatchObject({ expires_at: null });
+    expect((await signIn(body.email as string)).status).toBe(200);
+
+    const renewed = await request(`/api/v1/admin/users/${body.id}`, json('PATCH', { expires_at: hoursFromNow(72) }, admin.token));
+    expect((await renewed.json()).expires_at).not.toBeNull();
+    const stored = await testEnv.DB.prepare('SELECT COUNT(*) n FROM account_expiry WHERE user_id = ?').bind(body.id).first<{ n: number }>();
+    expect(stored?.n).toBe(1);
+  });
+
+  it('refuses a date that has already gone', async () => {
+    const admin = await seedUser('admin');
+    const { response } = await makeAccount(admin.token, { expires_at: hoursFromNow(-1) });
+    expect(response.status).toBe(422);
+  });
+
+  it('leaves an account asked for without a date working, and unrecorded', async () => {
+    const admin = await seedUser('admin');
+    const { body } = await makeAccount(admin.token);
+    expect(body.expires_at).toBeNull();
+    const rows = await testEnv.DB.prepare('SELECT COUNT(*) n FROM account_expiry WHERE user_id = ?').bind(body.id).first<{ n: number }>();
+    expect(rows?.n).toBe(0);
+    expect((await signIn(body.email as string)).status).toBe(200);
+  });
+
+  it('takes the date away with the account', async () => {
+    const admin = await seedUser('admin');
+    const { body } = await makeAccount(admin.token, { expires_at: hoursFromNow(48) });
+    await testEnv.DB.prepare('DELETE FROM users WHERE id = ?').bind(body.id).run();
+    const rows = await testEnv.DB.prepare('SELECT COUNT(*) n FROM account_expiry WHERE user_id = ?').bind(body.id).first<{ n: number }>();
+    expect(rows?.n).toBe(0);
   });
 });
