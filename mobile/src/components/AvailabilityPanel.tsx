@@ -31,10 +31,11 @@ export function AvailabilityPanel({ session }: { session: TrainingSession }) {
     // different rows would have each overwrite the other's cache.
     queryKey: [...cacheKeys.players, 'team', session.team_id], queryFn: () => api.players(`?team_id=${encodeURIComponent(session.team_id)}&limit=100`), enabled: user?.role === 'admin' });
   const [note, setNote] = React.useState('');
-  // An admin reads this panel rather than answering in it: the replies are the
-  // squad's own, and a coach filling them in on a player's behalf is how a
-  // register stops meaning anything. They see the tallies below instead.
-  const answering = user?.role !== 'admin';
+  // Only the player answers. An admin reads the replies rather than filling
+  // them in on a player's behalf, which is how a register stops meaning
+  // anything; a parent has children rather than a place in the squad, so there
+  // is no one answer of theirs to record. Both see the tallies below instead.
+  const answering = user?.role === 'player';
   const target = answering ? user?.player_id ?? '' : '';
   const mine = availability.data?.find((row) => row.player_id === target);
   // The note is written back on every save, so it has to be loaded first —

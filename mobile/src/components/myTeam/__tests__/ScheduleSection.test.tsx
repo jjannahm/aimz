@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render } from '@testing-library/react-native';
+import { render, waitFor } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 import { StyleSheet } from 'react-native';
 
@@ -9,7 +9,8 @@ import { darkColors } from '@/src/theme';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({ usePathname: () => '/', router: { push: jest.fn() } }));
-jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'player', player_id: 'p-1' } }) }));
+let mockUser: { role: string; player_id?: string } = { role: 'player', player_id: 'p-1' };
+jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: mockUser }) }));
 jest.mock('@/src/lib/api', () => ({ api: { trainingSessions: jest.fn() }, ApiError: class extends Error {} }));
 
 const session = (id: string, startsAt: string) => ({
@@ -60,5 +61,31 @@ describe('ScheduleSection timeline thread', () => {
     // Capped at the dot's centre instead of running on into a row that is not there.
     expect(last.height).toBe(26);
     expect(last.bottom).toBeUndefined();
+  });
+});
+
+describe('ScheduleSection for a parent', () => {
+  beforeEach(() => {
+    jest.mocked(api.trainingSessions).mockResolvedValue({
+      items: [session('s-1', '2026-09-01T15:00:00Z'), session('s-2', '2026-09-03T15:00:00Z')],
+      total: 2, limit: 100, offset: 0,
+    } as Awaited<ReturnType<typeof api.trainingSessions>>);
+  });
+
+  afterEach(() => { mockUser = { role: 'player', player_id: 'p-1' }; jest.clearAllMocks(); });
+
+  // A parent reads the schedule rather than working it, so the rows do not
+  // pretend to lead anywhere.
+  it('shows the sessions without making them open', async () => {
+    mockUser = { role: 'parent' };
+    const screen = await render(<ScheduleSection />, { wrapper });
+    await waitFor(() => expect(screen.getAllByText('Palm').length).toBeGreaterThan(0));
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+  });
+
+  it('still opens them for a player', async () => {
+    const screen = await render(<ScheduleSection />, { wrapper });
+    await waitFor(() => expect(screen.getAllByText('Palm').length).toBeGreaterThan(0));
+    expect(screen.queryAllByRole('button').length).toBeGreaterThan(0);
   });
 });
