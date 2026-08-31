@@ -5,7 +5,8 @@ type Schema = components['schemas'];
 // The generated union comes from an API without parent accounts; catches up on
 // the next `npm run api:types`.
 export type UserRole = Schema['UserRole'] | 'parent';
-export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole };
+/** When an account stops working, or null for one that never does. */
+export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole; expires_at?: string | null };
 /**
  * A private, renewable calendar subscription for one player or family.
  *

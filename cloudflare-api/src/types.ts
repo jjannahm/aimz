@@ -16,6 +16,13 @@ export interface UserRow {
   role: UserRole;
   player_id: string | null;
   is_active: number;
+  /**
+   * When the account stops working, or null for one that never does.
+   *
+   * Kept in `account_expiry`, and read alongside the account everywhere an
+   * account is loaded, so nothing has to remember to look it up.
+   */
+  expires_at?: string | null;
   created_at: string;
   updated_at: string;
 }
