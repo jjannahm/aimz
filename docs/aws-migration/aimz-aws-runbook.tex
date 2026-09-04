@@ -1,0 +1,390 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=2.4cm]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{listings}
+\usepackage{longtable}
+\usepackage[hidelinks]{hyperref}
+
+\definecolor{aimzblue}{HTML}{0B5FFF}
+\definecolor{codebg}{HTML}{F5F6F8}
+\definecolor{codeframe}{HTML}{D8DCE3}
+\definecolor{warnbg}{HTML}{FDECEA}
+\definecolor{warnframe}{HTML}{C0392B}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=aimzblue,
+  urlcolor=aimzblue,
+  pdftitle={AIMZ Egypt --- Cloudflare to AWS Migration Runbook},
+  pdfauthor={AIMZ Platform}
+}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  xleftmargin=6pt,
+  xrightmargin=6pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+  literate={~}{{\raisebox{0.5ex}{\texttildelow}}}1
+}
+
+\titleformat{\section}{\Large\bfseries\color{aimzblue}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small AIMZ Egypt}
+\rhead{\small Cloudflare $\rightarrow$ AWS Migration Runbook}
+\cfoot{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Warning box
+\newcommand{\warnbox}[1]{%
+  \begingroup
+  \setlength{\fboxsep}{8pt}%
+  \noindent\colorbox{warnbg}{\parbox{\dimexpr\linewidth-2\fboxsep}{%
+  \color{warnframe}\bfseries #1}}%
+  \endgroup\par\vspace{6pt}
+}
+
+\begin{document}
+
+\begin{titlepage}
+\centering
+\vspace*{3cm}
+{\Huge\bfseries\color{aimzblue} AIMZ Egypt\par}
+\vspace{0.6cm}
+{\LARGE Cloudflare $\rightarrow$ AWS Migration Runbook\par}
+\vspace{0.4cm}
+{\large How to launch the platform and push updates to AWS\par}
+\vspace{2cm}
+{\large Infrastructure: AWS CDK (TypeScript)\par}
+{\large Compute: EC2 + ALB \quad Data: RDS PostgreSQL + ElastiCache Redis\par}
+{\large Storage/CDN: S3 + CloudFront\par}
+\vfill
+{\large Target scale: \textbf{$\sim$500 concurrent users}\par}
+\vspace{0.5cm}
+{\small Generated for the \texttt{aimz} monorepo --- \texttt{infra/aws-cdk}\par}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ---------------------------------------------------------------------------
+\section{Read this first: security}
+
+\warnbox{An AWS access key was shared in plaintext during preparation of this
+migration. Treat it as compromised. Before anything else: sign in to the AWS
+console, open IAM $\rightarrow$ Users $\rightarrow$ Security credentials,
+deactivate and delete that access key, then create a fresh one. Never paste
+long-lived keys into chats, tickets, or source files.}
+
+This project never stores AWS credentials in code. The CDK and the helper
+scripts authenticate through your local AWS CLI profile
+(\texttt{aws configure} or SSO). Application secrets (database password, JWT
+secret, admin password, SMTP) live only in \textbf{AWS Secrets Manager} and are
+pulled by the API instances at boot.
+
+% ---------------------------------------------------------------------------
+\section{What this migration does}
+
+The live API today runs on Cloudflare Workers (Hono) backed by D1 (SQLite) and
+R2, with the web app on Cloudflare Pages. This migration moves the platform onto
+a conventional, horizontally-scalable AWS stack driven entirely by the FastAPI
+backend in \texttt{backend/}, which already speaks PostgreSQL and S3.
+
+\begin{center}
+\begin{tabular}{@{}lll@{}}
+\toprule
+\textbf{Concern} & \textbf{Cloudflare (before)} & \textbf{AWS (after)} \\
+\midrule
+API compute      & Workers (Hono)        & EC2 Auto Scaling Group + ALB \\
+Database         & D1 (SQLite)           & RDS PostgreSQL \\
+Cache            & --- (none)            & ElastiCache Redis \\
+Object storage   & R2                    & S3 (private, presigned) \\
+Web hosting      & Pages                 & S3 + CloudFront (OAC) \\
+Secrets          & Worker vars           & Secrets Manager \\
+Image registry   & ---                   & ECR (via CDK assets) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Architecture at a glance}
+
+\begin{lstlisting}[language=]
+                    Internet
+                       |
+        +--------------+---------------+
+        |                              |
+   CloudFront (web)               ALB  (api, :443/:80)
+        |                              |
+   S3 web bucket             EC2 ASG (FastAPI :8000, 2..4 x t3.medium)
+   (private, OAC)                 |            |
+                                  |            +--> S3 media bucket (presigned)
+                                  |
+                      +-----------+-----------+
+                      |                       |
+               RDS PostgreSQL         ElastiCache Redis
+               (private isolated)     (private isolated)
+\end{lstlisting}
+
+All data services live in private, isolated subnets. Only the ALB and
+CloudFront are internet-facing. The API tier reaches the internet for image
+pulls and AWS APIs through a single NAT gateway.
+
+% ---------------------------------------------------------------------------
+\section{Prerequisites}
+
+\begin{itemize}[leftmargin=1.4em]
+  \item An AWS account and an IAM identity with administrator (or equivalently
+        broad) permissions for the initial bootstrap.
+  \item Local tools: \texttt{aws} CLI v2, Node.js 20+, Docker (running),
+        \texttt{jq}, and \texttt{git}.
+  \item AWS CLI configured for the target account and region:
+\begin{lstlisting}[language=bash]
+aws configure          # or: aws configure sso
+aws sts get-caller-identity   # confirm you are the right account
+export AWS_REGION=eu-west-1    # pick your region once
+\end{lstlisting}
+  \item Node dependencies installed for the CDK app:
+\begin{lstlisting}[language=bash]
+cd infra/aws-cdk
+npm install
+\end{lstlisting}
+\end{itemize}
+
+% ---------------------------------------------------------------------------
+\section{One-time bootstrap}
+
+CDK needs a small bootstrap stack (an asset bucket, ECR repo, and roles) in each
+account/region before the first deploy:
+
+\begin{lstlisting}[language=bash]
+cd infra/aws-cdk
+npx cdk bootstrap aws://<ACCOUNT_ID>/<REGION>
+\end{lstlisting}
+
+Run this once per account/region. It is safe to re-run.
+
+% ---------------------------------------------------------------------------
+\section{Configuration knobs}
+
+Everything tunable is passed as CDK \emph{context} (\texttt{-c key=value}) or an
+environment variable, with defaults sized for $\sim$500 concurrent users.
+
+\begin{center}
+\begin{longtable}{@{}lll@{}}
+\toprule
+\textbf{Context key} & \textbf{Default} & \textbf{Purpose} \\
+\midrule
+\endhead
+\texttt{env}               & \texttt{production} & Logical environment / stack suffix \\
+\texttt{apiInstanceType}   & \texttt{t3.medium}  & EC2 class for API instances \\
+\texttt{apiMinCapacity}    & \texttt{2}          & Min instances (HA across 2 AZs) \\
+\texttt{apiMaxCapacity}    & \texttt{4}          & Max instances (CPU target 60\%) \\
+\texttt{dbInstanceClass}   & \texttt{t3.medium}  & RDS instance class \\
+\texttt{dbMultiAz}         & \texttt{false}      & RDS Multi-AZ standby (set true for prod HA) \\
+\texttt{redisNodeType}     & \texttt{cache.t4g.small} & ElastiCache node class \\
+\texttt{webDomainName}     & (none)              & Custom domain for CloudFront \\
+\texttt{webCertificateArn} & (none)              & ACM cert (us-east-1) for the web domain \\
+\texttt{apiCertificateArn} & (none)              & ACM cert (stack region) for ALB HTTPS \\
+\bottomrule
+\end{longtable}
+\end{center}
+
+\subsection{Sizing note for 500 concurrent users}
+
+The defaults give two \texttt{t3.medium} API nodes (2 vCPU / 4\,GiB each) behind
+an ALB, auto-scaling to four at 60\% CPU. A scores/roster workload is bursty and
+read-heavy, so a \texttt{db.t3.medium} with the Redis cache in front absorbs
+500 concurrent users comfortably. For sustained peak traffic, raise
+\texttt{apiMaxCapacity}, move the database to \texttt{db.m6g.large}, and set
+\texttt{dbMultiAz=true}.
+
+% ---------------------------------------------------------------------------
+\section{Launch (first deploy)}
+
+From \texttt{infra/aws-cdk}:
+
+\begin{lstlisting}[language=bash]
+# 1. Review what will be created (optional but recommended)
+npx cdk diff -c env=production
+
+# 2. Create everything. CDK builds the backend Docker image, pushes it to ECR,
+#    and stands up VPC, RDS, Redis, S3, CloudFront, ALB and the ASG.
+npx cdk deploy -c env=production --require-approval never
+\end{lstlisting}
+
+The first deploy takes roughly 20--30 minutes (RDS and CloudFront dominate). At
+the end, CDK prints the stack outputs; the ones you need:
+
+\begin{center}
+\begin{tabular}{@{}ll@{}}
+\toprule
+\textbf{Output} & \textbf{Use} \\
+\midrule
+\texttt{ApiUrl}   & Public API base URL (goes into the mobile build) \\
+\texttt{WebUrl}   & CloudFront URL of the web app \\
+\texttt{AsgName}  & Used by the migration/redeploy scripts \\
+\texttt{DbEndpoint}, \texttt{RedisEndpoint} & Data endpoints (informational) \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Post-deploy steps (run once)}
+
+\begin{enumerate}[leftmargin=1.6em]
+  \item \textbf{Set the admin password.} Hosted environments refuse the
+        placeholder value:
+\begin{lstlisting}[language=bash]
+./scripts/set-admin-password.sh production 'a-strong-admin-password' admin@yourdomain.com
+./scripts/redeploy-api.sh production   # recycle instances to pick it up
+\end{lstlisting}
+  \item \textbf{Run database migrations + seed.} This applies Alembic migrations
+        and creates the admin account and initial invite. It runs inside one
+        instance's container over SSM (no SSH), so it never races the ASG:
+\begin{lstlisting}[language=bash]
+./scripts/run-migrations.sh production
+\end{lstlisting}
+  \item \textbf{Publish the web app.} Builds the Expo web export against
+        \texttt{ApiUrl} and pushes it to the CloudFront bucket:
+\begin{lstlisting}[language=bash]
+./scripts/deploy-web.sh production
+\end{lstlisting}
+  \item \textbf{Verify.}
+\begin{lstlisting}[language=bash]
+curl -s "$(aws cloudformation describe-stacks --stack-name Aimz-production \
+  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)/api/v1/health"
+# -> {"status":"ok","service":"aimz-api",...}
+\end{lstlisting}
+\end{enumerate}
+
+% ---------------------------------------------------------------------------
+\section{Pushing updates}
+
+\subsection{Backend / API changes}
+
+Any change under \texttt{backend/} ships as a new container image:
+
+\begin{lstlisting}[language=bash]
+cd infra/aws-cdk
+npx cdk deploy -c env=production     # rebuilds + pushes the image to ECR
+./scripts/redeploy-api.sh production # rolling instance refresh onto the new image
+# If the change added migrations:
+./scripts/run-migrations.sh production
+\end{lstlisting}
+
+\subsection{Web / mobile-web changes}
+
+\begin{lstlisting}[language=bash]
+cd infra/aws-cdk
+./scripts/deploy-web.sh production    # rebuild export, sync to S3, invalidate CDN
+\end{lstlisting}
+
+\subsection{Infrastructure changes}
+
+Edit \texttt{lib/aimz-stack.ts}, then:
+
+\begin{lstlisting}[language=bash]
+npx cdk diff -c env=production        # preview
+npx cdk deploy -c env=production      # apply
+\end{lstlisting}
+
+% ---------------------------------------------------------------------------
+\section{Operations}
+
+\begin{description}[leftmargin=0em, style=nextline]
+  \item[Shell into an instance] \texttt{aws ssm start-session --target <instance-id>}
+        (no SSH keys, no open ports). Then \texttt{docker logs -f aimz-api}.
+  \item[API logs] The container logs to the instance; for aggregation, ship
+        \texttt{docker logs} to CloudWatch (future enhancement) or use the
+        Session Manager shell above.
+  \item[Scaling] The ASG target-tracks CPU at 60\%. Change
+        \texttt{apiMin/MaxCapacity} and redeploy, or edit the ASG in the console
+        for an immediate bump.
+  \item[Database backups] RDS automated backups retain 7 days. Production uses a
+        final snapshot on stack deletion and deletion protection.
+  \item[Secrets rotation] Update the value in Secrets Manager (or via
+        \texttt{set-admin-password.sh}) and run \texttt{redeploy-api.sh} so
+        instances re-read it at boot.
+\end{description}
+
+% ---------------------------------------------------------------------------
+\section{Cost sketch (order of magnitude)}
+
+Rough monthly, on-demand, single region --- confirm against the AWS pricing
+calculator for your region:
+
+\begin{center}
+\begin{tabular}{@{}lr@{}}
+\toprule
+\textbf{Component} & \textbf{Est. / month (USD)} \\
+\midrule
+2$\times$ t3.medium EC2 (API)        & \textasciitilde{}60 \\
+ALB                                  & \textasciitilde{}20 \\
+RDS db.t3.medium (single-AZ) + 50GB  & \textasciitilde{}70 \\
+ElastiCache cache.t4g.small          & \textasciitilde{}25 \\
+NAT gateway                          & \textasciitilde{}35 \\
+S3 + CloudFront (light)              & \textasciitilde{}10 \\
+\midrule
+\textbf{Total}                       & \textbf{\textasciitilde{}220} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+Multi-AZ RDS and a Redis replica roughly double their respective lines and are
+recommended before you rely on this in production.
+
+% ---------------------------------------------------------------------------
+\section{Teardown}
+
+\warnbox{Destroys data. In production the database takes a final snapshot and
+buckets are retained; elsewhere everything is removed.}
+
+\begin{lstlisting}[language=bash]
+cd infra/aws-cdk
+npx cdk destroy -c env=production
+\end{lstlisting}
+
+% ---------------------------------------------------------------------------
+\section{Remaining work (staged plan)}
+
+This runbook covers \textbf{Stage 1}: the AWS infrastructure and deployment
+tooling. Two stages remain before the AWS deployment fully replaces Cloudflare:
+
+\begin{enumerate}[leftmargin=1.6em]
+  \item \textbf{Stage 2 --- FastAPI feature parity.} The Cloudflare Worker is
+        ahead of the FastAPI backend by roughly 15 migrations and eight route
+        groups (stats, knockout, training, announcements, assignments, roster,
+        calendar, audit). These must be ported into \texttt{backend/} so the
+        AWS API matches the contract the mobile app expects. The Redis cache
+        provisioned here is then wired into the hot read paths.
+  \item \textbf{Stage 3 --- Cutover.} Point \texttt{EXPO\_PUBLIC\_API\_URL} at
+        the ALB, migrate live data from D1 into RDS, publish the web app to
+        CloudFront, ship the mobile build, and retire the Workers/Pages/D1/R2
+        resources.
+\end{enumerate}
+
+\vfill
+\begin{center}\small
+\textit{Infrastructure as code: \texttt{infra/aws-cdk/lib/aimz-stack.ts} ---
+one \texttt{cdk deploy} stands up the whole platform.}
+\end{center}
+
+\end{document}

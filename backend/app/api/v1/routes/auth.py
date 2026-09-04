@@ -14,7 +14,16 @@ from app.core.security import (
     secret_hash,
     verify_password,
 )
-from app.db.models import PasswordResetToken, RefreshSession, RegistrationInvite, User, UserRole
+from app.db.models import (
+    InviteKind,
+    InvitePlayer,
+    PasswordResetToken,
+    RefreshSession,
+    RegistrationInvite,
+    User,
+    UserChild,
+    UserRole,
+)
 from app.schemas import (
     LoginRequest,
     MessageResponse,
@@ -25,6 +34,7 @@ from app.schemas import (
     RegisterRequest,
     TokenResponse,
 )
+from app.services.accounts import assert_not_expired
 from app.services.auth import issue_session
 from app.services.email import send_password_reset
 
@@ -50,26 +60,54 @@ async def register(payload: RegisterRequest, session: SessionDep) -> TokenRespon
     )
     if invite is None:
         raise api_error(422, "invalid_invite", "That academy invitation code is invalid.")
+
+    # Which roster players this invitation was cut for. A player invitation names
+    # one and the account carries it on ``users.player_id``; a parent invitation
+    # names their children, who hang off ``user_children`` instead. The list is
+    # authoritative, falling back to the column older invitations used.
+    invited_player_ids = list(
+        (
+            await session.scalars(
+                select(InvitePlayer.player_id).where(InvitePlayer.invite_id == invite.id)
+            )
+        ).all()
+    )
+    if not invited_player_ids and invite.player_id is not None:
+        invited_player_ids = [invite.player_id]
+    is_parent = invite.kind == InviteKind.parent
+    if is_parent and not invited_player_ids:
+        raise api_error(
+            409,
+            "invalid_invite",
+            "This invitation is not linked to a player. "
+            "Ask an AIMZ administrator for a new one.",
+        )
+
     user = User(
         name=payload.name.strip(),
         email=str(payload.email).lower(),
         hashed_password=hash_password(payload.password),
-        role=UserRole.player,
+        role=UserRole.parent if is_parent else UserRole.player,
         # A personal invitation carries the roster player it was cut for, so the
-        # account knows whose stats are its own the moment it is created.
-        player_id=invite.player_id,
+        # account knows whose stats are its own the moment it is created. A
+        # parent claims no roster record; their children hang off user_children.
+        player_id=None if is_parent else (invited_player_ids[0] if invited_player_ids else None),
     )
-    invited_player_id = invite.player_id
+    linked_player_id = user.player_id
     session.add(user)
     invite.use_count += 1
+    if is_parent:
+        await session.flush()
+        for player_id in invited_player_ids:
+            session.add(UserChild(user_id=user.id, player_id=player_id))
     try:
         await session.flush()
     except IntegrityError as exc:
         await session.rollback()
         # Two constraints can land here. Saying "email" for a player collision
         # would send someone to change an address that was never the problem.
-        if invited_player_id is not None and await session.scalar(
-            select(User.id).where(User.player_id == invited_player_id)
+        if linked_player_id is not None and await session.scalar(
+            select(User.id).where(User.player_id == linked_player_id)
         ):
             raise api_error(
                 409,
@@ -92,6 +130,9 @@ async def login(payload: LoginRequest, session: SessionDep) -> TokenResponse:
         or not verify_password(payload.password, user.hashed_password)
     ):
         raise api_error(401, "invalid_credentials", "Email or password is incorrect.")
+    # After the password, so an expired account cannot be told apart from a wrong
+    # one by anybody who does not already hold the password for it.
+    assert_not_expired(user)
     response = await issue_session(session, user)
     await session.commit()
     return response
@@ -109,9 +150,14 @@ async def refresh(payload: RefreshRequest, session: SessionDep) -> TokenResponse
     )
     if refresh_session is None:
         raise api_error(401, "invalid_refresh_token", "Sign in again to continue.")
-    user = await session.get(User, refresh_session.user_id)
+    # A select (not a get) so the account's deadline is joined in and the expiry
+    # check below sees it.
+    user = await session.scalar(select(User).where(User.id == refresh_session.user_id))
     if user is None or not user.is_active:
         raise api_error(401, "invalid_refresh_token", "Sign in again to continue.")
+    # A refresh token lives for a month; an expiry that let it keep minting
+    # access tokens would be no deadline at all.
+    assert_not_expired(user)
     refresh_session.revoked_at = now
     response = await issue_session(session, user)
     await session.commit()

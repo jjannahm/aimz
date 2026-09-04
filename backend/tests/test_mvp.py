@@ -118,7 +118,7 @@ async def test_full_match_scoring_standings_and_stats(
         json={
             "name": "Nour Ali",
             "team_id": home.json()["id"],
-            "position": "Forward",
+            "position": "ST",
             "jersey_number": 9,
         },
     )
@@ -376,17 +376,17 @@ async def test_stat_leaders_rank_by_metric_and_age_group(
     scorer = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Mariam Adel", "team_id": squad.json()["id"], "position": "Forward"},
+        json={"name": "Mariam Adel", "team_id": squad.json()["id"], "position": "ST"},
     )
     creator = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Hana Samir", "team_id": squad.json()["id"], "position": "Midfielder"},
+        json={"name": "Hana Samir", "team_id": squad.json()["id"], "position": "CM"},
     )
     outsider = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Layla Tarek", "team_id": other.json()["id"], "position": "Forward"},
+        json={"name": "Layla Tarek", "team_id": other.json()["id"], "position": "ST"},
     )
 
     def payload_for(team_id: str, status: str) -> dict[str, str]:
@@ -562,7 +562,7 @@ async def test_goal_can_be_flagged_as_a_penalty(
     striker = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Farida Sami", "team_id": home.json()["id"], "position": "Forward"},
+        json={"name": "Farida Sami", "team_id": home.json()["id"], "position": "ST"},
     )
     payload = {
         "competition_id": competition.json()["id"],
@@ -745,7 +745,7 @@ async def test_personal_invite_account_linking_and_conflicts(
     player = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Linked Player", "team_id": squad.json()["id"], "position": "Keeper"},
+        json={"name": "Linked Player", "team_id": squad.json()["id"], "position": "GK"},
     )
     invite = await client.post(
         "/api/v1/admin/registration-invites",
@@ -826,7 +826,7 @@ async def test_lineup_format_and_locking(
             json={
                 "name": f"Player {index}",
                 "team_id": squad.json()["id"],
-                "position": "Midfielder",
+                "position": "CM",
             },
         )
         roster.append(created.json()["id"])
@@ -968,12 +968,12 @@ async def test_lineup_records_a_captain(
     keeper = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Nour Hassan", "team_id": squad.json()["id"], "position": "Goalkeeper"},
+        json={"name": "Nour Hassan", "team_id": squad.json()["id"], "position": "GK"},
     )
     skipper = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Salma Nabil", "team_id": squad.json()["id"], "position": "Defender"},
+        json={"name": "Salma Nabil", "team_id": squad.json()["id"], "position": "CB"},
     )
     match = await client.post(
         "/api/v1/matches",
@@ -1123,12 +1123,12 @@ async def test_goal_carries_its_assist_and_standalone_assists_are_refused(
     scorer = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Farida Sami", "team_id": squad.json()["id"], "position": "Forward"},
+        json={"name": "Farida Sami", "team_id": squad.json()["id"], "position": "ST"},
     )
     provider = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Nada Wagdy", "team_id": squad.json()["id"], "position": "Midfielder"},
+        json={"name": "Nada Wagdy", "team_id": squad.json()["id"], "position": "CM"},
     )
     match = await client.post(
         "/api/v1/matches",
@@ -1226,12 +1226,12 @@ async def _match_fixture(
     defender = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Nour Adel", "team_id": home.json()["id"], "position": "Defender"},
+        json={"name": "Nour Adel", "team_id": home.json()["id"], "position": "CB"},
     )
     forward = await client.post(
         "/api/v1/players",
         headers=admin_headers,
-        json={"name": "Habiba Tarek", "team_id": away.json()["id"], "position": "Forward"},
+        json={"name": "Habiba Tarek", "team_id": away.json()["id"], "position": "ST"},
     )
     match = await client.post(
         "/api/v1/matches",

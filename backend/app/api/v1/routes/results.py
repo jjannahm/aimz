@@ -2,8 +2,8 @@ from collections import defaultdict
 from typing import Literal
 
 from fastapi import APIRouter
-from sqlalchemy import case, func, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy.orm import aliased, selectinload
 
 from app.api.deps import CurrentUser, SessionDep
 from app.core.errors import api_error
@@ -17,18 +17,23 @@ from app.db.models import (
     Team,
 )
 from app.schemas import (
+    AwardRankRow,
     CompetitionRead,
     HeadToHead,
     HeadToHeadMeeting,
     PlayerAward,
+    PlayerHonour,
+    PlayerHonours,
     PlayerLeaderRow,
     PlayerMatchStatRead,
     PlayerRead,
     PlayerSeasonSummary,
     SeasonAwards,
+    SquadStatRow,
     StandingRow,
     TeamRead,
 )
+from app.services.awards import AWARD_DEFINITIONS, AWARD_LABELS, award_rankings
 
 router = APIRouter()
 
@@ -42,6 +47,15 @@ def outcome(scored: int, conceded: int) -> str:
     if scored > conceded:
         return "W"
     return "D" if scored == conceded else "L"
+
+
+async def _teams_by_ids(session: SessionDep, team_ids: set[str]) -> dict[str, Team]:
+    """The teams behind a set of ids, for attributing stats to the squad they
+    were earned with without a fragile join through the aggregate."""
+    if not team_ids:
+        return {}
+    rows = (await session.scalars(select(Team).where(Team.id.in_(team_ids)))).all()
+    return {team.id: team for team in rows}
 
 
 async def finished_matches(session: SessionDep, competition_id: str) -> list[Match]:
@@ -240,10 +254,14 @@ async def stat_leaders(
 ) -> list[PlayerLeaderRow]:
     """Rank players by goals, assists, or cards collected, across finished matches."""
     limit = max(1, min(limit, 100))
+    # The squad the stat was earned with — from the lineup at scoring time —
+    # falling back to the player's current squad for rows that predate it. A
+    # player's whole record is one row, credited to that squad rather than split.
+    stat_team = func.coalesce(PlayerMatchStat.team_id, Player.team_id)
     query = (
         select(
             Player,
-            Team,
+            func.max(stat_team).label("team_id"),
             func.sum(PlayerMatchStat.goals).label("goals"),
             func.sum(PlayerMatchStat.assists).label("assists"),
             func.sum(PlayerMatchStat.yellow_cards).label("yellow_cards"),
@@ -253,12 +271,16 @@ async def stat_leaders(
         .select_from(PlayerMatchStat)
         .join(Match, Match.id == PlayerMatchStat.match_id)
         .join(Player, Player.id == PlayerMatchStat.player_id)
-        .join(Team, Team.id == Player.team_id)
         .where(Match.status == MatchStatus.finished)
-        .group_by(Player.id, Team.id)
+        .group_by(Player.id)
     )
     if age_group:
-        query = query.where(Team.age_group == age_group)
+        # Filtered on the earned squad, so a player is ranked in the age group
+        # she turned out in, not the one she is registered with now.
+        stat_team_row = aliased(Team)
+        query = query.join(stat_team_row, stat_team_row.id == stat_team).where(
+            stat_team_row.age_group == age_group
+        )
     if competition_id:
         query = query.where(Match.competition_id == competition_id)
     if season:
@@ -288,11 +310,12 @@ async def stat_leaders(
         rows,
         key=lambda row: (-scored(row), -tiebreak(row), row.appearances, row[0].name.lower()),
     )[:limit]
+    teams = await _teams_by_ids(session, {row.team_id for row in ranked})
     return [
         PlayerLeaderRow(
             rank=index,
             player=PlayerRead.model_validate(row[0]),
-            team=TeamRead.model_validate(row[1]),
+            team=TeamRead.model_validate(teams[row.team_id]),
             goals=row.goals,
             assists=row.assists,
             yellow_cards=row.yellow_cards,
@@ -326,11 +349,14 @@ async def season_awards(
         .scalar_subquery()
         .label("motm")
     )
+    # Credited to the squad the stat was earned with, not the player's current
+    # one; a player's whole season is one row rather than split across squads.
+    stat_team = func.coalesce(PlayerMatchStat.team_id, Player.team_id)
     totals = (
         await session.execute(
             select(
                 Player,
-                Team,
+                func.max(stat_team).label("team_id"),
                 func.sum(PlayerMatchStat.goals).label("goals"),
                 func.sum(PlayerMatchStat.assists).label("assists"),
                 func.sum(PlayerMatchStat.minutes_played).label("minutes"),
@@ -341,11 +367,11 @@ async def season_awards(
             .select_from(PlayerMatchStat)
             .join(Match, Match.id == PlayerMatchStat.match_id)
             .join(Player, Player.id == PlayerMatchStat.player_id)
-            .join(Team, Team.id == Player.team_id)
             .where(Match.status == MatchStatus.finished, Match.competition_id == competition_id)
-            .group_by(Player.id, Team.id)
+            .group_by(Player.id)
         )
     ).all()
+    teams = await _teams_by_ids(session, {row.team_id for row in totals})
 
     def best(label: str, value: object, unit: str, floor: int = 1) -> PlayerAward | None:
         candidates = [row for row in totals if getattr(row, value) >= floor]
@@ -355,7 +381,7 @@ async def season_awards(
         return PlayerAward(
             label=label,
             player=PlayerRead.model_validate(winner[0]),
-            team=TeamRead.model_validate(winner[1]),
+            team=TeamRead.model_validate(teams[winner.team_id]),
             value=getattr(winner, value),
             unit=unit,
         )
@@ -379,7 +405,7 @@ async def season_awards(
             PlayerAward(
                 label="Best discipline",
                 player=PlayerRead.model_validate(cleanest[0]),
-                team=TeamRead.model_validate(cleanest[1]),
+                team=TeamRead.model_validate(teams[cleanest.team_id]),
                 value=cleanest.cards,
                 unit="cards",
             )
@@ -391,3 +417,153 @@ async def season_awards(
         competition=CompetitionRead.model_validate(competition),
         player_awards=player_awards,
     )
+
+
+@router.get(
+    "/competitions/{competition_id}/awards/{metric}",
+    response_model=list[AwardRankRow],
+)
+async def award_detail(
+    competition_id: str,
+    metric: str,
+    _: CurrentUser,
+    session: SessionDep,
+    limit: int = 25,
+) -> list[AwardRankRow]:
+    """The full ranking behind one award, fetched only when a client opens it."""
+    if metric not in AWARD_LABELS:
+        raise api_error(404, "award_not_found", "Unknown award.")
+    if await session.get(Competition, competition_id) is None:
+        raise api_error(404, "competition_not_found", "Competition not found.")
+    limit = max(1, min(limit, 100))
+    rankings = await award_rankings(session, competition_id)
+    return [
+        AwardRankRow(
+            rank=entry.rank,
+            player=PlayerRead.model_validate(entry.player),
+            team=TeamRead.model_validate(entry.team),
+            value=entry.value,
+            unit=entry.unit,
+            appearances=entry.appearances,
+        )
+        for entry in rankings[metric][:limit]
+    ]
+
+
+@router.get("/players/{player_id}/honours", response_model=PlayerHonours)
+async def player_honours(
+    player_id: str, _: CurrentUser, session: SessionDep
+) -> PlayerHonours:
+    """Everything this player has won, worked out from the record across seasons."""
+    player = await session.get(Player, player_id)
+    if player is None:
+        raise api_error(404, "player_not_found", "Player not found.")
+    competitions = list(
+        (
+            await session.scalars(
+                select(Competition)
+                .distinct()
+                .join(Match, Match.competition_id == Competition.id)
+                .join(PlayerMatchStat, PlayerMatchStat.match_id == Match.id)
+                .where(PlayerMatchStat.player_id == player_id)
+                .order_by(Competition.season.desc(), Competition.name)
+            )
+        ).all()
+    )
+    honours: list[PlayerHonour] = []
+    for competition in competitions:
+        rankings = await award_rankings(session, competition.id)
+        # A competition still under way says so, rather than overstating an
+        # honour that could still change hands.
+        remaining = (
+            await session.scalar(
+                select(func.count())
+                .select_from(Match)
+                .where(
+                    Match.competition_id == competition.id,
+                    Match.status != MatchStatus.finished,
+                )
+            )
+            or 0
+        )
+        is_final = remaining == 0
+        for metric, label, unit in AWARD_DEFINITIONS:
+            ranking = rankings[metric]
+            if ranking and ranking[0].player.id == player_id:
+                winner = ranking[0]
+                honours.append(
+                    PlayerHonour(
+                        competition=CompetitionRead.model_validate(competition),
+                        metric=metric,
+                        label=label,
+                        value=winner.value,
+                        unit=unit,
+                        team=TeamRead.model_validate(winner.team)
+                        if winner.team
+                        else None,
+                        is_final=is_final,
+                    )
+                )
+    return PlayerHonours(player=PlayerRead.model_validate(player), honours=honours)
+
+
+@router.get("/teams/{team_id}/squad-stats", response_model=list[SquadStatRow])
+async def squad_stats(
+    team_id: str, _: CurrentUser, session: SessionDep
+) -> list[SquadStatRow]:
+    """Every player on one squad with their season totals, zeros included.
+
+    A player who has not featured yet still appears, at nought, because a squad
+    list that hides them is not a squad. Goalkeeper figures (clean sheets, goals
+    conceded) are worked out from the lineup and timeline of each finished match.
+    """
+    if await session.get(Team, team_id) is None:
+        raise api_error(404, "team_not_found", "Team not found.")
+    rows = (
+        await session.execute(
+            select(
+                Player.id.label("player_id"),
+                func.coalesce(
+                    func.sum(case((PlayerMatchStat.appeared, 1), else_=0)), 0
+                ).label("appearances"),
+                func.coalesce(func.sum(PlayerMatchStat.minutes_played), 0).label(
+                    "minutes_played"
+                ),
+                func.coalesce(func.sum(PlayerMatchStat.goals), 0).label("goals"),
+                func.coalesce(func.sum(PlayerMatchStat.assists), 0).label("assists"),
+                func.coalesce(func.sum(PlayerMatchStat.clean_sheet), 0).label(
+                    "clean_sheets"
+                ),
+                func.coalesce(func.sum(PlayerMatchStat.goals_conceded), 0).label(
+                    "goals_conceded"
+                ),
+            )
+            .select_from(Player)
+            .outerjoin(PlayerMatchStat, PlayerMatchStat.player_id == Player.id)
+            .outerjoin(
+                Match,
+                and_(
+                    Match.id == PlayerMatchStat.match_id,
+                    Match.status == MatchStatus.finished,
+                ),
+            )
+            .where(
+                Player.team_id == team_id,
+                or_(PlayerMatchStat.id.is_(None), Match.id.isnot(None)),
+            )
+            .group_by(Player.id)
+            .order_by(Player.name)
+        )
+    ).all()
+    return [
+        SquadStatRow(
+            player_id=row.player_id,
+            appearances=row.appearances,
+            minutes_played=row.minutes_played,
+            goals=row.goals,
+            assists=row.assists,
+            clean_sheets=row.clean_sheets,
+            goals_conceded=row.goals_conceded,
+        )
+        for row in rows
+    ]

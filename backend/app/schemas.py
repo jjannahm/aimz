@@ -6,14 +6,18 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 from app.db.models import (
+    AvailabilityStatus,
+    CompetitionStatus,
     CompetitionType,
     EventType,
+    InviteKind,
     MatchPhase,
     MatchStatus,
     PenaltyOutcome,
     SubstitutionReason,
     UserRole,
 )
+from app.services.positions import POSITION_CODES
 from app.services.storage import create_signed_read_url
 
 
@@ -38,6 +42,8 @@ class UserRead(ORMModel):
     email: EmailStr
     role: UserRole
     player_id: str | None
+    # Null when the account never expires; a date it stops working on otherwise.
+    expires_at: datetime | None = None
     created_at: datetime
 
 
@@ -87,14 +93,23 @@ class UserUpdate(BaseModel):
 class AdminUserCreate(RegisterRequest):
     role: UserRole = UserRole.admin
     invite_code: str = "unused"
+    # An optional deadline for the account. Validated future-dated in the route.
+    expires_at: datetime | None = None
 
 
 class InviteCreate(BaseModel):
     label: str = Field(min_length=2, max_length=120)
     code: str = Field(min_length=4, max_length=128)
-    # Cutting an invitation for one named player links the account it creates to
-    # that roster record, which is how a player sees their own stats.
+    # Which of the two kinds of account this invitation redeems into. A player
+    # invitation names one player and links the account to that roster record,
+    # which is how a player sees their own stats; a parent invitation names one
+    # or more children the account will follow.
+    kind: InviteKind = InviteKind.player
+    # The players named on the invitation. ``player_id`` is the single-player
+    # form (a player invitation, or an older client); ``player_ids`` carries the
+    # several a parent invitation needs. Either or both may be given.
     player_id: str | None = Field(default=None, max_length=36)
+    player_ids: list[str] = Field(default_factory=list)
     expires_at: datetime | None = None
     max_uses: int | None = Field(default=None, ge=1)
 
@@ -102,12 +117,24 @@ class InviteCreate(BaseModel):
 class AdminUserUpdate(BaseModel):
     # Null unlinks. Anything else must be a roster player nobody else holds.
     player_id: str | None = Field(default=None, max_length=36)
+    # Set on its own, so an account created from an invitation — a parent's,
+    # which the create endpoint cannot make — can still be given a deadline.
+    # Null lifts it. A field left out of the body is left untouched; the route
+    # tells the two apart with ``model_fields_set``.
+    expires_at: datetime | None = None
+
+
+class InvitePlayerRead(BaseModel):
+    id: str
+    name: str
 
 
 class InviteRead(ORMModel):
     id: str
     label: str
+    kind: InviteKind
     player_id: str | None
+    players: list[InvitePlayerRead] = Field(default_factory=list)
     expires_at: datetime | None
     max_uses: int | None
     use_count: int
@@ -145,12 +172,25 @@ class CompetitionInput(BaseModel):
     name: str = Field(min_length=2, max_length=160)
     season: str = Field(min_length=2, max_length=40)
     type: CompetitionType
+    # A knockout's shape; both null for a plain league table. Validated and
+    # normalised in the route via resolve_shape.
+    team_count: int | None = None
+    group_size: int | None = None
 
 
 class CompetitionRead(CompetitionInput, ORMModel):
     id: str
+    status: CompetitionStatus
+    completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class NextSeasonInput(BaseModel):
+    season: str = Field(min_length=2, max_length=40)
+    # Copy the club list across as new rows for the new season. Players are not
+    # copied — a squad is not the same people a year later.
+    carry_teams: bool = False
 
 
 class PlayerInput(BaseModel):
@@ -160,6 +200,13 @@ class PlayerInput(BaseModel):
     jersey_number: int | None = Field(default=None, ge=0, le=99)
     photo_key: str | None = Field(default=None, max_length=512)
     is_active: bool = True
+
+    @field_validator("position")
+    @classmethod
+    def _valid_position(cls, value: str) -> str:
+        if value not in POSITION_CODES:
+            raise ValueError("Choose a position from the list.")
+        return value
 
 
 class PlayerRead(PlayerInput, ORMModel):
@@ -174,9 +221,29 @@ class PlayerRead(PlayerInput, ORMModel):
         return self
 
 
+class ChildRead(BaseModel):
+    """A roster player a parent account speaks for, as the account hub reads it.
+
+    A player account answers ``/users/me/children`` with the one player it is,
+    so a caller has a single shape either way."""
+
+    id: str
+    name: str
+    team_id: str
+    team_name: str | None = None
+
+
+class ChildrenResponse(BaseModel):
+    items: list[ChildRead]
+
+
 class AdminAccountRead(UserRead):
     player: PlayerRead | None = None
     team: TeamRead | None = None
+    # A parent's roster links live in ``user_children``, never on
+    # ``users.player_id``, so ``player``/``team`` above are null for them and
+    # their children are grouped here instead.
+    children: list[ChildRead] = Field(default_factory=list)
 
 
 EXTRA_TIME_PERIODS = 2
@@ -343,6 +410,13 @@ class LineupEntryInput(BaseModel):
     position: str | None = Field(default=None, max_length=60)
     jersey_number: int | None = Field(default=None, ge=0, le=99)
 
+    @field_validator("position")
+    @classmethod
+    def _valid_position(cls, value: str | None) -> str | None:
+        if value is not None and value not in POSITION_CODES:
+            raise ValueError("Choose a position from the list.")
+        return value
+
 
 class LineupEntryRead(LineupEntryInput, ORMModel):
     id: str
@@ -358,11 +432,15 @@ class PlayerStatInput(BaseModel):
 class PlayerMatchStatRead(PlayerStatInput, ORMModel):
     id: str
     match_id: str
+    team_id: str | None = None
     goals: int
     assists: int
     own_goals: int
     yellow_cards: int
     red_cards: int
+    goals_conceded: int
+    penalties_saved: int
+    clean_sheet: int
 
 
 class LiveMatchSnapshot(BaseModel):
@@ -480,6 +558,227 @@ class AuditLogRead(ORMModel):
     match_id: str | None
     summary: str
     created_at: datetime
+
+
+class AnnouncementInput(BaseModel):
+    team_id: str | None = Field(default=None, max_length=36)
+    title: str = Field(min_length=2, max_length=160)
+    body: str = Field(min_length=2, max_length=5000)
+    pinned: bool = False
+
+
+class AnnouncementUpdate(BaseModel):
+    # Every field optional; the route uses ``model_fields_set`` to tell an
+    # omitted field from an explicit null (which clears the team).
+    team_id: str | None = Field(default=None, max_length=36)
+    title: str | None = Field(default=None, min_length=2, max_length=160)
+    body: str | None = Field(default=None, min_length=2, max_length=5000)
+    pinned: bool | None = None
+
+
+class AnnouncementRead(ORMModel):
+    id: str
+    team_id: str | None
+    title: str
+    body: str
+    author_id: str | None
+    pinned: bool
+    created_at: datetime
+    updated_at: datetime
+    author_name: str | None = None
+    team: TeamRead | None = None
+
+
+class PlayerContactInput(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    relationship: str | None = Field(default=None, max_length=80)
+    email: str | None = Field(default=None, max_length=320)
+    phone: str | None = Field(default=None, max_length=60)
+
+
+class PlayerContactRead(ORMModel):
+    id: str
+    player_id: str
+    name: str
+    relationship: str | None
+    email: str | None
+    phone: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RosterInput(BaseModel):
+    date_of_birth: str | None = Field(default=None, max_length=10)
+    contacts: list[PlayerContactInput] = Field(default_factory=list, max_length=20)
+
+    @field_validator("date_of_birth")
+    @classmethod
+    def _valid_date(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        from datetime import date
+
+        try:
+            if date.fromisoformat(value).isoformat() != value:
+                raise ValueError
+        except ValueError as exc:
+            raise ValueError("Use a valid YYYY-MM-DD date.") from exc
+        return value
+
+
+class RosterRead(BaseModel):
+    player_id: str
+    date_of_birth: str | None
+    contacts: list[PlayerContactRead]
+
+
+class TrainingSessionRead(ORMModel):
+    id: str
+    team_id: str
+    starts_at: datetime
+    duration_minutes: int
+    venue: str
+    notes: str | None
+    series_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    team: TeamRead | None = None
+
+
+class TrainingCreate(BaseModel):
+    team_id: str = Field(min_length=1, max_length=36)
+    venue: str = Field(min_length=2, max_length=200)
+    notes: str | None = Field(default=None, max_length=2000)
+    duration_minutes: int = Field(ge=15, le=300)
+    occurrences: list[datetime] = Field(min_length=1, max_length=200)
+
+
+class TrainingUpdate(BaseModel):
+    starts_at: datetime | None = None
+    duration_minutes: int | None = Field(default=None, ge=15, le=300)
+    venue: str | None = Field(default=None, min_length=2, max_length=200)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class AvailabilityInput(BaseModel):
+    # Admins may answer for any player on the squad; a player answers for itself.
+    player_id: str | None = Field(default=None, max_length=36)
+    status: AvailabilityStatus
+    note: str | None = Field(default=None, max_length=500)
+
+
+class AvailabilityRead(ORMModel):
+    id: str
+    training_session_id: str
+    player_id: str
+    status: AvailabilityStatus
+    note: str | None
+    created_at: datetime
+    updated_at: datetime
+    player: PlayerRead | None = None
+
+
+class AssignmentCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=160)
+    assigned_player_id: str | None = Field(default=None, max_length=36)
+
+
+class AssignmentUpdate(BaseModel):
+    # Absent or null both mean "release"; a string claims for that player.
+    assigned_player_id: str | None = Field(default=None, max_length=36)
+
+
+class AssignmentRead(ORMModel):
+    id: str
+    match_id: str | None
+    training_session_id: str | None
+    title: str
+    assigned_player_id: str | None
+    created_at: datetime
+    updated_at: datetime
+    assigned_player: PlayerRead | None = None
+
+
+class CalendarFeedRead(BaseModel):
+    url: str | None
+    subscribed_at: datetime | None
+
+
+class AwardRankRow(BaseModel):
+    rank: int
+    player: PlayerRead | None
+    team: TeamRead | None
+    value: int
+    unit: str
+    appearances: int
+
+
+class PlayerHonour(BaseModel):
+    competition: CompetitionRead
+    metric: str
+    label: str
+    value: int
+    unit: str
+    team: TeamRead | None
+    is_final: bool
+
+
+class PlayerHonours(BaseModel):
+    player: PlayerRead
+    honours: list[PlayerHonour]
+
+
+class SquadStatRow(BaseModel):
+    player_id: str
+    appearances: int
+    minutes_played: int
+    goals: int
+    assists: int
+    clean_sheets: int
+    goals_conceded: int
+
+
+class GroupRead(BaseModel):
+    id: str
+    competition_id: str
+    name: str
+    position: int
+    teams: list[TeamRead]
+
+
+class GroupTeamRef(BaseModel):
+    team_id: str = Field(min_length=1, max_length=36)
+
+
+class BracketSlotRead(BaseModel):
+    id: str
+    round: int
+    position: int
+    home_team: TeamRead | None
+    away_team: TeamRead | None
+    winner_team_id: str | None
+    match_id: str | None
+
+
+class BracketRound(BaseModel):
+    round: int
+    label: str
+    slots: list[BracketSlotRead]
+
+
+class BracketRead(BaseModel):
+    competition_id: str
+    team_count: int | None
+    rounds: list[BracketRound]
+
+
+class AdvanceInput(BaseModel):
+    round: int
+
+
+class BracketSlotUpdate(BaseModel):
+    winner_team_id: str | None = Field(default=None, max_length=36)
+    match_id: str | None = Field(default=None, max_length=36)
 
 
 class PresignRequest(BaseModel):
