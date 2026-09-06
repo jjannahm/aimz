@@ -132,10 +132,30 @@ describe('PlayerDetailScreen', () => {
 
   it('explains the empty profile of someone who has not played yet', async () => {
     jest.mocked(api.playerStats).mockResolvedValue(summary({
-      seasons: [], matches: [], milestones: { reached: [], streaks: [], next: [] },
+      seasons: [], matches: [], trainings_attended: 0, trainings_expected: 0, training_attendance_pct: null, milestones: { reached: [], streaks: [], next: [] },
     }));
     jest.mocked(api.playerHonours).mockResolvedValue({ player, honours: [] });
     const screen = await render(<PlayerDetailScreen />, { wrapper });
     expect(await screen.findByText('Milestones and honours appear once she has played a match.')).toBeTruthy();
+  });
+
+  // A percentage is only worth showing once a register has named her. A zero
+  // before that reads as never turning up, when it means nobody has taken one.
+  it('shows training attendance once she has been marked', async () => {
+    jest.mocked(api.playerStats).mockResolvedValue(summary({
+      trainings_attended: 7, trainings_expected: 10, training_attendance_pct: 70,
+    }));
+    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    expect(await screen.findByText('70%')).toBeTruthy();
+    expect(screen.getByText('Training · 7/10')).toBeTruthy();
+  });
+
+  it('leaves training attendance out until a register names her', async () => {
+    jest.mocked(api.playerStats).mockResolvedValue(summary({
+      trainings_attended: 0, trainings_expected: 0, training_attendance_pct: null,
+    }));
+    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Training · 0/0')).toBeNull();
   });
 });

@@ -21,13 +21,19 @@ export function PlayerStatsPanel({ playerId, season }: { playerId: string; seaso
   // zeroes that say nothing, and they would crowd out the tallies that do.
   const keeping = { clean_sheets: query.data.clean_sheets ?? 0, goals_conceded: query.data.goals_conceded ?? 0, penalties_saved: query.data.penalties_saved ?? 0 };
   const keeps = isGoalkeeper(query.data.player.position) || keeping.clean_sheets > 0 || keeping.penalties_saved > 0 || keeping.goals_conceded > 0;
-  const tiles = [
+  const tiles: { label: string; value: number | string }[] = [
     { label: 'Appearances', value: query.data.appearances },
     { label: 'Minutes', value: query.data.minutes_played },
     { label: 'Goals', value: query.data.goals },
     { label: 'Assists', value: query.data.assists },
     { label: 'Yellow cards', value: query.data.yellow_cards },
     { label: 'Red cards', value: query.data.red_cards },
+    // Only once a register has named her. Before that a zero would read as
+    // never turning up, when it means nobody has taken one yet.
+    ...(query.data.training_attendance_pct === null || query.data.training_attendance_pct === undefined ? [] : [{
+      label: `Training · ${query.data.trainings_attended}/${query.data.trainings_expected}`,
+      value: `${query.data.training_attendance_pct}%`,
+    }]),
     ...(keeps ? [
       { label: 'Clean sheets', value: keeping.clean_sheets },
       { label: 'Goals conceded', value: keeping.goals_conceded },

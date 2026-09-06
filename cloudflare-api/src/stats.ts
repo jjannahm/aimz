@@ -199,12 +199,24 @@ export function registerStatsRoutes(app: App): void {
     // The match is joined in rather than left to the client. It used to fetch
     // every match of the player's *current* squad to name the opponent, so a
     // match played for another squad showed no opponent at all.
-    const [result, seasons] = await Promise.all([
+    const [result, seasons, attendance] = await Promise.all([
       c.env.DB.prepare(`SELECT s.*, m.kickoff_datetime AS kickoff_datetime, m.home_team_id AS home_team_id, m.away_team_id AS away_team_id, m.home_score AS home_score, m.away_score AS away_score, m.man_of_the_match_player_id AS motm_player_id, cp.id AS competition_id, cp.name AS competition_name, cp.season AS season FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN competitions cp ON cp.id=m.competition_id WHERE s.player_id=?${where} ORDER BY m.kickoff_datetime DESC`).bind(...values).all<JoinedStatRow>(),
       // Every season she has a record in, so a profile can offer the switch
       // whichever season is being read.
       c.env.DB.prepare("SELECT DISTINCT cp.season AS season FROM player_match_stats s JOIN matches m ON m.id=s.match_id JOIN competitions cp ON cp.id=m.competition_id WHERE s.player_id=? ORDER BY cp.season DESC").bind(player.id).all<{ season: string }>(),
+      // Attended over expected, where expected means the sessions somebody
+      // actually took a register for: a session nobody marked counts against
+      // nobody, and a player marked at none has no percentage rather than a
+      // zero that reads as never turning up.
+      c.env.DB.prepare("SELECT SUM(CASE WHEN status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected FROM training_attendance WHERE player_id=?").bind(player.id).first<{ attended: number | null; expected: number }>(),
     ]);
+    const expected = attendance?.expected ?? 0;
+    const attended = attendance?.attended ?? 0;
+    const training = {
+      trainings_attended: attended,
+      trainings_expected: expected,
+      training_attendance_pct: expected ? Math.round((attended / expected) * 100) : null,
+    };
     const totals = result.results.reduce((sum, stat) => ({ appearances: sum.appearances + (stat.appeared ? 1 : 0), minutes_played: sum.minutes_played+stat.minutes_played, goals: sum.goals+stat.goals, assists: sum.assists+stat.assists, own_goals: sum.own_goals+stat.own_goals, yellow_cards: sum.yellow_cards+stat.yellow_cards, red_cards: sum.red_cards+stat.red_cards, goals_conceded: sum.goals_conceded+stat.goals_conceded, penalties_saved: sum.penalties_saved+stat.penalties_saved, clean_sheets: sum.clean_sheets+stat.clean_sheet }), { appearances:0, minutes_played:0, goals:0, assists:0, own_goals:0, yellow_cards:0, red_cards:0, goals_conceded:0, penalties_saved:0, clean_sheets:0 });
     const teamMap = await teamsByIds(c.env, [...new Set(result.results.flatMap((row) => [row.home_team_id, row.away_team_id, ...(row.team_id ? [row.team_id] : [])]))]);
     // The squad on the statistic decides which side of the match she was on, so
@@ -232,7 +244,7 @@ export function registerStatsRoutes(app: App): void {
       assists: row.assists,
       motm: row.motm_player_id === player.id,
     })));
-    return c.json({ player: publicPlayer(player), season, seasons: seasons.results.map((row) => row.season), ...totals, milestones, matches });
+    return c.json({ player: publicPlayer(player), season, seasons: seasons.results.map((row) => row.season), ...totals, ...training, milestones, matches });
   });
 
   /**
