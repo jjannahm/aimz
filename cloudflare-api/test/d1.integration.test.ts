@@ -28,7 +28,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0027_account_expiry.sql');
+    expect(applied.results.at(-1)?.name).toBe('0028_training_attendance.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -814,5 +814,118 @@ describe('accounts that expire', () => {
     await testEnv.DB.prepare('DELETE FROM users WHERE id = ?').bind(body.id).run();
     const rows = await testEnv.DB.prepare('SELECT COUNT(*) n FROM account_expiry WHERE user_id = ?').bind(body.id).first<{ n: number }>();
     expect(rows?.n).toBe(0);
+  });
+});
+
+describe('training attendance', () => {
+  const setUp = async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U15', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const squad: { id: string }[] = [];
+    for (const name of ['Amina', 'Nour', 'Salma']) {
+      squad.push(await (await request('/api/v1/players', json('POST', { name, team_id: team.id, position: 'CM' }, admin.token))).json<{ id: string }>());
+    }
+    const sessions = await (await request('/api/v1/training-sessions', json('POST', {
+      team_id: team.id, venue: 'Palm', notes: null, duration_minutes: 90,
+      occurrences: ['2026-09-01T15:00:00.000Z', '2026-09-03T15:00:00.000Z'],
+    }, admin.token))).json<{ id: string }[]>();
+    return { admin, team, squad, sessions };
+  };
+
+  const register = (id: string, token: string) => request(`/api/v1/training-sessions/${id}/attendance`, json('GET', undefined, token));
+  const mark = (id: string, token: string, entries: unknown[]) =>
+    request(`/api/v1/training-sessions/${id}/attendance`, json('PUT', { entries }, token));
+
+  it('hands back the whole squad to mark before anyone has been marked', async () => {
+    const { admin, squad, sessions } = await setUp();
+    const body = await (await register(sessions[0]!.id, admin.token)).json<{ items: { status: string | null }[]; present: number; unmarked: number }>();
+    expect(body.items).toHaveLength(squad.length);
+    expect(body.items.every((row) => row.status === null)).toBe(true);
+    expect(body.unmarked).toBe(squad.length);
+    expect(body.present).toBe(0);
+  });
+
+  it('marks players and answers with the tallies', async () => {
+    const { admin, squad, sessions } = await setUp();
+    const response = await mark(sessions[0]!.id, admin.token, [
+      { player_id: squad[0]!.id, status: 'present' },
+      { player_id: squad[1]!.id, status: 'present' },
+      { player_id: squad[2]!.id, status: 'absent' },
+    ]);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ present: 2, absent: 1, unmarked: 0 });
+  });
+
+  // The whole point of "editable after saving".
+  it('changes one mark without disturbing the rest', async () => {
+    const { admin, squad, sessions } = await setUp();
+    await mark(sessions[0]!.id, admin.token, squad.map((player) => ({ player_id: player.id, status: 'present' })));
+    const after = await (await mark(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, status: 'absent' }])).json<{ present: number; absent: number }>();
+    expect(after).toMatchObject({ present: 2, absent: 1 });
+  });
+
+  it('takes a mark away again when it is sent as null', async () => {
+    const { admin, squad, sessions } = await setUp();
+    await mark(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, status: 'present' }]);
+    const after = await (await mark(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, status: null }])).json<{ present: number; unmarked: number }>();
+    expect(after).toMatchObject({ present: 0, unmarked: 3 });
+  });
+
+  it('refuses a player who is not on this squad', async () => {
+    const { admin, sessions } = await setUp();
+    const other = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U17', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const outsider = await (await request('/api/v1/players', json('POST', { name: 'Stranger', team_id: other.id, position: 'ST' }, admin.token))).json<{ id: string }>();
+    const response = await mark(sessions[0]!.id, admin.token, [{ player_id: outsider.id, status: 'present' }]);
+    expect(response.status).toBe(422);
+  });
+
+  it('lets nobody but an administrator take the register', async () => {
+    const { admin, squad, sessions } = await setUp();
+    const playerUser = await seedUser('player', squad[0]!.id);
+    const response = await mark(sessions[0]!.id, playerUser.token, [{ player_id: squad[0]!.id, status: 'present' }]);
+    expect(response.status).toBe(403);
+    // Reading it is fine: a player can see who was at their own session.
+    expect((await register(sessions[0]!.id, playerUser.token)).status).toBe(200);
+  });
+
+  it('goes away with the session it belongs to', async () => {
+    const { admin, squad, sessions } = await setUp();
+    await mark(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, status: 'present' }]);
+    await request(`/api/v1/training-sessions/${sessions[0]!.id}`, json('DELETE', undefined, admin.token));
+    const left = await testEnv.DB.prepare('SELECT COUNT(*) n FROM training_attendance WHERE training_session_id = ?').bind(sessions[0]!.id).first<{ n: number }>();
+    expect(left?.n).toBe(0);
+  });
+
+  describe('the percentage on a player', () => {
+    const percentOf = async (playerId: string, token: string) =>
+      (await (await request(`/api/v1/players/${playerId}/stats`, json('GET', undefined, token))).json<{ training_attendance_pct: number | null; trainings_attended: number; trainings_expected: number }>());
+
+    it('has none at all until somebody has been marked', async () => {
+      const { admin, squad } = await setUp();
+      expect(await percentOf(squad[0]!.id, admin.token)).toMatchObject({ training_attendance_pct: null, trainings_attended: 0, trainings_expected: 0 });
+    });
+
+    it('counts attended over the sessions marked either way', async () => {
+      const { admin, squad, sessions } = await setUp();
+      await mark(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, status: 'present' }]);
+      await mark(sessions[1]!.id, admin.token, [{ player_id: squad[0]!.id, status: 'absent' }]);
+      expect(await percentOf(squad[0]!.id, admin.token)).toMatchObject({ training_attendance_pct: 50, trainings_attended: 1, trainings_expected: 2 });
+    });
+
+    // The requirement that it updates whenever attendance changes.
+    it('follows the register when a mark is corrected', async () => {
+      const { admin, squad, sessions } = await setUp();
+      await mark(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, status: 'absent' }]);
+      expect((await percentOf(squad[0]!.id, admin.token)).training_attendance_pct).toBe(0);
+      await mark(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, status: 'present' }]);
+      expect((await percentOf(squad[0]!.id, admin.token)).training_attendance_pct).toBe(100);
+    });
+
+    // A session nobody took a register for is nobody's fault.
+    it('ignores a session where the player was never marked', async () => {
+      const { admin, squad, sessions } = await setUp();
+      await mark(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, status: 'present' }]);
+      expect(await percentOf(squad[0]!.id, admin.token)).toMatchObject({ training_attendance_pct: 100, trainings_expected: 1 });
+    });
   });
 });

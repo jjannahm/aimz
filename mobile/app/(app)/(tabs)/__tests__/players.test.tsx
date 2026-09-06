@@ -113,7 +113,7 @@ describe('PlayersScreen', () => {
     jest.mocked(api.playerStats).mockResolvedValue({
       player: players[0]!, season: '2026/27', appearances: 4, minutes_played: 300,
       goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0,
-      seasons: ['2026/27'], milestones: { reached: [], streaks: [], next: [] }, matches: [],
+      seasons: ['2026/27'], trainings_attended: 0, trainings_expected: 0, training_attendance_pct: null, milestones: { reached: [], streaks: [], next: [] }, matches: [],
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
@@ -130,7 +130,7 @@ describe('PlayersScreen', () => {
     jest.mocked(api.playerStats).mockResolvedValue({
       player: players[0]!, season: null, appearances: 9, minutes_played: 700,
       goals: 5, assists: 3, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0,
-      seasons: ['2026/27', '2025/26'], milestones: { reached: [], streaks: [], next: [] }, matches: [],
+      seasons: ['2026/27', '2025/26'], trainings_attended: 0, trainings_expected: 0, training_attendance_pct: null, milestones: { reached: [], streaks: [], next: [] }, matches: [],
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
@@ -150,7 +150,7 @@ describe('PlayersScreen', () => {
     jest.mocked(api.playerStats).mockResolvedValue({
       player: players[0]!, season: null, appearances: 0, minutes_played: 0,
       goals: 0, assists: 0, own_goals: 0, yellow_cards: 0, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0,
-      seasons: [], milestones: { reached: [], streaks: [], next: [] }, matches: [],
+      seasons: [], trainings_attended: 0, trainings_expected: 0, training_attendance_pct: null, milestones: { reached: [], streaks: [], next: [] }, matches: [],
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
@@ -170,7 +170,7 @@ describe('PlayersScreen', () => {
     jest.mocked(api.playerStats).mockResolvedValue({
       player: players[1]!, season: '2026/27', appearances: 4, minutes_played: 300,
       goals: 3, assists: 2, own_goals: 0, yellow_cards: 1, red_cards: 0, goals_conceded: 0, penalties_saved: 0, clean_sheets: 0,
-      seasons: ['2026/27'], milestones: { reached: [], streaks: [], next: [] }, matches: [],
+      seasons: ['2026/27'], trainings_attended: 0, trainings_expected: 0, training_attendance_pct: null, milestones: { reached: [], streaks: [], next: [] }, matches: [],
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });

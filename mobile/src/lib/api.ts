@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, AttendanceStatus, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -295,6 +295,9 @@ export const api = {
   createAnnouncement: (payload: Partial<Announcement>) => request<Announcement>('/api/v1/announcements', { method: 'POST', body: payload }),
   updateAnnouncement: (id: string, payload: Partial<Announcement>) => request<Announcement>(`/api/v1/announcements/${id}`, { method: 'PATCH', body: payload }),
   deleteAnnouncement: (id: string) => request<void>(`/api/v1/announcements/${id}`, { method: 'DELETE' }),
+  trainingAttendance: (id: string) => request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`),
+  setTrainingAttendance: (id: string, entries: { player_id: string; status: AttendanceStatus | null }[]) =>
+    request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`, { method: 'PUT', body: { entries } }),
   trainingAvailability: (id: string) => request<TrainingAvailability[]>(`/api/v1/training-sessions/${id}/availability`),
   setTrainingAvailability: (id: string, status: TrainingAvailability['status'], note: string | null = null, player_id?: string) => request<TrainingAvailability>(`/api/v1/training-sessions/${id}/availability`, { method: 'PUT', body: { status, note, ...(player_id ? { player_id } : {}) } }),
   matchAssignments: (id: string) => request<EventAssignment[]>(`/api/v1/matches/${id}/assignments`),

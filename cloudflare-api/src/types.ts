@@ -269,6 +269,15 @@ export interface StatRow {
   updated_at: string;
 }
 
+/** Whether one player turned up to one training session. */
+export interface AttendanceRow {
+  training_session_id: string;
+  player_id: string;
+  status: "present" | "absent";
+  created_at: string;
+  updated_at: string;
+}
+
 export interface InviteRow {
   id: string;
   label: string;

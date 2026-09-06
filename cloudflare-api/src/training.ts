@@ -1,7 +1,7 @@
 import type { Context, Hono } from "hono";
 import { ApiProblem, adminUser, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
 import { canOpenTeam, requireAimzTeam, scopedTeams } from "./team-access";
-import type { AvailabilityRow, PlayerRow, TeamRow, TrainingRow, UserRow } from "./types";
+import type { AttendanceRow, AvailabilityRow, PlayerRow, TeamRow, TrainingRow, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -31,6 +31,33 @@ async function requireTrainingAccess(c: Context<{ Bindings: Env }>, row: Trainin
   if (actor.role === "admin") return actor;
   if (!(await canOpenTeam(c.env, actor, row.team_id))) throw new ApiProblem(403, "team_access_denied", "You can only open your own squad's training sessions.");
   return actor;
+}
+
+/**
+ * The register for one session: every player on the squad, with how they were
+ * marked, or null for anyone not marked yet.
+ *
+ * The squad comes from the roster rather than from the marks, so a coach
+ * opening a session for the first time is handed the whole squad to mark. There
+ * is no attendance roster of its own.
+ */
+async function attendanceFor(env: Env, session: TrainingRow): Promise<Record<string, unknown>> {
+  const [squad, marks] = await Promise.all([
+    env.DB.prepare("SELECT * FROM players WHERE team_id=? AND is_active=1 ORDER BY name").bind(session.team_id).all<PlayerRow>(),
+    env.DB.prepare("SELECT * FROM training_attendance WHERE training_session_id=?").bind(session.id).all<AttendanceRow>(),
+  ]);
+  const byPlayer = new Map(marks.results.map((row) => [row.player_id, row]));
+  const items = squad.results.map((player) => ({
+    player: publicPlayer(player),
+    status: byPlayer.get(player.id)?.status ?? null,
+    marked_at: byPlayer.get(player.id)?.updated_at ?? null,
+  }));
+  return {
+    items,
+    present: items.filter((row) => row.status === "present").length,
+    absent: items.filter((row) => row.status === "absent").length,
+    unmarked: items.filter((row) => row.status === null).length,
+  };
 }
 
 export function registerTrainingRoutes(app: App): void {
@@ -116,6 +143,57 @@ export function registerTrainingRoutes(app: App): void {
     const players = playerIds.length ? await c.env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")})`).bind(...playerIds).all<PlayerRow>() : { results: [] as PlayerRow[] };
     const byId = new Map(players.results.map((player) => [player.id, player]));
     return c.json(rows.results.map((row) => ({ ...row, player: publicPlayer(byId.get(row.player_id) ?? null) })));
+  });
+
+  /**
+   * The register for one session: every player on the squad, with how they were
+   * marked, or null for anyone not marked yet.
+   *
+   * The squad is read from the roster rather than from the rows, so a coach
+   * opening a session for the first time is handed the whole squad to mark
+   * rather than an empty list. There is no separate attendance roster.
+   */
+  app.get("/api/v1/training-sessions/:id/attendance", async (c) => {
+    const session = await trainingById(c.env, c.req.param("id"));
+    await requireTrainingAccess(c, session);
+    return c.json(await attendanceFor(c.env, session));
+  });
+
+  /**
+   * Marks players present or absent. Only what is sent is touched, so a coach
+   * correcting one name does not clear the rest of the register, and sending
+   * null for somebody takes their mark away rather than guessing at it.
+   */
+  app.put("/api/v1/training-sessions/:id/attendance", async (c) => {
+    await adminUser(c);
+    const session = await trainingById(c.env, c.req.param("id"));
+    const body = await jsonObject(c);
+    if (!Array.isArray(body.entries) || body.entries.length > 200) throw new ApiProblem(422, "validation_error", "Send between 1 and 200 attendance marks.", [{ field: "entries", message: "Send up to 200 marks." }]);
+    const entries = body.entries.map((raw) => {
+      const entry = (raw ?? {}) as Record<string, unknown>;
+      const playerId = stringField(entry, "player_id", { min: 1, max: 36 })!;
+      const status = entry.status === null || entry.status === undefined ? null : enumField(entry, "status", ["present", "absent"] as const);
+      return { playerId, status };
+    });
+    // Every name has to be on this squad, so a register cannot quietly collect
+    // players who were never going to be at it.
+    const ids = [...new Set(entries.map((entry) => entry.playerId))];
+    if (ids.length) {
+      const onSquad = await c.env.DB.prepare(`SELECT id FROM players WHERE team_id=? AND id IN (${ids.map(() => "?").join(",")})`).bind(session.team_id, ...ids).all<{ id: string }>();
+      const known = new Set(onSquad.results.map((row) => row.id));
+      const stranger = ids.find((id) => !known.has(id));
+      if (stranger) throw new ApiProblem(422, "player_not_found", "Mark only players from this squad.");
+    }
+    const now = nowIso();
+    if (entries.length) {
+      await c.env.DB.batch(entries.map((entry) => entry.status === null
+        ? c.env.DB.prepare("DELETE FROM training_attendance WHERE training_session_id=? AND player_id=?").bind(session.id, entry.playerId)
+        : c.env.DB.prepare(`INSERT INTO training_attendance (training_session_id, player_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(training_session_id, player_id) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at`).bind(session.id, entry.playerId, entry.status, now, now)));
+    }
+    // The whole register comes back rather than an acknowledgement, so the
+    // screen that marked one player has the new tallies without asking again.
+    return c.json(await attendanceFor(c.env, session));
   });
 
   app.put("/api/v1/training-sessions/:id/availability", async (c) => {

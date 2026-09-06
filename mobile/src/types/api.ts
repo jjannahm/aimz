@@ -131,6 +131,10 @@ export type PlayerMatchLine = PlayerMatchStat & GoalkeeperTotals & {
 export type PlayerSeasonSummary = Omit<Schema['PlayerSeasonSummary'], 'matches'> & GoalkeeperTotals & {
   /** Every season she has a record in, newest first. */
   seasons: string[];
+  trainings_attended: number;
+  trainings_expected: number;
+  /** Null when no register has ever named her, rather than a misleading zero. */
+  training_attendance_pct: number | null;
   milestones: MilestoneSummary;
   matches: PlayerMatchLine[];
 };
@@ -187,6 +191,12 @@ export type Announcement = {
 };
 
 export type AvailabilityStatus = 'going' | 'not_going';
+
+/** Whether a player turned up, or null while nobody has said either way. */
+export type AttendanceStatus = 'present' | 'absent';
+export type AttendanceMark = { player: Player; status: AttendanceStatus | null; marked_at: string | null };
+/** One session's register, with the tallies worked out server-side. */
+export type TrainingRegister = { items: AttendanceMark[]; present: number; absent: number; unmarked: number };
 export type TrainingAvailability = {
   id: string;
   training_session_id: string;
