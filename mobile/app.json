@@ -16,7 +16,8 @@
         {
           "photosPermission": "Allow AIMZ Egypt to choose player and team photos."
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
