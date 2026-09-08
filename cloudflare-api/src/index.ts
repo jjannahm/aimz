@@ -11,6 +11,7 @@ import { ApiProblem, currentUser, errorResponse } from "./helpers";
 import { registerKnockoutRoutes } from "./knockout";
 import { registerMatchRoutes } from "./matches";
 import { registerMediaRoutes } from "./media";
+import { registerReportRoutes } from "./reports";
 import { registerRosterRoutes } from "./roster";
 import { registerStatsRoutes } from "./stats";
 import { registerTrainingRoutes } from "./training";
@@ -43,6 +44,8 @@ const PUBLIC_ROUTES: { method: string; path: RegExp }[] = [
   // A calendar client polls this with no headers it can be given; the random
   // token in the address is the whole of the credential.
   { method: "GET", path: /^\/api\/v1\/calendar\/[^/]+\/aimz\.ics$/u },
+  // A report handed to a family, whose address is the whole of the credential.
+  { method: "GET", path: /^\/api\/v1\/reports\/[^/]+$/u },
   // Badges and photos are fetched by <img>, which sends no Authorization; and
   // an upload authorises itself with the signed token in its own body.
   { method: "GET", path: /^\/api\/v1\/media\/.+$/u },
@@ -79,6 +82,7 @@ registerRosterRoutes(app);
 registerMediaRoutes(app);
 registerCalendarRoutes(app);
 registerFeeRoutes(app);
+registerReportRoutes(app);
 
 app.notFound((c) => errorResponse(c, new ApiProblem(404, "not_found", "The requested endpoint was not found.")));
 app.onError((error, c) => {

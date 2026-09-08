@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, SharedReport, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -295,6 +295,19 @@ export const api = {
   createAnnouncement: (payload: Partial<Announcement>) => request<Announcement>('/api/v1/announcements', { method: 'POST', body: payload }),
   updateAnnouncement: (id: string, payload: Partial<Announcement>) => request<Announcement>(`/api/v1/announcements/${id}`, { method: 'PATCH', body: payload }),
   deleteAnnouncement: (id: string) => request<void>(`/api/v1/announcements/${id}`, { method: 'DELETE' }),
+  playerReports: (query = '') => request<Page<PlayerReport>>(`/api/v1/player-reports${query}`),
+  playerReport: (id: string) => request<PlayerReport>(`/api/v1/player-reports/${id}`),
+  createPlayerReport: (body: { player_id: string; title: string; period_start: string; period_end: string; coach_feedback?: string }) =>
+    request<PlayerReport>('/api/v1/player-reports', { method: 'POST', body }),
+  updatePlayerReport: (id: string, body: Partial<{ title: string; period_start: string; period_end: string; coach_feedback: string }>) =>
+    request<PlayerReport>(`/api/v1/player-reports/${id}`, { method: 'PATCH', body }),
+  publishReport: (id: string) => request<PlayerReport>(`/api/v1/player-reports/${id}/publish`, { method: 'POST', body: {} }),
+  withdrawReport: (id: string) => request<PlayerReport>(`/api/v1/player-reports/${id}/withdraw`, { method: 'POST', body: {} }),
+  replaceReportLink: (id: string) => request<PlayerReport>(`/api/v1/player-reports/${id}/new-link`, { method: 'POST', body: {} }),
+  deletePlayerReport: (id: string) => request<void>(`/api/v1/player-reports/${id}`, { method: 'DELETE' }),
+  // The one call the app makes for somebody who is not signed in: the address
+  // itself is the credential, exactly as it is for a calendar feed.
+  sharedReport: (token: string) => request<SharedReport>(`/api/v1/reports/${encodeURIComponent(token)}`, { authenticated: false }),
   feePlans: (query = '') => request<Page<FeePlan>>(`/api/v1/fee-plans${query}`),
   createFeePlan: (body: { team_id: string; label: string; amount_piastres: number; due_day: number }) =>
     request<FeePlan>('/api/v1/fee-plans', { method: 'POST', body }),

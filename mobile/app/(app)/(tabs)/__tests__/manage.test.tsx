@@ -22,6 +22,11 @@ jest.mock('@/src/components/manage/FeesManager', () => {
   const { Text } = jest.requireActual('react-native');
   return { FeesManager: () => React.createElement(Text, null, 'Fees manager content') };
 });
+jest.mock('@/src/components/manage/ReportsManager', () => {
+  const React = jest.requireActual('react');
+  const { Text } = jest.requireActual('react-native');
+  return { ReportsManager: () => React.createElement(Text, null, 'Reports manager content') };
+});
 jest.mock('@/src/components/manage/HubManagers', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
@@ -103,6 +108,7 @@ describe('ManageScreen navigation', () => {
       'Announcements',
       'Invites',
       'Fees',
+      'Reports',
     ]);
     // The two that were merged away are reachable, but underneath their pill.
     expect(screen.queryByTestId('manage-tab-opponents')).toBeNull();
@@ -139,6 +145,12 @@ describe('ManageScreen navigation', () => {
     expect(await screen.findByText('Fees manager content')).toBeTruthy();
     // Fees manages itself, so the shared Add form is not on the page at all.
     expect(screen.queryByText('Add squads')).toBeNull();
+  });
+
+  it('reaches the reports from their own pill', async () => {
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.press(screen.getByTestId('manage-tab-reports'));
+    expect(await screen.findByText('Reports manager content')).toBeTruthy();
   });
 
   it('starts a pill back on its first half when it is left and returned to', async () => {

@@ -30,7 +30,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0029_fees.sql');
+    expect(applied.results.at(-1)?.name).toBe('0030_player_reports.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -1152,5 +1152,169 @@ describe('fees', () => {
       expect((await request('/api/v1/fee-charges', json('POST', { player_id: squad[0]!.id, label: 'x', amount_piastres: 100, due_on: '2026-10-01' }, playerUser.token))).status).toBe(403);
       expect((await request(`/api/v1/teams/${squad[0]!.id}/fee-summary`, json('GET', undefined, playerUser.token))).status).toBe(403);
     });
+  });
+});
+
+describe('player reports', () => {
+  const setUp = async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U12', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const mine = await (await request('/api/v1/players', json('POST', { name: 'Layla', team_id: team.id, position: 'CM' }, admin.token))).json<{ id: string }>();
+    const other = await (await request('/api/v1/players', json('POST', { name: 'Somebody Else', team_id: team.id, position: 'ST' }, admin.token))).json<{ id: string }>();
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, mine.id, now).run();
+    return { admin, team, mine, other, parent };
+  };
+
+  const draft = async (playerId: string, token: string, over: Record<string, unknown> = {}) =>
+    (await request('/api/v1/player-reports', json('POST', {
+      player_id: playerId, title: 'Autumn term', period_start: '2026-09-01', period_end: '2026-12-20',
+      coach_feedback: 'Reads the game well.', ...over,
+    }, token))).json<{ id: string; status: string; share_token: string | null; snapshot_source: string }>();
+
+  const publish = (id: string, token: string) => request(`/api/v1/player-reports/${id}/publish`, json('POST', {}, token));
+
+  it('starts as a draft with no link, measured live', async () => {
+    const { admin, mine } = await setUp();
+    const report = await draft(mine.id, admin.token);
+    expect(report).toMatchObject({ status: 'draft', share_token: null, snapshot_source: 'live' });
+  });
+
+  it('mints a link when published, and answers it to a stranger', async () => {
+    const { admin, mine } = await setUp();
+    const report = await draft(mine.id, admin.token);
+    const published = await (await publish(report.id, admin.token)).json<{ share_token: string; status: string }>();
+    expect(published.status).toBe('published');
+    expect(published.share_token).toHaveLength(43);
+
+    // No Authorization header at all: the address is the whole credential.
+    const shared = await request(`/api/v1/reports/${published.share_token}`, json('GET'));
+    expect(shared.status).toBe(200);
+    expect(await shared.json()).toMatchObject({
+      title: 'Autumn term',
+      coach_feedback: 'Reads the game well.',
+      snapshot: { version: 1, player: { name: 'Layla' } },
+    });
+  });
+
+  // A link gets forwarded. It must not also be a key to anything else.
+  it('puts no identifiers on the shared link', async () => {
+    const { admin, mine } = await setUp();
+    const report = await draft(mine.id, admin.token);
+    const published = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
+    const body = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<Record<string, unknown>>();
+    for (const key of ['id', 'player_id', 'team_id', 'share_token']) expect(body[key]).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain(mine.id);
+  });
+
+  it('carries the fee standing the academy asked for', async () => {
+    const { admin, mine } = await setUp();
+    await request('/api/v1/fee-charges', json('POST', { player_id: mine.id, label: 'Kit', amount_piastres: 40000, due_on: '2026-10-01' }, admin.token));
+    const report = await draft(mine.id, admin.token);
+    const published = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
+    const body = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<{ snapshot: { fees: { charged_piastres: number; outstanding_piastres: number } } }>();
+    expect(body.snapshot.fees).toMatchObject({ charged_piastres: 40000, outstanding_piastres: 40000 });
+  });
+
+  // The whole reason for freezing: a report is a statement made on a date.
+  it('keeps saying what it said after the underlying record changes', async () => {
+    const { admin, team, mine } = await setUp();
+    const sessions = await (await request('/api/v1/training-sessions', json('POST', {
+      team_id: team.id, venue: 'Palm', notes: null, duration_minutes: 90, occurrences: ['2026-10-01T15:00:00.000Z'],
+    }, admin.token))).json<{ id: string }[]>();
+    await request(`/api/v1/training-sessions/${sessions[0]!.id}/attendance`, json('PUT', { entries: [{ player_id: mine.id, status: 'present' }] }, admin.token));
+
+    const report = await draft(mine.id, admin.token);
+    const published = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
+    const before = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<{ snapshot: { attendance: { attended: number; expected: number } } }>();
+    expect(before.snapshot.attendance).toMatchObject({ attended: 1, expected: 1 });
+
+    // Somebody back-marks the register after the report went out.
+    await request(`/api/v1/training-sessions/${sessions[0]!.id}/attendance`, json('PUT', { entries: [{ player_id: mine.id, status: 'absent' }] }, admin.token));
+    const after = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<{ snapshot: { attendance: { attended: number } } }>();
+    expect(after.snapshot.attendance.attended).toBe(1);
+  });
+
+  it('replaces the link on request, and the old address stops working', async () => {
+    const { admin, mine } = await setUp();
+    const report = await draft(mine.id, admin.token);
+    const first = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
+    const second = await (await request(`/api/v1/player-reports/${report.id}/new-link`, json('POST', {}, admin.token))).json<{ share_token: string }>();
+
+    expect(second.share_token).not.toBe(first.share_token);
+    expect((await request(`/api/v1/reports/${first.share_token}`, json('GET'))).status).toBe(404);
+    expect((await request(`/api/v1/reports/${second.share_token}`, json('GET'))).status).toBe(200);
+  });
+
+  it('takes the link away when the report is withdrawn', async () => {
+    const { admin, mine } = await setUp();
+    const report = await draft(mine.id, admin.token);
+    const published = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
+    await request(`/api/v1/player-reports/${report.id}/withdraw`, json('POST', {}, admin.token));
+    expect((await request(`/api/v1/reports/${published.share_token}`, json('GET'))).status).toBe(404);
+  });
+
+  it('records that somebody opened it, once', async () => {
+    const { admin, mine } = await setUp();
+    const report = await draft(mine.id, admin.token);
+    const published = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
+    await request(`/api/v1/reports/${published.share_token}`, json('GET'));
+    const first = await testEnv.DB.prepare('SELECT first_opened_at FROM player_reports WHERE id=?').bind(report.id).first<{ first_opened_at: string }>();
+    expect(first?.first_opened_at).toBeTruthy();
+    await request(`/api/v1/reports/${published.share_token}`, json('GET'));
+    const again = await testEnv.DB.prepare('SELECT first_opened_at FROM player_reports WHERE id=?').bind(report.id).first<{ first_opened_at: string }>();
+    expect(again?.first_opened_at).toBe(first?.first_opened_at);
+  });
+
+  it('refuses an address that is not a report', async () => {
+    expect((await request('/api/v1/reports/not-a-real-token', json('GET'))).status).toBe(404);
+  });
+
+  describe('who may read one', () => {
+    it('shows a parent their own child once it is published', async () => {
+      const { admin, mine, parent } = await setUp();
+      const report = await draft(mine.id, admin.token);
+      // While it is a draft the coach is still deciding what to say.
+      expect((await request(`/api/v1/player-reports/${report.id}`, json('GET', undefined, parent.token))).status).toBe(403);
+      const listedAsDraft = await (await request('/api/v1/player-reports', json('GET', undefined, parent.token))).json<{ total: number }>();
+      expect(listedAsDraft.total).toBe(0);
+
+      await publish(report.id, admin.token);
+      expect((await request(`/api/v1/player-reports/${report.id}`, json('GET', undefined, parent.token))).status).toBe(200);
+    });
+
+    // The security test that matters most: squad scope would fail this.
+    it('refuses a parent another family on the same squad', async () => {
+      const { admin, other, parent } = await setUp();
+      const report = await draft(other.id, admin.token);
+      await publish(report.id, admin.token);
+      const response = await request(`/api/v1/player-reports/${report.id}`, json('GET', undefined, parent.token));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ detail: { code: 'player_access_denied' } });
+    });
+
+    it('lets nobody but an administrator write one', async () => {
+      const { mine, parent } = await setUp();
+      expect((await request('/api/v1/player-reports', json('POST', {
+        player_id: mine.id, title: 'Mine', period_start: '2026-09-01', period_end: '2026-12-20',
+      }, parent.token))).status).toBe(403);
+    });
+  });
+
+  it('will not quietly change a report already sent', async () => {
+    const { admin, mine } = await setUp();
+    const report = await draft(mine.id, admin.token);
+    await publish(report.id, admin.token);
+    const edit = await request(`/api/v1/player-reports/${report.id}`, json('PATCH', { coach_feedback: 'Changed my mind.' }, admin.token));
+    expect(edit.status).toBe(409);
+    expect((await request(`/api/v1/player-reports/${report.id}`, json('DELETE', undefined, admin.token))).status).toBe(409);
+  });
+
+  it('refuses a period that ends before it starts', async () => {
+    const { admin, mine } = await setUp();
+    const response = await request('/api/v1/player-reports', json('POST', {
+      player_id: mine.id, title: 'Backwards', period_start: '2026-12-20', period_end: '2026-09-01',
+    }, admin.token));
+    expect(response.status).toBe(422);
   });
 });
