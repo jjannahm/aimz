@@ -38,7 +38,7 @@ const PAGE_TYPE = {
  * It takes a plain report and nothing else — no hooks, no queries, no account —
  * because the last of those three has no session to read anything with.
  */
-export function ReportCard({ report, size = 'panel' }: { report: SharedReport; size?: ReportSize }) {
+export function ReportCard({ report, size = 'page' }: { report: SharedReport; size?: ReportSize }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
   const snapshot = report.snapshot;
@@ -90,9 +90,10 @@ export function ReportCard({ report, size = 'panel' }: { report: SharedReport; s
         {snapshot.fees.charged_piastres === 0
           ? <Text style={styles.muted}>Nothing has been charged.</Text>
           : <View style={styles.figures}>
-            <Figure label="Charged" size={size} value={formatEgpRound(snapshot.fees.charged_piastres)} />
-            <Figure label="Received" size={size} tone={colors.live} value={formatEgpRound(snapshot.fees.paid_piastres)} />
+            <Figure dense label="Charged" size={size} value={formatEgpRound(snapshot.fees.charged_piastres)} />
+            <Figure dense label="Received" size={size} tone={colors.live} value={formatEgpRound(snapshot.fees.paid_piastres)} />
             <Figure
+              dense
               label={snapshot.fees.overdue > 0 ? 'Outstanding, overdue' : 'Outstanding'}
               size={size}
               tone={snapshot.fees.outstanding_piastres > 0 ? colors.error : undefined}
@@ -117,11 +118,17 @@ export function ReportCard({ report, size = 'panel' }: { report: SharedReport; s
   </View>;
 }
 
-function Figure({ label, value, tone, size }: { label: string; value: string | number; tone?: string; size: ReportSize }) {
+/**
+ * `dense` is for a figure whose value is words wide rather than digits wide.
+ * A fee amount at the figure size wraps inside a third of the card once the
+ * report is nested in Manage, and a number broken across two lines is worse
+ * than a slightly smaller one.
+ */
+function Figure({ label, value, tone, size, dense = false }: { label: string; value: string | number; tone?: string; size: ReportSize; dense?: boolean }) {
   const styles = useThemedStyles(stylesheet);
   const big = size === 'page';
   return <View style={styles.figure}>
-    <Text style={[styles.figureValue, big && { fontSize: PAGE_TYPE.figureValue }, tone ? { color: tone } : null]}>{value}</Text>
+    <Text style={[styles.figureValue, big && { fontSize: dense ? theme.type.body : PAGE_TYPE.figureValue }, tone ? { color: tone } : null]}>{value}</Text>
     <Text style={[styles.figureLabel, big && { fontSize: PAGE_TYPE.figureLabel }]}>{label}</Text>
   </View>;
 }
