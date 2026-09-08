@@ -269,6 +269,26 @@ export interface StatRow {
   updated_at: string;
 }
 
+/** A period report for one player, as it stood when it was published. */
+export interface PlayerReportRow {
+  id: string;
+  player_id: string;
+  team_id: string;
+  title: string;
+  period_start: string;
+  period_end: string;
+  coach_feedback: string;
+  status: "draft" | "published";
+  /** JSON, frozen at publish; null while a draft. */
+  snapshot: string | null;
+  share_token: string | null;
+  published_at: string | null;
+  published_by_name: string | null;
+  first_opened_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A recurring monthly subscription for one squad. Money is whole piastres. */
 export interface FeePlanRow {
   id: string;

@@ -32,6 +32,15 @@ body {
     background-color: ${darkColors.background};
   }
 }
+/* Printing is how a shared report becomes a PDF. The app pins itself to the
+   viewport and scrolls inside, so without this a print stops after one
+   screenful; and a dark page would come out as a sheet of black ink. Kept in
+   step by hand with scripts/inject-web-branding.mjs, as above. */
+@media print {
+  html, body, #root { height: auto !important; overflow: visible !important; background: #fff !important; }
+  * { background-color: transparent !important; color: #000 !important; box-shadow: none !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  [role="button"] { display: none !important; }
+}
 `;
 
 export default function Root({ children }: PropsWithChildren) {

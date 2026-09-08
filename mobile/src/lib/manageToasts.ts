@@ -29,6 +29,7 @@ export type ManageEntity =
   | 'roster'
   | 'account'
   | 'charge'
+  | 'report'
   | 'fee plan'
   | 'result';
 
@@ -61,6 +62,7 @@ const WORDING: Record<ManageEntity, { noun: string; created?: string; deleted?: 
   // receipt a family has already seen still makes sense.
   charge: { noun: 'Charge', deleted: 'cancelled' },
   'fee plan': { noun: 'Monthly fee' },
+  report: { noun: 'Report' },
   // Unlinking removes the link rather than deleting the account, and saying
   // "Account deleted" over a link change would frighten an administrator.
   account: { noun: 'Account link', deleted: 'removed' },

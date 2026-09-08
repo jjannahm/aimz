@@ -34,6 +34,17 @@ if (!html.includes('manifest.webmanifest')) {
     '<meta name="apple-mobile-web-app-capable" content="yes"/>',
     `<style id="aimz-scheme">body{background-color:${light};overscroll-behavior-y:none}` +
       `@media (prefers-color-scheme:dark){body{background-color:${dark}}}</style>`,
+    // Printing is how a shared report becomes a PDF: every desktop browser and
+    // iOS Safari offer Save as PDF inside their own print dialog, which is why
+    // there is no PDF library in this app. The app pins itself to the viewport
+    // and scrolls inside, so without this a print would produce one screenful
+    // and stop; and a dark page would come out as a sheet of black ink.
+    '<style id="aimz-print">@media print{'
+      + 'html,body,#root{height:auto!important;overflow:visible!important;background:#fff!important}'
+      + '*{background-color:transparent!important;color:#000!important;box-shadow:none!important;'
+      + '-webkit-print-color-adjust:exact;print-color-adjust:exact}'
+      + '[role="button"]{display:none!important}'
+      + '}</style>',
   ].join('');
   html = html.replace('</head>', `${branding}</head>`);
   await writeFile(indexPath, html);

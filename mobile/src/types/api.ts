@@ -195,6 +195,48 @@ export type AvailabilityStatus = 'going' | 'not_going';
 /** Whether a player turned up, or null while nobody has said either way. */
 export type AttendanceStatus = 'present' | 'absent';
 
+/** What a report says, as it stood when it was published. */
+export type ReportSnapshot = {
+  version: 1;
+  player: { name: string; team_name: string | null; position: string | null; jersey_number: number | null };
+  attendance: { attended: number; expected: number; pct: number | null };
+  matches: { appearances: number; minutes: number; goals: number; assists: number; yellow_cards: number; red_cards: number };
+  fees: { charged_piastres: number; paid_piastres: number; outstanding_piastres: number; overdue: number };
+  generated_at: string;
+};
+
+/** A report as its author sees it. */
+export type PlayerReport = {
+  id: string;
+  player_id: string;
+  player: Player | null;
+  team_id: string;
+  team: Team | null;
+  title: string;
+  period_start: string;
+  period_end: string;
+  coach_feedback: string;
+  status: 'draft' | 'published';
+  snapshot: ReportSnapshot;
+  /** 'live' while a draft, 'frozen' once published. */
+  snapshot_source: 'live' | 'frozen';
+  share_token: string | null;
+  published_at: string | null;
+  published_by_name: string | null;
+  first_opened_at: string | null;
+};
+
+/** What the link hands to whoever opens it: no identifiers of any kind. */
+export type SharedReport = {
+  title: string;
+  period_start: string;
+  period_end: string;
+  coach_feedback: string;
+  published_at: string | null;
+  published_by_name: string | null;
+  snapshot: ReportSnapshot | null;
+};
+
 /** Where a charge stands. Worked out by the server on every read. */
 export type FeeStatus = 'void' | 'paid' | 'partial' | 'overdue' | 'unpaid';
 export type PaymentMethod = 'cash' | 'instapay' | 'bank_transfer' | 'other';

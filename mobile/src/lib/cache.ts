@@ -23,6 +23,7 @@ export const cacheKeys = {
   availability: ['training-availability'] as const,
   attendance: ['training-attendance'] as const,
   fees: ['fees'] as const,
+  reports: ['player-reports'] as const,
   assignments: ['assignments'] as const,
   rosterDetails: ['roster-details'] as const,
   awards: ['awards'] as const,
@@ -31,7 +32,7 @@ export const cacheKeys = {
   allLiveMatches: ['live-match'] as const,
 };
 
-type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award' | 'bracket' | 'account' | 'training' | 'announcement' | 'availability' | 'attendance' | 'assignment' | 'roster' | 'fee';
+type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award' | 'bracket' | 'account' | 'training' | 'announcement' | 'availability' | 'attendance' | 'assignment' | 'roster' | 'fee' | 'report';
 
 /**
  * What a write touches, including everything derived from it.
@@ -62,6 +63,7 @@ const affects: Record<Entity, (readonly string[])[]> = {
   // Plans, charges, payments and the squad ledger are all read back from the
   // same rows, so any one of them changing clears the lot.
   fee: [cacheKeys.fees],
+  report: [cacheKeys.reports],
   assignment: [cacheKeys.assignments],
   roster: [cacheKeys.rosterDetails, cacheKeys.players],
   // Naming a man of the match changes the match, not the table or the scorers.
