@@ -107,15 +107,18 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
 
   heading: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 1, marginTop: theme.spacing.xs, textTransform: 'uppercase' },
   block: { padding: theme.spacing.md },
-  // Three to a row, in columns that line up whatever is in them. Left to size
-  // themselves the figures wrap raggedly — 604 is wider than 9 — so a second
-  // row of two sits under nothing in particular. A share of the width each,
-  // with the separation inside the cell rather than a gap between them, is how
-  // the weekday picker solves the same thing.
+  // Three to a row, in columns that line up whatever is in them, wrapping to
+  // the next row past the third. A share of the width each rather than a gap
+  // between them, the way the weekday picker fits seven across.
+  //
+  // Each figure is centred in its own third, which is what makes the grid read
+  // as one: left-aligned, a narrow "5 Goals" beside a wide "Appearances" leaves
+  // the card looking ragged even though the columns are exact. The squad
+  // ledger's totals row is centred for the same reason.
   figures: { flexDirection: 'row', flexWrap: 'wrap', rowGap: theme.spacing.md },
-  figure: { flexBasis: '33.33%', gap: 2, minWidth: 0, paddingRight: theme.spacing.sm },
-  figureValue: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.body, fontVariant: ['tabular-nums'] },
-  figureLabel: { color: colors.textMuted, fontSize: theme.type.caption },
+  figure: { alignItems: 'center', flexBasis: '33.33%', gap: 2, minWidth: 0, paddingHorizontal: theme.spacing.xs },
+  figureValue: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.body, fontVariant: ['tabular-nums'], textAlign: 'center' },
+  figureLabel: { color: colors.textMuted, fontSize: theme.type.caption, textAlign: 'center' },
 
   feedback: { color: colors.textPrimary, fontFamily: theme.font.regular, lineHeight: 22 },
   muted: { color: colors.textMuted },
