@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, SharedReport, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -327,6 +327,11 @@ export const api = {
   deleteFeePayment: (id: string) => request<void>(`/api/v1/fee-payments/${id}`, { method: 'DELETE' }),
   teamFeeSummary: (teamId: string, period?: string) =>
     request<FeeSummary>(`/api/v1/teams/${teamId}/fee-summary${period ? `?period=${encodeURIComponent(period)}` : ''}`),
+  trainingMetrics: () => request<{ items: TrainingMetric[] }>('/api/v1/training-metrics'),
+  trainingPerformance: (id: string) => request<TrainingPerformance>(`/api/v1/training-sessions/${id}/performance`),
+  setTrainingPerformance: (id: string, entries: { player_id: string; metric_id: string; value: number | null }[]) =>
+    request<TrainingPerformance>(`/api/v1/training-sessions/${id}/performance`, { method: 'PUT', body: { entries } }),
+  playerTrainingStats: (id: string) => request<PlayerTrainingStats>(`/api/v1/players/${id}/training-stats`),
   trainingAttendance: (id: string) => request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`),
   setTrainingAttendance: (id: string, entries: { player_id: string; status: AttendanceStatus | null }[]) =>
     request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`, { method: 'PUT', body: { entries } }),

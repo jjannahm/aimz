@@ -195,6 +195,35 @@ export type AvailabilityStatus = 'going' | 'not_going';
 /** Whether a player turned up, or null while nobody has said either way. */
 export type AttendanceStatus = 'present' | 'absent';
 
+/** One thing a coach records about how a player trained. */
+export type TrainingMetric = {
+  id: string;
+  key: string;
+  label: string;
+  /** A rating is a judgement on a scale; a count is a quantity. */
+  kind: 'rating' | 'count';
+  min_value: number | null;
+  max_value: number | null;
+  unit: string | null;
+  sort_order: number;
+  is_active: boolean;
+};
+
+/** One squad's readings for one session, keyed by metric id. */
+export type TrainingPerformance = {
+  metrics: TrainingMetric[];
+  items: { player: Player; values: Record<string, number> }[];
+};
+
+/** A player's training record: what they attended and how they were marked. */
+export type PlayerTrainingStats = {
+  player: Player;
+  metrics: TrainingMetric[];
+  attendance: { attended: number; expected: number; pct: number | null };
+  totals: { metric: TrainingMetric; value: number | null; sessions: number }[];
+  sessions: { id: string; starts_at: string; venue: string; status: 'present' | 'absent' | null; values: Record<string, number> }[];
+};
+
 /** What a report says, as it stood when it was published. */
 export type ReportSnapshot = {
   version: 1;
