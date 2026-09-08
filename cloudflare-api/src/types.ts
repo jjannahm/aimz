@@ -269,6 +269,32 @@ export interface StatRow {
   updated_at: string;
 }
 
+/** One thing a coach records about how a player trained. */
+export interface TrainingMetricRow {
+  id: string;
+  key: string;
+  label: string;
+  /** A rating is a judgement on a scale; a count is a quantity. */
+  kind: "rating" | "count";
+  min_value: number | null;
+  max_value: number | null;
+  unit: string | null;
+  sort_order: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One reading: this player, this session, this metric. */
+export interface TrainingPlayerMetricRow {
+  training_session_id: string;
+  player_id: string;
+  metric_id: string;
+  value: number;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A period report for one player, as it stood when it was published. */
 export interface PlayerReportRow {
   id: string;
