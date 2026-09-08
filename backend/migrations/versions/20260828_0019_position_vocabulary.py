@@ -14,7 +14,7 @@ Create Date: 2026-08-28
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
+from alembic import context, op
 
 from app.services.positions import POSITION_CODES, code_for_free_text
 
@@ -43,6 +43,10 @@ def _remap(table: str, keep_null: bool) -> None:
 
 
 def upgrade() -> None:
+    # This is a data backfill that reads existing rows, so it can't be rendered
+    # as static SQL. Skip it in offline mode (alembic upgrade --sql).
+    if context.is_offline_mode():
+        return
     _remap("players", keep_null=False)
     _remap("match_lineup_entries", keep_null=True)
 
