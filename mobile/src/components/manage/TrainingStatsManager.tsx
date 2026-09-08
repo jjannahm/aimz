@@ -143,7 +143,7 @@ function ByHand({ sessionId, metrics, items, onSaved }: {
           value={typed[metric.id] ?? ''}
         />
       </View>)}</View>
-      <AppButton compact disabled={!changed} label="Save" loading={saving === item.player.id} onPress={() => void save(item.player.id)} variant="secondary" />
+      <AppButton compact disabled={!changed} label="Save" loading={saving === item.player.id} onPress={() => void save(item.player.id)} />
     </View>;
   })}</View>;
 }

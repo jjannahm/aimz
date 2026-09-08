@@ -66,8 +66,8 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
           // register over these weeks.
           ? <Text style={styles.muted}>No register was taken over this period.</Text>
           : <View style={styles.figures}>
-            <Figure label="Attended" size={size} value={`${snapshot.attendance.attended} of ${snapshot.attendance.expected}`} />
-            <Figure label="Attendance" size={size} tone={colors.accentSoft} value={`${snapshot.attendance.pct}%`} />
+            <Figure label="Attended" of={2} size={size} value={`${snapshot.attendance.attended} of ${snapshot.attendance.expected}`} />
+            <Figure label="Attendance" of={2} size={size} tone={colors.accentSoft} value={`${snapshot.attendance.pct}%`} />
           </View>}
       </FlatCard>
 
@@ -124,10 +124,10 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
  * report is nested in Manage, and a number broken across two lines is worse
  * than a slightly smaller one.
  */
-function Figure({ label, value, tone, size, dense = false }: { label: string; value: string | number; tone?: string; size: ReportSize; dense?: boolean }) {
+function Figure({ label, value, tone, size, dense = false, of = 3 }: { label: string; value: string | number; tone?: string; size: ReportSize; dense?: boolean; of?: number }) {
   const styles = useThemedStyles(stylesheet);
   const big = size === 'page';
-  return <View style={styles.figure}>
+  return <View style={[styles.figure, { flexBasis: `${100 / of}%` }]}>
     <Text style={[styles.figureValue, big && { fontSize: dense ? theme.type.body : PAGE_TYPE.figureValue }, tone ? { color: tone } : null]}>{value}</Text>
     <Text style={[styles.figureLabel, big && { fontSize: PAGE_TYPE.figureLabel }]}>{label}</Text>
   </View>;
@@ -151,7 +151,10 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // the card looking ragged even though the columns are exact. The squad
   // ledger's totals row is centred for the same reason.
   figures: { flexDirection: 'row', flexWrap: 'wrap', rowGap: theme.spacing.md },
-  figure: { alignItems: 'center', flexBasis: '33.33%', gap: 2, minWidth: 0, paddingHorizontal: theme.spacing.xs },
+  // A row of figures divides the card evenly among however many it holds:
+  // three across for matches and fees, halves for the two training figures,
+  // so neither is left sitting beside an empty column.
+  figure: { alignItems: 'center', gap: 2, minWidth: 0, paddingHorizontal: theme.spacing.xs },
   figureValue: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.body, fontVariant: ['tabular-nums'], textAlign: 'center' },
   figureLabel: { color: colors.textMuted, fontSize: theme.type.caption, textAlign: 'center' },
 

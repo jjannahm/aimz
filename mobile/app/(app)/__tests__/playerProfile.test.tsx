@@ -187,7 +187,7 @@ describe('PlayerDetailScreen', () => {
       expect(screen.getByText('75%')).toBeTruthy();
       // A mark reads against its own scale, and an average says so.
       expect(screen.getByText('7.5/10')).toBeTruthy();
-      expect(screen.getByText('Dribbling · average')).toBeTruthy();
+      expect(screen.getByText('Dribbling avg')).toBeTruthy();
       expect(screen.getByText('Present')).toBeTruthy();
       expect(screen.getByText('Dribbling 8/10')).toBeTruthy();
     });

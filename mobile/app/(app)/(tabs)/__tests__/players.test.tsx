@@ -11,7 +11,7 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, usePathname: () => '/players' }));
 
 jest.mock('@/src/lib/api', () => ({
-  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), matches: jest.fn(), myChildren: jest.fn() },
+  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), playerTrainingStats: jest.fn(), matches: jest.fn(), myChildren: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -19,9 +19,11 @@ jest.mock('@/src/lib/api', () => ({
 let mockUser: { role: string; player_id: string | null } | null = { role: 'player', player_id: 'p-1' };
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: mockUser }) }));
 
-const team = (id: string, name: string, age_group: string): Team => ({
+// Entered in a competition unless a test says otherwise: that is what decides
+// whether the match half of a player's record exists at all.
+const team = (id: string, name: string, age_group: string, competition_id: string | null = 'comp-1'): Team => ({
   id, name, age_group, squad_code: null, season: '2026/27', is_aimz: true, is_active: true,
-  logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '',
+  logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id, competition_group_id: null, created_at: '', updated_at: '',
 });
 
 const player = (id: string, name: string, team_id: string, jersey_number: number, position = 'ST'): Player => ({
@@ -303,5 +305,34 @@ describe('PlayersScreen', () => {
 
     fireEvent.press(screen.getByLabelText('Hide the full top scorer ranking'));
     await waitFor(() => expect(screen.queryByText('AIMZ U13, 5 goals in 4 appearances')).toBeNull());
+  });
+
+  it('offers the training half of My Stats beside the match half', async () => {
+    jest.mocked(api.playerTrainingStats).mockResolvedValue({
+      player: { id: 'p-1', name: 'Salma Nabil' },
+      metrics: [],
+      attendance: { attended: 4, expected: 5, pct: 80 },
+      totals: [],
+      sessions: [],
+    } as never);
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Training Stats' }));
+    expect(await screen.findByText('4 of 5')).toBeTruthy();
+    expect(screen.getByText('80%')).toBeTruthy();
+  });
+
+  // A squad in no competition has no fixtures to have played.
+  it('gives a player on a squad outside any competition training only', async () => {
+    jest.mocked(api.teams).mockResolvedValue({
+      items: [team('t-u9', 'AIMZ U9', 'U9', null)], total: 1, limit: 100, offset: 0,
+    } as never);
+    jest.mocked(api.playerTrainingStats).mockResolvedValue({
+      player: { id: 'p-1', name: 'Salma Nabil' }, metrics: [],
+      attendance: { attended: 0, expected: 0, pct: null }, totals: [], sessions: [],
+    } as never);
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'Match Stats' })).toBeNull());
   });
 });
