@@ -27,13 +27,16 @@ from app.schemas import (
     PlayerStatInput,
 )
 from app.services.audit import record_audit
+from app.services.competitions import require_open_season
 from app.services.match_clock import apply_phase_action
 from app.services.scoring import (
     add_event,
     load_match_detail,
     opponent_only_match,
+    recompute_pitch_stats,
     remove_event,
     require_scorable,
+    squads_for_match,
     update_event,
 )
 
@@ -61,8 +64,13 @@ async def update_match_phase(
 ) -> Match:
     match = await require_match(session, match_id)
     await require_scorable(session, match)
+    await require_open_season(session, match)
     apply_phase_action(match, payload.action)
     match.revision += 1
+    # Finishing settles clean sheets, and any player who took the field but was
+    # never named in an event still needs their appearance recorded; both fall
+    # out of re-walking the sheet against the timeline at the new phase.
+    await recompute_pitch_stats(session, match)
     record_audit(
         session,
         actor,
@@ -99,6 +107,7 @@ async def record_result(
     it again on a finished match is how a wrong score is corrected.
     """
     match = await require_match(session, match_id)
+    await require_open_season(session, match)
     if not await opponent_only_match(session, match):
         raise api_error(
             409,
@@ -138,6 +147,7 @@ async def set_man_of_the_match(
 ) -> Match:
     match = await require_match(session, match_id)
     await require_scorable(session, match)
+    await require_open_season(session, match)
     if match.status != MatchStatus.finished:
         raise api_error(
             409, "match_not_finished", "Pick man of the match once the match has finished."
@@ -283,6 +293,7 @@ async def replace_lineup(
 ) -> list[MatchLineupEntry]:
     match = await require_match(session, match_id)
     await require_scorable(session, match)
+    await require_open_season(session, match)
     # Once the match is under way, who is on the pitch changes through
     # substitutions rather than by rewriting who started.
     if match.status != MatchStatus.scheduled:
@@ -347,6 +358,10 @@ async def update_player_stats(
 ) -> list[PlayerMatchStat]:
     match = await require_match(session, match_id)
     await require_scorable(session, match)
+    await require_open_season(session, match)
+    # The squad each player turned out for, stamped on the statistic so a
+    # promotion to an older age group never carries this match's record along.
+    squads = await squads_for_match(session, match)
     rows: list[PlayerMatchStat] = []
     for item in payload:
         player = await session.get(Player, item.player_id)
@@ -363,6 +378,7 @@ async def update_player_stats(
             session.add(stat)
         stat.appeared = item.appeared
         stat.minutes_played = item.minutes_played
+        stat.team_id = squads.get(item.player_id, stat.team_id)
         rows.append(stat)
     match.revision += 1
     record_audit(

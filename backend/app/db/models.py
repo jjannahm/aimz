@@ -29,12 +29,30 @@ def new_id() -> str:
 class UserRole(StrEnum):
     player = "player"
     admin = "admin"
+    # A guardian who follows several children rather than a roster record of
+    # their own; their squads fan out over ``user_children``.
+    parent = "parent"
+
+
+class InviteKind(StrEnum):
+    # Names one player and links the account it creates to that roster record.
+    player = "player"
+    # Names one or more children, attached to the account via ``user_children``.
+    parent = "parent"
 
 
 class CompetitionType(StrEnum):
     league = "league"
     tournament = "tournament"
     friendly = "friendly"
+
+
+class CompetitionStatus(StrEnum):
+    # A season taking results; the only state a competition is scored in.
+    active = "active"
+    # A season that has ended. Nothing is deleted — the table, results and
+    # bracket stay — but it stops accepting anything new until reopened.
+    completed = "completed"
 
 
 class MatchStatus(StrEnum):
@@ -75,6 +93,12 @@ class PenaltyOutcome(StrEnum):
     off_target = "off_target"
 
 
+class AvailabilityStatus(StrEnum):
+    # Two-way by design: "maybe" told a coach nothing they could act on.
+    going = "going"
+    not_going = "not_going"
+
+
 class TimestampMixin:
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -100,6 +124,40 @@ class User(TimestampMixin, Base):
     sessions: Mapped[list[RefreshSession]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    # A deadline lives in a table of its own rather than a column here: an
+    # expiry is a fact about an arrangement, not part of who someone is, and an
+    # account with no row never expires. Eager-loaded so the deadline rides
+    # alongside the account everywhere it is picked up, the way the Worker's
+    # USER_SELECT joins it in.
+    expiry: Mapped[AccountExpiry | None] = relationship(
+        back_populates="user", cascade="all, delete-orphan", lazy="joined"
+    )
+
+    @property
+    def expires_at(self) -> datetime | None:
+        """The account's deadline, or None when it never expires.
+
+        Reads the loaded relationship straight from the instance dict so it is
+        safe on a freshly created account whose ``expiry`` was never loaded — a
+        plain attribute access there would emit a lazy load in async code.
+        """
+        expiry = self.__dict__.get("expiry")
+        return expiry.expires_at if expiry else None
+
+
+class AccountExpiry(TimestampMixin, Base):
+    """A date an account stops working on. Nothing is deleted when it passes —
+    the account stops signing in and refreshing, and an administrator can lift
+    the date or set another, so an expiry is a lock rather than a demolition."""
+
+    __tablename__ = "account_expiry"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    user: Mapped[User] = relationship(back_populates="expiry")
 
 
 class RefreshSession(Base):
@@ -136,7 +194,18 @@ class RegistrationInvite(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     label: Mapped[str] = mapped_column(String(120))
     code_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    # The roster player this invitation is for; null for a shared intake code.
+    # Which of the two kinds of account this invitation redeems into. A player
+    # invitation names one player and links the account to it; a parent
+    # invitation names children who hang off ``user_children`` instead.
+    kind: Mapped[InviteKind] = mapped_column(
+        Enum(InviteKind, native_enum=False),
+        default=InviteKind.player,
+        server_default=InviteKind.player.value,
+        index=True,
+    )
+    # The roster player this invitation is for; null for a parent or a shared
+    # intake code. Kept for rows written before ``invite_players`` existed; the
+    # redemption path reads that table and falls back to this column.
     player_id: Mapped[str | None] = mapped_column(
         ForeignKey("players.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -150,6 +219,48 @@ class RegistrationInvite(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+    players: Mapped[list[InvitePlayer]] = relationship(
+        back_populates="invite", cascade="all, delete-orphan"
+    )
+
+
+class InvitePlayer(Base):
+    """A roster player named on an invitation. A player invitation carries one;
+    a parent invitation carries a row per child. Held apart from
+    ``registration_invites.player_id`` so one redemption path reads either kind."""
+
+    __tablename__ = "invite_players"
+
+    invite_id: Mapped[str] = mapped_column(
+        ForeignKey("registration_invites.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    player_id: Mapped[str] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), primary_key=True
+    )
+
+    invite: Mapped[RegistrationInvite] = relationship(back_populates="players")
+    player: Mapped[Player] = relationship()
+
+
+class UserChild(Base):
+    """A child a parent account speaks for. A player links to one roster record
+    on ``users.player_id``; a parent may have several, which cannot be widened
+    in place, so their children hang off this join table instead."""
+
+    __tablename__ = "user_children"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    player_id: Mapped[str] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), primary_key=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    player: Mapped[Player] = relationship()
 
 
 class Team(TimestampMixin, Base):
@@ -178,6 +289,10 @@ class Team(TimestampMixin, Base):
     competition_id: Mapped[str | None] = mapped_column(
         ForeignKey("competitions.id", ondelete="SET NULL"), index=True
     )
+    # Which knockout group the team is drawn into, if any.
+    competition_group_id: Mapped[str | None] = mapped_column(
+        ForeignKey("competition_groups.id", ondelete="SET NULL"), index=True
+    )
 
     players: Mapped[list[Player]] = relationship(back_populates="team")
 
@@ -191,6 +306,19 @@ class Competition(TimestampMixin, Base):
     type: Mapped[CompetitionType] = mapped_column(
         Enum(CompetitionType, native_enum=False), index=True
     )
+    # A knockout's shape: how many teams, and how many to a group. Both null for
+    # a competition that is only a league table.
+    team_count: Mapped[int | None] = mapped_column(Integer)
+    group_size: Mapped[int | None] = mapped_column(Integer)
+    # Whether the season is still taking results. A completed season keeps every
+    # row it had and simply stops accepting anything new until it is reopened.
+    status: Mapped[CompetitionStatus] = mapped_column(
+        Enum(CompetitionStatus, native_enum=False),
+        default=CompetitionStatus.active,
+        server_default=CompetitionStatus.active.value,
+        index=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     __table_args__ = (UniqueConstraint("name", "season", name="uq_competition_name_season"),)
 
@@ -207,8 +335,13 @@ class Player(TimestampMixin, Base):
     is_active: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", index=True
     )
+    # Held as a plain YYYY-MM-DD string to match the roster contract exactly.
+    date_of_birth: Mapped[str | None] = mapped_column(String(10))
 
     team: Mapped[Team] = relationship(back_populates="players")
+    contacts: Mapped[list[PlayerContact]] = relationship(
+        back_populates="player", cascade="all, delete-orphan"
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -359,6 +492,15 @@ class PlayerMatchStat(TimestampMixin, Base):
     player_id: Mapped[str] = mapped_column(
         ForeignKey("players.id", ondelete="RESTRICT"), index=True
     )
+    # The squad the player turned out for in this match, stamped from the lineup
+    # at scoring time so a promotion to an older age group never carries an old
+    # match's record with them. Nullable: a row predating any lineup whose player
+    # was since deleted has no honest answer, and null reads as "unknown" rather
+    # than a wrong squad. Leaders and awards attribute a stat here, not to the
+    # squad the player happens to be on now.
+    team_id: Mapped[str | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     appeared: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     minutes_played: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     goals: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -367,6 +509,13 @@ class PlayerMatchStat(TimestampMixin, Base):
     own_goals: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     yellow_cards: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     red_cards: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # What a goalkeeper is answerable for, worked out from the lineup and the
+    # timeline rather than counted in place: which keeper conceded a goal depends
+    # on who was on the pitch at the minute. Clean sheet is a flag, not a count —
+    # a keeper can only keep one per match — and is only settled once finished.
+    goals_conceded: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    penalties_saved: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    clean_sheet: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     match: Mapped[Match] = relationship(back_populates="player_stats")
     player: Mapped[Player] = relationship()
@@ -375,6 +524,206 @@ class PlayerMatchStat(TimestampMixin, Base):
         UniqueConstraint("match_id", "player_id", name="uq_stat_match_player"),
         CheckConstraint("minutes_played BETWEEN 0 AND 150", name="ck_minutes_played"),
     )
+
+
+class PlayerContact(TimestampMixin, Base):
+    """A guardian/emergency contact for a roster player. Admin-only data."""
+
+    __tablename__ = "player_contacts"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    player_id: Mapped[str] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), index=True
+    )
+    # Defined before the ``relationship`` column below, whose name would
+    # otherwise shadow the ``relationship()`` function inside this class body.
+    player: Mapped[Player] = relationship(back_populates="contacts")
+
+    name: Mapped[str] = mapped_column(String(160))
+    relationship: Mapped[str | None] = mapped_column(String(80))
+    email: Mapped[str | None] = mapped_column(String(320))
+    phone: Mapped[str | None] = mapped_column(String(60))
+
+
+class Announcement(TimestampMixin, Base):
+    """A notice pinned to a squad, or academy-wide when it carries no team."""
+
+    __tablename__ = "announcements"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    # Null reaches everyone; a team ties the notice to one squad.
+    team_id: Mapped[str | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text)
+    # Kept even after the author leaves, so the notice still renders.
+    author_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+    team: Mapped[Team | None] = relationship()
+    author: Mapped[User | None] = relationship()
+
+    __table_args__ = (Index("ix_announcements_team_created", "team_id", "created_at"),)
+
+
+class TrainingSession(TimestampMixin, Base):
+    """A scheduled squad training. Repeats share a ``series_id`` so a whole
+    recurring block can be dropped in one go."""
+
+    __tablename__ = "training_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    team_id: Mapped[str] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
+    )
+    starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    duration_minutes: Mapped[int] = mapped_column(
+        Integer, default=90, server_default="90"
+    )
+    venue: Mapped[str] = mapped_column(String(200))
+    notes: Mapped[str | None] = mapped_column(Text)
+    # Null for a one-off; shared across every occurrence of a recurring block.
+    series_id: Mapped[str | None] = mapped_column(String(36), index=True)
+
+    team: Mapped[Team] = relationship()
+    availability: Mapped[list[TrainingAvailability]] = relationship(
+        back_populates="session", cascade="all, delete-orphan"
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "duration_minutes BETWEEN 15 AND 300", name="ck_training_duration"
+        ),
+        Index("ix_training_team_start", "team_id", "starts_at"),
+    )
+
+
+class TrainingAvailability(TimestampMixin, Base):
+    """A player's going / not-going answer for one training session."""
+
+    __tablename__ = "training_availability"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    training_session_id: Mapped[str] = mapped_column(
+        ForeignKey("training_sessions.id", ondelete="CASCADE"), index=True
+    )
+    player_id: Mapped[str] = mapped_column(
+        ForeignKey("players.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[AvailabilityStatus] = mapped_column(
+        Enum(AvailabilityStatus, native_enum=False)
+    )
+    note: Mapped[str | None] = mapped_column(Text)
+
+    session: Mapped[TrainingSession] = relationship(back_populates="availability")
+    player: Mapped[Player] = relationship()
+
+    __table_args__ = (
+        UniqueConstraint(
+            "training_session_id", "player_id", name="uq_availability_session_player"
+        ),
+    )
+
+
+class EventAssignment(TimestampMixin, Base):
+    """A job attached to a match or a training session (e.g. "bring the bibs"),
+    optionally claimed by one roster player. Exactly one of match / training is
+    set."""
+
+    __tablename__ = "event_assignments"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    match_id: Mapped[str | None] = mapped_column(
+        ForeignKey("matches.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    training_session_id: Mapped[str | None] = mapped_column(
+        ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(160))
+    assigned_player_id: Mapped[str | None] = mapped_column(
+        ForeignKey("players.id", ondelete="SET NULL"), nullable=True
+    )
+
+    assigned_player: Mapped[Player | None] = relationship()
+
+    __table_args__ = (
+        CheckConstraint(
+            "(match_id IS NULL) <> (training_session_id IS NULL)",
+            name="ck_assignment_one_parent",
+        ),
+    )
+
+
+class CompetitionGroup(Base):
+    """One group in a knockout's group stage (Group A, Group B…)."""
+
+    __tablename__ = "competition_groups"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    competition_id: Mapped[str] = mapped_column(
+        ForeignKey("competitions.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(80))
+    position: Mapped[int] = mapped_column(Integer)
+
+    __table_args__ = (
+        UniqueConstraint("competition_id", "position", name="uq_group_competition_pos"),
+    )
+
+
+class BracketSlot(Base):
+    """A knockout tie that may not have its teams yet — which a match row cannot
+    be. ``round`` is the number of teams still in it (16, 8, 4, 2), so rounds
+    sort themselves and slot p in round r feeds slot p/2 in round r/2."""
+
+    __tablename__ = "bracket_slots"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    competition_id: Mapped[str] = mapped_column(
+        ForeignKey("competitions.id", ondelete="CASCADE"), index=True
+    )
+    round: Mapped[int] = mapped_column(Integer)
+    position: Mapped[int] = mapped_column(Integer)
+    home_team_id: Mapped[str | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL")
+    )
+    away_team_id: Mapped[str | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL")
+    )
+    winner_team_id: Mapped[str | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL")
+    )
+    match_id: Mapped[str | None] = mapped_column(
+        ForeignKey("matches.id", ondelete="SET NULL")
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "competition_id", "round", "position", name="uq_slot_competition_round_pos"
+        ),
+    )
+
+
+class CalendarToken(Base):
+    """A capability URL for one account's fixtures calendar. The token is stored
+    as itself (not hashed) because a subscription URL must stay readable;
+    regenerating it is the revocation."""
+
+    __tablename__ = "calendar_tokens"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # Stamped once, when a calendar client first fetches the feed — that is what
+    # subscribing actually means. Cleared when the token is regenerated.
+    first_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AuditLog(Base):

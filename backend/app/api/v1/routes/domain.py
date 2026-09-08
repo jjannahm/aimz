@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 from fastapi import APIRouter, Response
@@ -8,18 +8,31 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import AdminUser, CurrentUser, SessionDep
 from app.core.errors import api_error
-from app.db.models import Competition, Match, MatchPhase, MatchStatus, Player, Team
+from app.db.models import (
+    Competition,
+    CompetitionStatus,
+    Match,
+    MatchPhase,
+    MatchStatus,
+    Player,
+    Team,
+)
 from app.schemas import (
     CompetitionInput,
     CompetitionRead,
     MatchInput,
     MatchRead,
+    NextSeasonInput,
     Page,
     PlayerInput,
     PlayerRead,
     TeamInput,
     TeamRead,
 )
+from app.services.audit import record_audit
+from app.services.competitions import require_open_competition
+from app.services.knockout import generate_structure
+from app.services.knockout_shape import Shape, ShapeError, resolve_shape
 from app.services.match_clock import apply_legacy_status_change, apply_phase_action
 
 router = APIRouter()
@@ -122,13 +135,32 @@ async def list_competitions(
     return Page(items=rows, total=total, limit=limit, offset=offset)
 
 
+def _resolve_shape_or_422(payload: CompetitionInput) -> Shape:
+    try:
+        return resolve_shape(payload.team_count, payload.group_size)
+    except ShapeError as exc:
+        raise api_error(
+            422,
+            "validation_error",
+            "Check the highlighted fields.",
+            field_errors=[{"field": exc.field, "message": exc.message}],
+        ) from exc
+
+
 @router.post("/competitions", response_model=CompetitionRead, status_code=201)
 async def create_competition(
     payload: CompetitionInput, _: AdminUser, session: SessionDep
 ) -> Competition:
-    row = Competition(**payload.model_dump())
+    shape = _resolve_shape_or_422(payload)
+    data = payload.model_dump()
+    data["team_count"], data["group_size"] = shape.team_count, shape.group_size
+    row = Competition(**data)
     session.add(row)
     await commit_or_conflict(session, "A competition with that name and season already exists.")
+    # A knockout starts life with its groups and an empty bracket.
+    if shape.team_count is not None:
+        generate_structure(session, row, shape.team_count, shape.group_size)
+        await session.commit()
     await session.refresh(row)
     return row
 
@@ -140,9 +172,18 @@ async def update_competition(
     row = await session.get(Competition, competition_id)
     if not row:
         raise api_error(404, "competition_not_found", "Competition not found.")
-    for field, value in payload.model_dump().items():
+    shape = _resolve_shape_or_422(payload)
+    had_structure = row.team_count is not None
+    data = payload.model_dump()
+    data["team_count"], data["group_size"] = shape.team_count, shape.group_size
+    for field, value in data.items():
         setattr(row, field, value)
     await commit_or_conflict(session, "A competition with that name and season already exists.")
+    # Generate the structure the first time a competition becomes a knockout;
+    # an existing bracket is left in place rather than torn down under a season.
+    if shape.team_count is not None and not had_structure:
+        generate_structure(session, row, shape.team_count, shape.group_size)
+        await session.commit()
     await session.refresh(row)
     return row
 
@@ -155,6 +196,147 @@ async def delete_competition(competition_id: str, _: AdminUser, session: Session
     await session.delete(row)
     await commit_or_conflict(session, "Competitions used by matches cannot be deleted.")
     return Response(status_code=204)
+
+
+async def _competition_or_404(session: SessionDep, competition_id: str) -> Competition:
+    row = await session.get(Competition, competition_id)
+    if row is None:
+        raise api_error(404, "competition_not_found", "Competition not found.")
+    return row
+
+
+@router.post("/competitions/{competition_id}/complete", response_model=CompetitionRead)
+async def complete_season(
+    competition_id: str, admin: AdminUser, session: SessionDep
+) -> Competition:
+    """Close a season. Nothing is deleted or moved — the table, results,
+    statistics and bracket stay exactly as they are, and the season simply stops
+    accepting anything new. A match still being played is refused, because a live
+    match in a finished season is a contradiction rather than an archive."""
+    competition = await _competition_or_404(session, competition_id)
+    if competition.status == CompetitionStatus.completed:
+        return competition
+    live = await session.scalar(
+        select(Match.id).where(
+            Match.competition_id == competition_id, Match.status == MatchStatus.live
+        )
+    )
+    if live is not None:
+        raise api_error(
+            409,
+            "match_in_progress",
+            "Finish the match still being played before ending this season.",
+        )
+    competition.status = CompetitionStatus.completed
+    competition.completed_at = datetime.now(UTC)
+    record_audit(
+        session,
+        admin,
+        action="season_completed",
+        entity_type="competition",
+        entity_id=competition.id,
+        summary=f"Ended {competition.name} {competition.season}.",
+    )
+    await session.commit()
+    await session.refresh(competition)
+    return competition
+
+
+@router.post("/competitions/{competition_id}/reopen", response_model=CompetitionRead)
+async def reopen_season(
+    competition_id: str, admin: AdminUser, session: SessionDep
+) -> Competition:
+    """Put a closed season back into play, which is the only way to score into it
+    again."""
+    competition = await _competition_or_404(session, competition_id)
+    competition.status = CompetitionStatus.active
+    competition.completed_at = None
+    record_audit(
+        session,
+        admin,
+        action="season_reopened",
+        entity_type="competition",
+        entity_id=competition.id,
+        summary=f"Reopened {competition.name} {competition.season}.",
+    )
+    await session.commit()
+    await session.refresh(competition)
+    return competition
+
+
+@router.post(
+    "/competitions/{competition_id}/next-season",
+    response_model=CompetitionRead,
+    status_code=201,
+)
+async def start_next_season(
+    competition_id: str,
+    payload: NextSeasonInput,
+    admin: AdminUser,
+    session: SessionDep,
+) -> Competition:
+    """Start the next season of the same competition.
+
+    A new row, sharing the name that ties the seasons together and carrying the
+    same format. The season it follows is left untouched — its teams, matches and
+    table still point at it, which keeps the history intact. ``carry_teams``
+    copies the club list across as new rows for the new season; players are not,
+    because a squad is not the same people a year later.
+    """
+    previous = await _competition_or_404(session, competition_id)
+    if payload.season == previous.season:
+        raise api_error(
+            422, "same_season", "The next season must be named differently from this one."
+        )
+    nxt = Competition(
+        name=previous.name,
+        season=payload.season,
+        type=previous.type,
+        team_count=previous.team_count,
+        group_size=previous.group_size,
+        status=CompetitionStatus.active,
+    )
+    session.add(nxt)
+    await commit_or_conflict(session, "A competition with that name and season already exists.")
+    if nxt.team_count is not None and nxt.group_size is not None:
+        generate_structure(session, nxt, nxt.team_count, nxt.group_size)
+    if payload.carry_teams:
+        carried = list(
+            (
+                await session.scalars(
+                    select(Team)
+                    .where(Team.competition_id == previous.id)
+                    .order_by(Team.name)
+                )
+            ).all()
+        )
+        for team in carried:
+            session.add(
+                Team(
+                    name=team.name,
+                    squad_code=team.squad_code,
+                    age_group=team.age_group,
+                    season=payload.season,
+                    is_aimz=team.is_aimz,
+                    is_active=True,
+                    logo_key=team.logo_key,
+                    badge_style=team.badge_style,
+                    coach=team.coach,
+                    assistant_coach=team.assistant_coach,
+                    competition_id=nxt.id,
+                )
+            )
+    record_audit(
+        session,
+        admin,
+        action="season_started",
+        entity_type="competition",
+        entity_id=nxt.id,
+        summary=f"Started {nxt.name} {payload.season}.",
+    )
+    await session.commit()
+    await session.refresh(nxt)
+    return nxt
 
 
 @router.get("/players", response_model=Page[PlayerRead])
@@ -294,6 +476,8 @@ async def validate_match_refs(session: SessionDep, payload: MatchInput) -> None:
 @router.post("/matches", response_model=MatchRead, status_code=201)
 async def create_match(payload: MatchInput, _: AdminUser, session: SessionDep) -> Match:
     await validate_match_refs(session, payload)
+    # A finished season takes nothing new; a fixture cannot be added to it.
+    require_open_competition(await session.get(Competition, payload.competition_id))
     requested_status = payload.status
     row = Match(
         **payload.model_dump(exclude={"status"}),
@@ -332,6 +516,13 @@ async def update_match(
         setattr(row, field, value)
     apply_legacy_status_change(row, next_status)
     row.revision += 1
+    # Once the match is under way, settle who took the field and what the keepers
+    # are answerable for — appearances from the sheet, goals conceded against
+    # whichever keeper was on, and, on finishing, clean sheets. A no-op while
+    # still scheduled and for a match with no team sheet.
+    from app.services.scoring import recompute_pitch_stats
+
+    await recompute_pitch_stats(session, row)
     await session.commit()
     return await get_match(row.id, _, session)
 

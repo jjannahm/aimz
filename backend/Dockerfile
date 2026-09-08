@@ -8,6 +8,9 @@ WORKDIR /app
 COPY pyproject.toml alembic.ini ./
 COPY app ./app
 COPY migrations ./migrations
+# Shipped so one-off data operations (e.g. the D1->RDS import) can run inside
+# the container over SSM, the same way migrations do.
+COPY scripts ./scripts
 
 RUN pip install --no-cache-dir .
 

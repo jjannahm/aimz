@@ -10,6 +10,7 @@ from app.core.errors import api_error
 from app.core.security import decode_access_token
 from app.db.models import User, UserRole
 from app.db.session import get_db_session
+from app.services.accounts import assert_not_expired
 
 SessionDep = Annotated[AsyncSession, Depends(get_db_session)]
 bearer = HTTPBearer(auto_error=False)
@@ -30,7 +31,10 @@ async def get_current_user(
     )
     if user is None:
         raise api_error(401, "invalid_token", "Your account is unavailable.")
-    return user
+    # Checked on every request, not only at sign-in: a token already in hand
+    # outlives the moment it was issued, so a deadline enforced only at the door
+    # would not be a deadline.
+    return assert_not_expired(user)
 
 
 CurrentUser = Annotated[User, Depends(get_current_user)]

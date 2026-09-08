@@ -3,8 +3,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.errors import api_error
-from app.db.models import EventType, Match, MatchEvent, Player, PlayerMatchStat, Team
+from app.db.models import (
+    EventType,
+    Match,
+    MatchEvent,
+    MatchLineupEntry,
+    MatchStatus,
+    Player,
+    PlayerMatchStat,
+    Team,
+)
 from app.schemas import MatchEventInput, MatchEventUpdate
+from app.services.competitions import require_open_season
+from app.services.goalkeeping import compute_goalkeeper_stats, players_who_took_the_field
 
 
 async def locked_match(session: AsyncSession, match_id: str) -> Match:
@@ -76,6 +87,35 @@ async def validate_event_people(
             raise api_error(422, "invalid_event_player", "The selected player is not on that team.")
 
 
+async def squads_for_match(session: AsyncSession, match: Match) -> dict[str, str]:
+    """Which squad each player turned out for in this match.
+
+    The lineup is the record of it and answers first. Anyone with a statistic
+    but no lineup entry — minutes saved for a match nobody entered a sheet for —
+    falls back to the squad they are on now, the best answer at the moment it is
+    written, which is then fixed for good on the stat row.
+    """
+    squads: dict[str, str] = dict(
+        (
+            await session.execute(
+                select(Player.id, Player.team_id).where(
+                    Player.team_id.in_([match.home_team_id, match.away_team_id])
+                )
+            )
+        ).all()
+    )
+    lineup = (
+        await session.execute(
+            select(MatchLineupEntry.player_id, MatchLineupEntry.team_id).where(
+                MatchLineupEntry.match_id == match.id
+            )
+        )
+    ).all()
+    for player_id, team_id in lineup:
+        squads[player_id] = team_id
+    return squads
+
+
 async def recompute_match(session: AsyncSession, match: Match) -> None:
     events = list(
         (
@@ -122,12 +162,16 @@ async def recompute_match(session: AsyncSession, match: Match) -> None:
             )
         ).all()
     )
+    squads = await squads_for_match(session, match)
     by_player = {stat.player_id: stat for stat in stats}
     for player_id in set(by_player) | set(counters):
         stat = by_player.get(player_id)
         if stat is None:
             stat = PlayerMatchStat(match_id=match.id, player_id=player_id, appeared=True)
             session.add(stat)
+        # Stamp the squad she turned out for, so her record stays with it even if
+        # she is later moved to another squad.
+        stat.team_id = squads.get(player_id, stat.team_id)
         values = counters.get(player_id, {})
         stat.goals = values.get(EventType.goal, 0)
         stat.assists = values.get(EventType.assist, 0)
@@ -135,6 +179,91 @@ async def recompute_match(session: AsyncSession, match: Match) -> None:
         stat.yellow_cards = values.get(EventType.yellow_card, 0)
         stat.red_cards = values.get(EventType.red_card, 0)
     match.revision += 1
+    await session.flush()
+    await recompute_pitch_stats(session, match)
+
+
+async def recompute_pitch_stats(session: AsyncSession, match: Match) -> None:
+    """Write what the team sheet and the timeline say about who was on the pitch.
+
+    Two things fall out of the same walk, so they are worked out together rather
+    than reading it twice.
+
+    **Who appeared.** Taking the field is the appearance, and the team sheet is
+    the record of it — not a side effect of scoring, so a player who turns out
+    every week and never scores still counts. A named substitute who never comes
+    on is not on the pitch, which is the point.
+
+    **What the keeper is answerable for.** Who conceded a goal depends on which
+    keeper was on at the minute, a walk rather than something an aggregate can
+    count in place.
+
+    Appearances are cleared first, but only for players the sheet governs — a
+    substitution dropped in a correction takes its appearance with it, while a
+    match scored without a sheet keeps the minutes saved by hand. The keeper
+    columns are cleared for everyone, so a keeper moved out of goal keeps no tally
+    they are no longer owed. Nothing is written before kickoff: a named XI for a
+    match never played records nothing.
+
+    Called wherever the lineup, the timeline, or the finished state changes.
+    """
+    if match.status == MatchStatus.scheduled:
+        return
+    lineup = list(
+        (
+            await session.scalars(
+                select(MatchLineupEntry).where(MatchLineupEntry.match_id == match.id)
+            )
+        ).all()
+    )
+    events = list(
+        (
+            await session.scalars(
+                select(MatchEvent).where(MatchEvent.match_id == match.id)
+            )
+        ).all()
+    )
+    on_pitch = players_who_took_the_field(lineup, events)
+    keeper_stats = compute_goalkeeper_stats(
+        lineup, events, match.status == MatchStatus.finished
+    )
+    squads = await squads_for_match(session, match)
+    on_sheet = {entry.player_id for entry in lineup}
+
+    stats = list(
+        (
+            await session.scalars(
+                select(PlayerMatchStat).where(PlayerMatchStat.match_id == match.id)
+            )
+        ).all()
+    )
+    by_player = {stat.player_id: stat for stat in stats}
+    for stat in stats:
+        stat.goals_conceded = 0
+        stat.penalties_saved = 0
+        stat.clean_sheet = 0
+        # Cleared only for players the sheet governs; a row scored without a sheet
+        # keeps its hand-entered appearance.
+        if stat.player_id in on_sheet:
+            stat.appeared = False
+
+    def _row_for(player_id: str) -> PlayerMatchStat:
+        stat = by_player.get(player_id)
+        if stat is None:
+            stat = PlayerMatchStat(match_id=match.id, player_id=player_id, appeared=True)
+            session.add(stat)
+            by_player[player_id] = stat
+        stat.appeared = True
+        stat.team_id = squads.get(player_id, stat.team_id)
+        return stat
+
+    for player_id in on_pitch:
+        _row_for(player_id)
+    for player_id, row in keeper_stats.items():
+        stat = _row_for(player_id)
+        stat.goals_conceded = row.goals_conceded
+        stat.penalties_saved = row.penalties_saved
+        stat.clean_sheet = row.clean_sheet
     await session.flush()
 
 
@@ -148,6 +277,7 @@ async def add_event(session: AsyncSession, match_id: str, payload: MatchEventInp
         return existing
     match = await locked_match(session, match_id)
     await require_scorable(session, match)
+    await require_open_season(session, match)
     await validate_event_people(
         session, match, payload.team_id, [payload.player_id, payload.secondary_player_id]
     )
@@ -163,6 +293,7 @@ async def update_event(
 ) -> MatchEvent:
     match = await locked_match(session, match_id)
     await require_scorable(session, match)
+    await require_open_season(session, match)
     event = await session.scalar(
         select(MatchEvent).where(MatchEvent.id == event_id, MatchEvent.match_id == match_id)
     )
@@ -182,6 +313,7 @@ async def update_event(
 async def remove_event(session: AsyncSession, match_id: str, event_id: str) -> None:
     match = await locked_match(session, match_id)
     await require_scorable(session, match)
+    await require_open_season(session, match)
     event = await session.scalar(
         select(MatchEvent).where(MatchEvent.id == event_id, MatchEvent.match_id == match_id)
     )
