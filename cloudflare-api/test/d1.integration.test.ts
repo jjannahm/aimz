@@ -929,3 +929,50 @@ describe('training attendance', () => {
     });
   });
 });
+
+describe('the API is shut to strangers', () => {
+  // The roster is the names of children. It was readable by anyone who knew the
+  // address, because authorisation was written per route and the read routes
+  // never received any.
+  const closed = [
+    ['GET', '/api/v1/players'],
+    ['GET', '/api/v1/teams'],
+    ['GET', '/api/v1/matches'],
+    ['GET', '/api/v1/competitions'],
+    ['GET', '/api/v1/stats/leaders'],
+    ['GET', '/api/v1/announcements'],
+    ['GET', '/api/v1/training-sessions'],
+  ] as const;
+
+  it.each(closed)('refuses %s %s without an account', async (method, path) => {
+    const response = await request(path, json(method));
+    expect(response.status).toBe(401);
+    expect(await response.json()).toMatchObject({ detail: { code: 'authentication_required' } });
+  });
+
+  it('refuses a player profile and its statistics to a stranger', async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U11', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const player = await (await request('/api/v1/players', json('POST', { name: 'Salma', team_id: team.id, position: 'CM' }, admin.token))).json<{ id: string }>();
+
+    expect((await request(`/api/v1/players/${player.id}/stats`, json('GET'))).status).toBe(401);
+    expect((await request(`/api/v1/players/${player.id}/honours`, json('GET'))).status).toBe(401);
+    // A signed-in account still reads them: squad-mates see each other.
+    expect((await request(`/api/v1/players/${player.id}/stats`, json('GET', undefined, admin.token))).status).toBe(200);
+  });
+
+  // The ways in have to answer a stranger, or nobody could ever sign in.
+  it('still lets a stranger reach health and the sign-in routes', async () => {
+    expect((await request('/api/v1/health', json('GET'))).status).toBe(200);
+    expect((await request('/api/v1/health/ready', json('GET'))).status).toBe(200);
+    // Wrong credentials, but reaching the handler at all is the point: a 401
+    // from the gate would carry `authentication_required` instead.
+    const login = await request('/api/v1/auth/login', json('POST', { email: 'nobody@aimz.test', password: 'wrong-password' }));
+    expect(await login.json()).toMatchObject({ detail: { code: 'invalid_credentials' } });
+  });
+
+  it('turns away a token that is not a token', async () => {
+    const response = await request('/api/v1/players', json('GET', undefined, 'not-a-real-token'));
+    expect(response.status).toBe(401);
+  });
+});
