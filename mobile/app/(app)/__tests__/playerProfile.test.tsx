@@ -13,14 +13,14 @@ jest.mock('expo-router', () => ({
   usePathname: () => '/player/p-1',
 }));
 jest.mock('@/src/lib/api', () => ({
-  api: { playerStats: jest.fn(), playerHonours: jest.fn() },
+  api: { playerStats: jest.fn(), playerHonours: jest.fn(), teams: jest.fn(), playerTrainingStats: jest.fn() },
   ApiError: class extends Error {},
 }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'player', player_id: 'p-1' } }) }));
 
-const team = (id: string, name: string, age_group: string): Team => ({
+const team = (id: string, name: string, age_group: string, competition_id: string | null = 'comp-1'): Team => ({
   id, name, age_group, squad_code: null, season: '2026/27', is_aimz: true, is_active: true,
-  logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id: null, competition_group_id: null, created_at: '', updated_at: '',
+  logo_key: null, badge_style: null, coach: null, assistant_coach: null, competition_id, competition_group_id: null, created_at: '', updated_at: '',
 });
 
 const under14 = team('t-u14', 'AIMZ U14', 'U14');
@@ -61,6 +61,11 @@ function wrapper({ children }: { children: ReactNode }) {
 
 describe('PlayerDetailScreen', () => {
   beforeEach(() => {
+    // The screen reads the squad to know whether it plays matches at all.
+    jest.mocked(api.teams).mockResolvedValue({ items: [under14, under16], total: 2, limit: 100, offset: 0 } as never);
+    jest.mocked(api.playerTrainingStats).mockResolvedValue({
+      player, metrics: [], attendance: { attended: 0, expected: 0, pct: null }, totals: [], sessions: [],
+    } as never);
     jest.mocked(api.playerStats).mockResolvedValue(summary());
     jest.mocked(api.playerHonours).mockResolvedValue({
       player,
@@ -157,5 +162,46 @@ describe('PlayerDetailScreen', () => {
     const screen = await render(<PlayerDetailScreen />, { wrapper });
     expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
     expect(screen.queryByText('Training · 0/0')).toBeNull();
+  });
+
+  describe('the two halves of a training record', () => {
+    it('opens on the match half, with training alongside it', async () => {
+      const screen = await render(<PlayerDetailScreen />, { wrapper });
+      expect(await screen.findByRole('tab', { name: 'Match Stats' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: 'Match Stats' }).props.accessibilityState.selected).toBe(true);
+      expect(screen.getByRole('tab', { name: 'Training Stats' })).toBeTruthy();
+    });
+
+    it('reads the training record when that half is chosen', async () => {
+      jest.mocked(api.playerTrainingStats).mockResolvedValue({
+        player,
+        metrics: [{ id: 'm-dri', key: 'dribbling', label: 'Dribbling', kind: 'rating', min_value: 1, max_value: 10, unit: null, sort_order: 20, is_active: true }],
+        attendance: { attended: 9, expected: 12, pct: 75 },
+        totals: [{ metric: { id: 'm-dri', key: 'dribbling', label: 'Dribbling', kind: 'rating', min_value: 1, max_value: 10, unit: null, sort_order: 20, is_active: true }, value: 7.5, sessions: 4 }],
+        sessions: [{ id: 's-1', starts_at: '2026-09-08T15:00:00.000Z', venue: 'Palm', status: 'present', values: { 'm-dri': 8 } }],
+      } as never);
+      const screen = await render(<PlayerDetailScreen />, { wrapper });
+      await fireEvent.press(await screen.findByRole('tab', { name: 'Training Stats' }));
+
+      expect(await screen.findByText('9 of 12')).toBeTruthy();
+      expect(screen.getByText('75%')).toBeTruthy();
+      // A mark reads against its own scale, and an average says so.
+      expect(screen.getByText('7.5/10')).toBeTruthy();
+      expect(screen.getByText('Dribbling · average')).toBeTruthy();
+      expect(screen.getByText('Present')).toBeTruthy();
+      expect(screen.getByText('Dribbling 8/10')).toBeTruthy();
+    });
+
+    // A squad entered in nothing has no fixtures to have played, so an empty
+    // Match Stats tab would be a question the app cannot answer.
+    it('offers no match half at all for a squad in no competition', async () => {
+      jest.mocked(api.teams).mockResolvedValue({
+        items: [team('t-u16', 'AIMZ U16', 'U16', null)], total: 1, limit: 100, offset: 0,
+      } as never);
+      const screen = await render(<PlayerDetailScreen />, { wrapper });
+      await waitFor(() => expect(screen.getByText('This squad is not entered in a competition, so there are no match statistics to show.')).toBeTruthy());
+      expect(screen.queryByRole('tab', { name: 'Match Stats' })).toBeNull();
+      expect(screen.queryByText('Match breakdown')).toBeNull();
+    });
   });
 });
