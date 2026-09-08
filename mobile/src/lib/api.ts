@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AttendanceStatus, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
 
@@ -295,6 +295,25 @@ export const api = {
   createAnnouncement: (payload: Partial<Announcement>) => request<Announcement>('/api/v1/announcements', { method: 'POST', body: payload }),
   updateAnnouncement: (id: string, payload: Partial<Announcement>) => request<Announcement>(`/api/v1/announcements/${id}`, { method: 'PATCH', body: payload }),
   deleteAnnouncement: (id: string) => request<void>(`/api/v1/announcements/${id}`, { method: 'DELETE' }),
+  feePlans: (query = '') => request<Page<FeePlan>>(`/api/v1/fee-plans${query}`),
+  createFeePlan: (body: { team_id: string; label: string; amount_piastres: number; due_day: number }) =>
+    request<FeePlan>('/api/v1/fee-plans', { method: 'POST', body }),
+  updateFeePlan: (id: string, body: Partial<{ label: string; amount_piastres: number; due_day: number; is_active: boolean }>) =>
+    request<FeePlan>(`/api/v1/fee-plans/${id}`, { method: 'PATCH', body }),
+  deleteFeePlan: (id: string) => request<void>(`/api/v1/fee-plans/${id}`, { method: 'DELETE' }),
+  generateFees: (id: string, period: string) =>
+    request<FeeGeneration>(`/api/v1/fee-plans/${id}/generate`, { method: 'POST', body: { period } }),
+  feeCharges: (query = '') => request<Page<FeeCharge>>(`/api/v1/fee-charges${query}`),
+  feeCharge: (id: string) => request<FeeCharge>(`/api/v1/fee-charges/${id}`),
+  createFeeCharge: (body: { player_id: string; label: string; amount_piastres: number; due_on: string }) =>
+    request<FeeCharge>('/api/v1/fee-charges', { method: 'POST', body }),
+  voidFeeCharge: (id: string, reason: string | null) =>
+    request<FeeCharge>(`/api/v1/fee-charges/${id}/void`, { method: 'POST', body: { reason } }),
+  recordFeePayment: (id: string, body: { amount_piastres: number; method: PaymentMethod; paid_on?: string; note?: string | null }) =>
+    request<FeeCharge>(`/api/v1/fee-charges/${id}/payments`, { method: 'POST', body }),
+  deleteFeePayment: (id: string) => request<void>(`/api/v1/fee-payments/${id}`, { method: 'DELETE' }),
+  teamFeeSummary: (teamId: string, period?: string) =>
+    request<FeeSummary>(`/api/v1/teams/${teamId}/fee-summary${period ? `?period=${encodeURIComponent(period)}` : ''}`),
   trainingAttendance: (id: string) => request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`),
   setTrainingAttendance: (id: string, entries: { player_id: string; status: AttendanceStatus | null }[]) =>
     request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`, { method: 'PUT', body: { entries } }),

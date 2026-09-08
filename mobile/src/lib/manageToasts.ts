@@ -28,6 +28,8 @@ export type ManageEntity =
   | 'photo'
   | 'roster'
   | 'account'
+  | 'charge'
+  | 'fee plan'
   | 'result';
 
 export type ManageAction = 'created' | 'saved' | 'deleted';
@@ -55,6 +57,10 @@ const WORDING: Record<ManageEntity, { noun: string; created?: string; deleted?: 
   series: { noun: 'Series' },
   photo: { noun: 'Photo' },
   roster: { noun: 'Private roster details' },
+  // A charge is cancelled rather than deleted: the row stays, marked, so a
+  // receipt a family has already seen still makes sense.
+  charge: { noun: 'Charge', deleted: 'cancelled' },
+  'fee plan': { noun: 'Monthly fee' },
   // Unlinking removes the link rather than deleting the account, and saying
   // "Account deleted" over a link change would frighten an administrator.
   account: { noun: 'Account link', deleted: 'removed' },
