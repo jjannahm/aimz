@@ -13,6 +13,8 @@ import { SegmentedControl, type SegmentedOption } from '@/src/components/Segment
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
 import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonFilter';
+import { TrainingStatsPanel } from '@/src/components/TrainingStatsPanel';
+import { useSquadPlaysMatches } from '@/src/lib/squad';
 import { SearchField } from '@/src/components/SearchField';
 import { TrophyIcon } from '@/src/components/TrophyIcon';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
@@ -48,14 +50,24 @@ const sectionsFor = (linked: boolean): Section[] =>
  * keeps its own options once a season is chosen — keyed the way the panel keys
  * its own unfiltered read, so the two share one fetch rather than making two.
  */
+const STAT_HALVES = [{ label: 'Match Stats', value: 'match' }, { label: 'Training Stats', value: 'training' }] as const;
+
 function MyStats({ playerId }: { playerId: string }) {
   const styles = useThemedStyles(stylesheet);
   const [season, setSeason] = useState(ALL_SEASONS);
+  const [half, setHalf] = useState<'match' | 'training'>('match');
   const career = useQuery({ queryKey: ['player-stats', playerId, null], queryFn: () => api.playerStats(playerId), enabled: Boolean(playerId) });
   const seasons = career.data?.seasons ?? [];
+  // The same two halves the player page offers, so a family reading their own
+  // record and a coach reading somebody else's are looking at one thing.
+  const plays = useSquadPlaysMatches(career.data?.player.team_id);
+  const showing = plays ? half : 'training';
   return <View style={styles.stack}>
-    <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />
-    <PlayerStatsPanel playerId={playerId} season={seasonQuery(season, seasons)} />
+    {plays ? <SegmentedControl label="Which statistics" onChange={setHalf} options={STAT_HALVES} value={showing} /> : null}
+    {showing === 'match' ? <>
+      <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />
+      <PlayerStatsPanel playerId={playerId} season={seasonQuery(season, seasons)} />
+    </> : <TrainingStatsPanel playerId={playerId} />}
   </View>;
 }
 

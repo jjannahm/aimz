@@ -10,18 +10,20 @@ import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { TrainingMetric } from '@/src/types/api';
 
-/** How a total reads: a mark carries its scale, a count carries its unit. */
-function readTotal(metric: TrainingMetric, value: number): string {
-  if (metric.kind === 'rating') return `${value}/${metric.max_value ?? 10}`;
-  return String(value);
-}
+/** How a total reads: a mark carries its scale, a count stands alone. */
+const readTotal = (metric: TrainingMetric, value: number) =>
+  metric.kind === 'rating' ? `${value}/${metric.max_value ?? 10}` : String(value);
+
+/** Short enough to sit on one line under its own figure. */
+const shortLabel = (metric: TrainingMetric) => metric.kind === 'rating' ? `${metric.label} avg` : metric.label;
 
 /**
  * What a player did at training, as against what they did in matches.
  *
- * The same shape as the match panel — tallies, then a breakdown — because they
- * answer the same question about a different half of the week, and a reader
- * moving between the two tabs should not have to learn a second layout.
+ * The tallies are one panel divided by hairlines rather than six cards with
+ * their own borders: six outlines at reading distance are six things to look
+ * at before any number is read, and the figures are what somebody came for.
+ * Three across, so the whole record is taken in without scrolling.
  */
 export function TrainingStatsPanel({ playerId }: { playerId: string }) {
   const styles = useThemedStyles(stylesheet);
@@ -39,14 +41,14 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
 
   // A metric nobody has recorded is left out rather than shown as a zero: a
   // nought here would read as a mark given, not as one never given.
-  const recorded = totals.filter((total) => total.value !== null);
   const tiles = [
     ...(attendance.expected > 0 ? [
-      { label: 'Attended', value: `${attendance.attended} of ${attendance.expected}` },
-      { label: 'Attendance', value: `${attendance.pct}%`, tone: colors.accentSoft },
+      { key: 'attended', label: 'Attended', value: `${attendance.attended} of ${attendance.expected}` },
+      { key: 'attendance', label: 'Attendance', value: `${attendance.pct}%`, tone: colors.accentSoft },
     ] : []),
-    ...recorded.map((total) => ({
-      label: total.metric.kind === 'rating' ? `${total.metric.label} · average` : total.metric.label,
+    ...totals.filter((total) => total.value !== null).map((total) => ({
+      key: total.metric.id,
+      label: shortLabel(total.metric),
       value: readTotal(total.metric, total.value!),
       tone: undefined,
     })),
@@ -57,10 +59,17 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
   }
 
   return <>
-    <View style={styles.grid}>{tiles.map((tile) => <FlatCard key={tile.label} radius={theme.radius.md} style={styles.stat}>
-      <Text style={[styles.value, tile.tone ? { color: tile.tone } : null]}>{tile.value}</Text>
-      <Text style={styles.label}>{tile.label}</Text>
-    </FlatCard>)}</View>
+    {tiles.length ? <FlatCard radius={theme.radius.md} style={styles.summary}>
+      <View style={styles.grid}>{tiles.map((tile, index) => <View
+        key={tile.key}
+        // Hairlines between the cells rather than around them: a border only
+        // where two figures meet, and none at the edges of the panel.
+        style={[styles.cell, index % 3 !== 0 && styles.dividerLeft, index >= 3 && styles.dividerTop]}
+      >
+        <Text numberOfLines={1} style={[styles.value, tile.tone ? { color: tile.tone } : null]}>{tile.value}</Text>
+        <Text numberOfLines={1} style={styles.label}>{tile.label}</Text>
+      </View>)}</View>
+    </FlatCard> : null}
 
     <Text accessibilityRole="header" style={styles.heading}>Session breakdown</Text>
     {!sessions.length ? <Text style={styles.empty}>No sessions recorded yet.</Text>
@@ -76,8 +85,8 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
             </View> : null}
           </View>
           <Text style={styles.sessionDate}>{formatEgyptDateTime(session.starts_at)}</Text>
-          {/* A session somebody attended but was not marked at is still worth
-            * listing: it is why the attendance figure is what it is. */}
+          {/* A session somebody was marked absent at is still worth listing: it
+            * is why the attendance figure is what it is. */}
           <Text style={styles.sessionMeta}>{marks.length ? marks.join(' · ') : 'Nothing recorded'}</Text>
         </FlatCard>;
       })}
@@ -85,11 +94,17 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  // The tallies, three to a row, the way the match panel sets its own.
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs },
-  stat: { flexBasis: '31%', flexGrow: 1, padding: theme.spacing.sm },
-  value: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.score, fontVariant: ['tabular-nums'] },
-  label: { color: colors.textMuted, fontFamily: theme.font.regular, marginTop: 2 },
+  summary: { overflow: 'hidden', padding: 0 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  // Exactly a third, so the two rows line up column for column.
+  cell: { alignItems: 'center', flexBasis: '33.33%', gap: 2, minWidth: 0, paddingHorizontal: theme.spacing.xs, paddingVertical: theme.spacing.md },
+  dividerLeft: { borderLeftColor: colors.border, borderLeftWidth: StyleSheet.hairlineWidth },
+  dividerTop: { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+  // Dominant, but not so large that "10/10" cannot sit on one line in a third
+  // of a phone. `numberOfLines` holds it there whatever the figure turns out
+  // to be; the scale is the metric's to change.
+  value: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.heading, fontVariant: ['tabular-nums'] },
+  label: { color: colors.textMuted, fontSize: theme.type.caption, textAlign: 'center' },
 
   heading: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading },
   session: { padding: theme.spacing.md },

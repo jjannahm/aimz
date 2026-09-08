@@ -12,7 +12,7 @@ import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonF
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { TrainingStatsPanel } from '@/src/components/TrainingStatsPanel';
 import { api } from '@/src/lib/api';
-import { cacheKeys } from '@/src/lib/cache';
+import { useSquadPlaysMatches } from '@/src/lib/squad';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
@@ -29,16 +29,8 @@ export default function PlayerDetailScreen() {
   // the switcher does not lose its own options once a season is chosen. Keyed
   // the way the panel keys an unfiltered read, so "Career" is one shared fetch.
   const career = useQuery({ queryKey: ['player-stats', id, null], queryFn: () => api.playerStats(id), enabled: Boolean(id) });
-  // Already in hand: every screen warms this list when the reader signs in.
-  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
   const seasons = career.data?.seasons ?? [];
-
-  // Match statistics only mean something for a squad that plays matches. A
-  // squad entered in nothing has no fixtures to have played, and an empty
-  // Match Stats tab would be a question the app cannot answer rather than an
-  // answer of nought.
-  const squad = teams.data?.items.find((team) => team.id === career.data?.player.team_id);
-  const plays = Boolean(squad?.competition_id);
+  const plays = useSquadPlaysMatches(career.data?.player.team_id);
   const showing: Half = plays ? half : 'training';
 
   if (!id) return <Screen action={<CloseButton />} title="Player" />;
