@@ -107,8 +107,13 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
 
   heading: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 1, marginTop: theme.spacing.xs, textTransform: 'uppercase' },
   block: { padding: theme.spacing.md },
-  figures: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.md },
-  figure: { gap: 2, minWidth: 84 },
+  // Three to a row, in columns that line up whatever is in them. Left to size
+  // themselves the figures wrap raggedly — 604 is wider than 9 — so a second
+  // row of two sits under nothing in particular. A share of the width each,
+  // with the separation inside the cell rather than a gap between them, is how
+  // the weekday picker solves the same thing.
+  figures: { flexDirection: 'row', flexWrap: 'wrap', rowGap: theme.spacing.md },
+  figure: { flexBasis: '33.33%', gap: 2, minWidth: 0, paddingRight: theme.spacing.sm },
   figureValue: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.body, fontVariant: ['tabular-nums'] },
   figureLabel: { color: colors.textMuted, fontSize: theme.type.caption },
 
