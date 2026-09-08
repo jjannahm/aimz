@@ -22,6 +22,11 @@ jest.mock('@/src/components/manage/FeesManager', () => {
   const { Text } = jest.requireActual('react-native');
   return { FeesManager: () => React.createElement(Text, null, 'Fees manager content') };
 });
+jest.mock('@/src/components/manage/TrainingStatsManager', () => {
+  const React = jest.requireActual('react');
+  const { Text } = jest.requireActual('react-native');
+  return { TrainingStatsManager: () => React.createElement(Text, null, 'Training stats content') };
+});
 jest.mock('@/src/components/manage/ReportsManager', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
@@ -147,10 +152,14 @@ describe('ManageScreen navigation', () => {
     expect(screen.queryByText('Add squads')).toBeNull();
   });
 
-  it('reaches the reports from their own pill', async () => {
+  it('reaches the reports from their own pill, with the training numbers alongside', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(screen.getByTestId('manage-tab-reports'));
     expect(await screen.findByText('Reports manager content')).toBeTruthy();
+
+    await subTab(screen, 'Training Stats');
+    expect(await screen.findByText('Training stats content')).toBeTruthy();
+    expect(screen.queryByText('Reports manager content')).toBeNull();
   });
 
   it('starts a pill back on its first half when it is left and returned to', async () => {

@@ -26,6 +26,7 @@ import { AccountsSection } from '@/src/components/manage/AccountsSection';
 import { BulkPlayerImport } from '@/src/components/manage/BulkPlayerImport';
 import { FeesManager } from '@/src/components/manage/FeesManager';
 import { ReportsManager } from '@/src/components/manage/ReportsManager';
+import { TrainingStatsManager } from '@/src/components/manage/TrainingStatsManager';
 import { AnnouncementsManager, ScheduleManager } from '@/src/components/manage/HubManagers';
 import { Screen } from '@/src/components/Screen';
 import { narrowBySearch } from '@/src/components/SearchField';
@@ -42,7 +43,7 @@ import { ADVANCE_PER_GROUP, describeCustomDraw, EXTRA_TIME_PERIODS, GROUP_SIZE, 
 import type { BadgeStyle, Competition, InviteKind, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
 
 type LegacyResource = 'teams' | 'competitions' | 'opponents' | 'players' | 'matches' | 'invites';
-type HubResource = 'schedule' | 'announcements' | 'fees' | 'reports';
+type HubResource = 'schedule' | 'announcements' | 'fees' | 'reports' | 'training-stats';
 type Resource = LegacyResource | HubResource;
 type Entity = Team | Competition | Player | Match | RegistrationInvite;
 
@@ -60,8 +61,11 @@ const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Sq
 const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
 /** Which half of the diary the Schedule pill is showing. */
 const scheduleKinds = [{ label: 'Training Sessions', value: 'schedule' }, { label: 'Matches', value: 'matches' }] as const;
+/** What the Reports pill is showing: a written report, or the numbers behind one. */
+const reportKinds = [{ label: 'Player Reports', value: 'reports' }, { label: 'Training Stats', value: 'training-stats' }] as const;
 type SquadKind = (typeof squadKinds)[number]['value'];
 type ScheduleKind = (typeof scheduleKinds)[number]['value'];
+type ReportKind = (typeof reportKinds)[number]['value'];
 const formSummary: Record<LegacyResource, string> = {
   teams: 'A squad’s name, age group, competition and coaches.',
   competitions: 'A league, knockout or friendly, and the season it runs in.',
@@ -247,6 +251,7 @@ export default function ManageScreen() {
   /** Each shared pill remembers which half of itself is showing. */
   const [squadKind, setSquadKind] = React.useState<SquadKind>('teams');
   const [scheduleKind, setScheduleKind] = React.useState<ScheduleKind>('schedule');
+  const [reportKind, setReportKind] = React.useState<ReportKind>('reports');
   const [editing, setEditing] = React.useState<Entity | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   /** Every section arrives folded; editing a row, or drawing up a knockout, unfolds it. */
@@ -271,9 +276,10 @@ export default function ManageScreen() {
   // A pill always reopens on its first half. Coming back to Squads and landing
   // on the opposing clubs, because that is where you were twenty minutes ago,
   // reads as the app having lost your place rather than kept it.
-  const switchResource = (next: Tab) => { setTab(next); setSquadKind('teams'); setScheduleKind('schedule'); leaveSection(); };
+  const switchResource = (next: Tab) => { setTab(next); setSquadKind('teams'); setScheduleKind('schedule'); setReportKind('reports'); leaveSection(); };
   const switchSquadKind = (next: SquadKind) => { setSquadKind(next); leaveSection(); };
   const switchScheduleKind = (next: ScheduleKind) => { setScheduleKind(next); leaveSection(); };
+  const switchReportKind = (next: ReportKind) => { setReportKind(next); leaveSection(); };
   // Every cell keeps its quarter of the width whatever it holds, so the rows
   // line up and the cells stretch their pills to an even row height.
   const resourceChips = <View style={styles.chips}>{resources.map((item) => <View key={item.value} style={styles.chipCell}>
@@ -282,26 +288,29 @@ export default function ManageScreen() {
   // The section actually being managed, which for two of the pills depends on
   // which half of it is showing. Everything below reads this rather than the
   // pill, so the sections themselves did not have to change.
-  const resource: Resource = tab === 'teams' ? squadKind : tab === 'schedule' ? scheduleKind : tab;
+  const resource: Resource = tab === 'teams' ? squadKind : tab === 'schedule' ? scheduleKind : tab === 'reports' ? reportKind : tab;
   const subTabs = tab === 'teams'
     ? <SegmentedControl label="Squad kind" onChange={switchSquadKind} options={squadKinds} value={squadKind} />
     : tab === 'schedule'
       ? <SegmentedControl label="Schedule kind" onChange={switchScheduleKind} options={scheduleKinds} value={scheduleKind} />
-      : null;
+      : tab === 'reports'
+        ? <SegmentedControl label="Report kind" onChange={switchReportKind} options={reportKinds} value={reportKind} />
+        : null;
   // The academy's own age squads, which is what a session or a notice is for.
   // `is_aimz` alone would name the league's clubs too: they carry it so that
   // players, lineups and live scoring work for them, and they have no age group.
   const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
   // The sections that manage themselves rather than through the shared form
   // scaffold below: each is a screen of its own shape.
-  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports') return <Screen scrollRef={pageRef} title="Manage Academy">
+  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats') return <Screen scrollRef={pageRef} title="Manage Academy">
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
       {resource === 'schedule' ? <ScheduleManager teams={aimzTeams} />
         : resource === 'announcements' ? <AnnouncementsManager teams={aimzTeams} />
           : resource === 'fees' ? <FeesManager teams={aimzTeams} />
-            : <ReportsManager teams={aimzTeams} />}
+            : resource === 'reports' ? <ReportsManager teams={aimzTeams} />
+              : <TrainingStatsManager teams={aimzTeams} />}
     </View>
   </Screen>;
   const query = resource === 'teams' || resource === 'opponents' ? teams : resource === 'competitions' ? competitions : resource === 'players' ? players : resource === 'matches' ? matches : invites;
