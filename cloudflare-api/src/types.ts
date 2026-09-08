@@ -269,6 +269,48 @@ export interface StatRow {
   updated_at: string;
 }
 
+/** A recurring monthly subscription for one squad. Money is whole piastres. */
+export interface FeePlanRow {
+  id: string;
+  team_id: string;
+  label: string;
+  amount_piastres: number;
+  due_day: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** One amount owed by one player, whether monthly or a one-off. */
+export interface FeeChargeRow {
+  id: string;
+  player_id: string;
+  team_id: string;
+  fee_plan_id: string | null;
+  /** 'YYYY-MM' for a monthly charge, null for a one-off. */
+  period: string | null;
+  label: string;
+  amount_piastres: number;
+  due_on: string;
+  voided_at: string | null;
+  void_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Money received against a charge. Only ever added to. */
+export interface FeePaymentRow {
+  id: string;
+  fee_charge_id: string;
+  amount_piastres: number;
+  paid_on: string;
+  method: "cash" | "instapay" | "bank_transfer" | "other";
+  note: string | null;
+  recorded_by_id: string | null;
+  recorded_by_name: string;
+  created_at: string;
+}
+
 /** Whether one player turned up to one training session. */
 export interface AttendanceRow {
   training_session_id: string;

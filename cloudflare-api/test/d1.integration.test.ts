@@ -14,10 +14,12 @@ const json = (method: string, body?: unknown, token?: string): RequestInit => ({
 });
 const request = (path: string, init?: RequestInit) => app.request(`http://aimz.test${path}`, init, testEnv);
 
-async function seedUser(role: 'admin' | 'player', playerId: string | null = null): Promise<{ id: string; token: string }> {
+const ROLE_NAMES = { admin: 'Test Admin', player: 'Test Player', parent: 'Test Parent' } as const;
+
+async function seedUser(role: 'admin' | 'player' | 'parent', playerId: string | null = null): Promise<{ id: string; token: string }> {
   const id = crypto.randomUUID();
   await testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
-    .bind(id, role === 'admin' ? 'Test Admin' : 'Test Player', `${id}@aimz.test`, 'unused', role, playerId, now, now).run();
+    .bind(id, ROLE_NAMES[role], `${id}@aimz.test`, 'unused', role, playerId, now, now).run();
   return { id, token: await createAccessToken(id, role, testEnv.JWT_SECRET, 900) };
 }
 
@@ -28,7 +30,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0028_training_attendance.sql');
+    expect(applied.results.at(-1)?.name).toBe('0029_fees.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -974,5 +976,181 @@ describe('the API is shut to strangers', () => {
   it('turns away a token that is not a token', async () => {
     const response = await request('/api/v1/players', json('GET', undefined, 'not-a-real-token'));
     expect(response.status).toBe(401);
+  });
+});
+
+describe('fees', () => {
+  const setUp = async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U16', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const squad: { id: string; name: string }[] = [];
+    for (const name of ['Amina', 'Nour', 'Salma']) {
+      squad.push(await (await request('/api/v1/players', json('POST', { name, team_id: team.id, position: 'CM' }, admin.token))).json<{ id: string; name: string }>());
+    }
+    const plan = await (await request('/api/v1/fee-plans', json('POST', {
+      team_id: team.id, label: 'Monthly subscription', amount_piastres: 120000, due_day: 5,
+    }, admin.token))).json<{ id: string }>();
+    return { admin, team, squad, plan };
+  };
+
+  const generate = (planId: string, token: string, period = '2026-09') =>
+    request(`/api/v1/fee-plans/${planId}/generate`, json('POST', { period }, token));
+
+  const chargesFor = async (playerId: string, token: string) =>
+    (await (await request(`/api/v1/fee-charges?player_id=${playerId}`, json('GET', undefined, token))).json<{ items: { id: string; amount_piastres: number; paid_piastres: number; outstanding_piastres: number; status: string }[] }>()).items;
+
+  const pay = (chargeId: string, token: string, amount: number, over: Record<string, unknown> = {}) =>
+    request(`/api/v1/fee-charges/${chargeId}/payments`, json('POST', { amount_piastres: amount, method: 'cash', ...over }, token));
+
+  it('raises one charge per player for the month', async () => {
+    const { admin, squad, plan } = await setUp();
+    const response = await generate(plan.id, admin.token);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ period: '2026-09', created: 3, skipped: 0, squad_size: 3 });
+    const charges = await chargesFor(squad[0]!.id, admin.token);
+    expect(charges).toHaveLength(1);
+    expect(charges[0]).toMatchObject({ amount_piastres: 120000, paid_piastres: 0, outstanding_piastres: 120000 });
+  });
+
+  // The single most valuable test here: a button gets pressed twice.
+  it('bills a month once however many times the button is pressed', async () => {
+    const { admin, plan } = await setUp();
+    await generate(plan.id, admin.token);
+    const again = await (await generate(plan.id, admin.token)).json<{ created: number; skipped: number }>();
+    expect(again).toMatchObject({ created: 0, skipped: 3 });
+    const total = await testEnv.DB.prepare('SELECT COUNT(*) n FROM fee_charges WHERE fee_plan_id = ?').bind(plan.id).first<{ n: number }>();
+    expect(total?.n).toBe(3);
+  });
+
+  it('picks up a player who joined after the month was billed', async () => {
+    const { admin, team, plan } = await setUp();
+    await generate(plan.id, admin.token);
+    await request('/api/v1/players', json('POST', { name: 'Latecomer', team_id: team.id, position: 'ST' }, admin.token));
+    expect(await (await generate(plan.id, admin.token)).json()).toMatchObject({ created: 1, skipped: 3 });
+  });
+
+  it('counts a part payment as partly paid, and the rest as settled', async () => {
+    const { admin, squad, plan } = await setUp();
+    // A month whose due day is still ahead, so "partial" is not "overdue".
+    const ahead = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 7);
+    await generate(plan.id, admin.token, ahead);
+    const charge = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+
+    expect((await pay(charge.id, admin.token, 50000)).status).toBe(201);
+    let after = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+    expect(after).toMatchObject({ paid_piastres: 50000, outstanding_piastres: 70000, status: 'partial' });
+
+    await pay(charge.id, admin.token, 70000);
+    after = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+    expect(after).toMatchObject({ paid_piastres: 120000, outstanding_piastres: 0, status: 'paid' });
+  });
+
+  it('refuses more money than is owed, and says how much is left', async () => {
+    const { admin, squad, plan } = await setUp();
+    await generate(plan.id, admin.token);
+    const charge = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+    await pay(charge.id, admin.token, 100000);
+    const tooMuch = await pay(charge.id, admin.token, 50000);
+    expect(tooMuch.status).toBe(422);
+    expect(await tooMuch.json()).toMatchObject({ detail: { field_errors: [{ field: 'amount_piastres', message: '20000 piastres are outstanding.' }] } });
+  });
+
+  it('keeps every instalment rather than a running total', async () => {
+    const { admin, squad, plan } = await setUp();
+    await generate(plan.id, admin.token);
+    const charge = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+    await pay(charge.id, admin.token, 50000, { paid_on: '2026-09-03', method: 'instapay' });
+    await pay(charge.id, admin.token, 30000, { paid_on: '2026-09-17', method: 'cash' });
+    const full = await (await request(`/api/v1/fee-charges/${charge.id}`, json('GET', undefined, admin.token))).json<{ payments: { amount_piastres: number; recorded_by_name: string }[] }>();
+    expect(full.payments).toHaveLength(2);
+    expect(full.payments.map((row) => row.amount_piastres)).toEqual([50000, 30000]);
+    expect(full.payments[0]?.recorded_by_name).toBe('Test Admin');
+  });
+
+  it('calls an unpaid charge overdue once its day has gone', async () => {
+    const { admin, squad } = await setUp();
+    const charge = await (await request('/api/v1/fee-charges', json('POST', {
+      player_id: squad[0]!.id, label: 'Kit', amount_piastres: 40000, due_on: '2020-01-01',
+    }, admin.token))).json<{ id: string; status: string }>();
+    expect(charge.status).toBe('overdue');
+  });
+
+  it('cancels a charge rather than deleting it, and takes no more money for it', async () => {
+    const { admin, squad } = await setUp();
+    const charge = await (await request('/api/v1/fee-charges', json('POST', {
+      player_id: squad[0]!.id, label: 'Tournament', amount_piastres: 30000, due_on: '2026-10-01',
+    }, admin.token))).json<{ id: string }>();
+    const voided = await (await request(`/api/v1/fee-charges/${charge.id}/void`, json('POST', { reason: 'Raised twice' }, admin.token))).json<{ status: string; void_reason: string }>();
+    expect(voided).toMatchObject({ status: 'void', void_reason: 'Raised twice' });
+    expect((await pay(charge.id, admin.token, 1000)).status).toBe(409);
+    const still = await testEnv.DB.prepare('SELECT COUNT(*) n FROM fee_charges WHERE id = ?').bind(charge.id).first<{ n: number }>();
+    expect(still?.n).toBe(1);
+  });
+
+  it('writes an audit entry for money taken', async () => {
+    const { admin, squad, plan } = await setUp();
+    await generate(plan.id, admin.token);
+    const charge = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+    await pay(charge.id, admin.token, 25000);
+    const audits = await testEnv.DB.prepare("SELECT action, summary FROM audit_log WHERE action = 'fee_payment_recorded' AND entity_id = ?").bind(charge.id).all<{ action: string; summary: string }>();
+    expect(audits.results).toHaveLength(1);
+    expect(audits.results[0]?.summary).toContain('25000 piastres');
+  });
+
+  describe('the squad ledger', () => {
+    it('totals the squad and puts whoever owes most at the top', async () => {
+      const { admin, team, squad, plan } = await setUp();
+      await generate(plan.id, admin.token);
+      // One settled, one half paid, one untouched.
+      const first = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+      const second = (await chargesFor(squad[1]!.id, admin.token))[0]!;
+      await pay(first.id, admin.token, 120000);
+      await pay(second.id, admin.token, 60000);
+
+      const summary = await (await request(`/api/v1/teams/${team.id}/fee-summary?period=2026-09`, json('GET', undefined, admin.token))).json<{
+        totals: { charged_piastres: number; paid_piastres: number; outstanding_piastres: number; players_paid: number; players_outstanding: number };
+        players: { player: { id: string }; outstanding_piastres: number; status: string }[];
+      }>();
+      expect(summary.totals).toMatchObject({ charged_piastres: 360000, paid_piastres: 180000, outstanding_piastres: 180000, players_paid: 1, players_outstanding: 2 });
+      expect(summary.players[0]?.outstanding_piastres).toBe(120000);
+      expect(summary.players.at(-1)).toMatchObject({ status: 'paid', outstanding_piastres: 0 });
+    });
+
+    it('leaves a cancelled charge out of the totals', async () => {
+      const { admin, team, squad } = await setUp();
+      const charge = await (await request('/api/v1/fee-charges', json('POST', {
+        player_id: squad[0]!.id, label: 'Kit', amount_piastres: 40000, due_on: '2026-10-01',
+      }, admin.token))).json<{ id: string }>();
+      await request(`/api/v1/fee-charges/${charge.id}/void`, json('POST', {}, admin.token));
+      const summary = await (await request(`/api/v1/teams/${team.id}/fee-summary`, json('GET', undefined, admin.token))).json<{ totals: { charged_piastres: number } }>();
+      expect(summary.totals.charged_piastres).toBe(0);
+    });
+  });
+
+  describe('who may see a fee', () => {
+    it('shows a parent their own child and refuses another', async () => {
+      const { admin, squad, plan } = await setUp();
+      await generate(plan.id, admin.token);
+      const parent = await seedUser('parent');
+      await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, squad[0]!.id, now).run();
+
+      const mine = await (await request('/api/v1/fee-charges', json('GET', undefined, parent.token))).json<{ items: { player: { id: string } }[] }>();
+      expect(mine.items).toHaveLength(1);
+      expect(mine.items[0]?.player.id).toBe(squad[0]!.id);
+
+      const theirs = await request(`/api/v1/fee-charges?player_id=${squad[1]!.id}`, json('GET', undefined, parent.token));
+      expect(theirs.status).toBe(403);
+      expect(await theirs.json()).toMatchObject({ detail: { code: 'player_access_denied' } });
+    });
+
+    it('lets nobody but an administrator raise a charge or take money', async () => {
+      const { admin, squad, plan } = await setUp();
+      await generate(plan.id, admin.token);
+      const playerUser = await seedUser('player', squad[0]!.id);
+      const charge = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+      expect((await pay(charge.id, playerUser.token, 1000)).status).toBe(403);
+      expect((await request('/api/v1/fee-charges', json('POST', { player_id: squad[0]!.id, label: 'x', amount_piastres: 100, due_on: '2026-10-01' }, playerUser.token))).status).toBe(403);
+      expect((await request(`/api/v1/teams/${squad[0]!.id}/fee-summary`, json('GET', undefined, playerUser.token))).status).toBe(403);
+    });
   });
 });
