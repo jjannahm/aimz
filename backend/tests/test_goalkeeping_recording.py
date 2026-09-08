@@ -57,8 +57,18 @@ async def _scaffold(client: AsyncClient, headers: dict[str, str]) -> dict:
         f"/api/v1/matches/{ids['match']}/lineup",
         headers=headers,
         json=[
-            {"player_id": ids["keeper"], "team_id": ids["home"], "is_starter": True, "position": "GK"},
-            {"player_id": ids["striker"], "team_id": ids["home"], "is_starter": True, "position": "ST"},
+            {
+                "player_id": ids["keeper"],
+                "team_id": ids["home"],
+                "is_starter": True,
+                "position": "GK",
+            },
+            {
+                "player_id": ids["striker"],
+                "team_id": ids["home"],
+                "is_starter": True,
+                "position": "ST",
+            },
         ],
     )
     assert lineup.status_code == 200, lineup.text
@@ -87,8 +97,14 @@ async def test_keeper_is_charged_with_goals_and_credited_a_save(
 
     # Two conceded, one the keeper's own side scored (off their record), and a
     # penalty the keeper saved.
-    await _event(client, admin_headers, match_id, "op-conceded-0001", type="goal", minute=10, team_id=ids["away"])
-    await _event(client, admin_headers, match_id, "op-conceded-0002", type="goal", minute=40, team_id=ids["away"])
+    await _event(
+        client, admin_headers, match_id, "op-conceded-0001",
+        type="goal", minute=10, team_id=ids["away"],
+    )
+    await _event(
+        client, admin_headers, match_id, "op-conceded-0002",
+        type="goal", minute=40, team_id=ids["away"],
+    )
     await _event(
         client, admin_headers, match_id, "op-conceded-0003",
         type="goal", minute=25, team_id=ids["home"], player_id=ids["striker"],

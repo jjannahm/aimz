@@ -56,7 +56,14 @@ async def _finished_goal_for_squad_a(client: AsyncClient, headers: dict[str, str
     lineup = await client.put(
         f"/api/v1/matches/{ids['match']}/lineup",
         headers=headers,
-        json=[{"player_id": ids["player"], "team_id": ids["a"], "is_starter": True, "position": "ST"}],
+        json=[
+            {
+                "player_id": ids["player"],
+                "team_id": ids["a"],
+                "is_starter": True,
+                "position": "ST",
+            }
+        ],
     )
     assert lineup.status_code == 200, lineup.text
     started = await client.post(

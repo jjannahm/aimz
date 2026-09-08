@@ -16,7 +16,6 @@ from app.db.models import (
 from app.services.knockout_shape import (
     GROUP_SIZE,
     group_count_for,
-    round_label,
     rounds_for,
 )
 
@@ -128,7 +127,7 @@ async def group_standings(
     for row in rows.values():
         key = row.team.competition_group_id or ""
         by_group.setdefault(key, []).append(row)
-    for key, standings in by_group.items():
+    for standings in by_group.values():
         standings.sort(
             key=lambda r: (
                 -r.points,

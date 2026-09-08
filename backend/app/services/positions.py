@@ -35,7 +35,9 @@ POSITIONS: list[tuple[str, str, PositionLine]] = [
 GOALKEEPER = "GK"
 
 POSITION_CODES: frozenset[str] = frozenset(code for code, _, _ in POSITIONS)
-_BY_NAME_LOOSE = {name.lower().replace("-", "").replace(" ", ""): code for code, name, _ in POSITIONS}
+_BY_NAME_LOOSE = {
+    name.lower().replace("-", "").replace(" ", ""): code for code, name, _ in POSITIONS
+}
 
 
 def code_for_free_text(value: str | None) -> str:

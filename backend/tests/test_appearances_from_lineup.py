@@ -56,8 +56,18 @@ async def _scaffold(client: AsyncClient, headers: dict) -> dict:
         f"/api/v1/matches/{ids['match']}/lineup",
         headers=headers,
         json=[
-            {"player_id": ids["quiet"], "team_id": ids["home"], "is_starter": True, "position": "CB"},
-            {"player_id": ids["bench"], "team_id": ids["home"], "is_starter": False, "position": "ST"},
+            {
+                "player_id": ids["quiet"],
+                "team_id": ids["home"],
+                "is_starter": True,
+                "position": "CB",
+            },
+            {
+                "player_id": ids["bench"],
+                "team_id": ids["home"],
+                "is_starter": False,
+                "position": "ST",
+            },
         ],
     )
     assert lineup.status_code == 200, lineup.text

@@ -5,7 +5,6 @@ transient ORM objects, the way the Worker unit-tests goalkeeping.ts. An
 end-to-end pass through live scoring lives in test_goalkeeping_recording.py.
 """
 
-import pytest
 
 from app.db.models import EventType, MatchEvent, MatchLineupEntry, PenaltyOutcome
 from app.services.goalkeeping import (

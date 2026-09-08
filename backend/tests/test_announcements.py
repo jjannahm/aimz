@@ -63,7 +63,7 @@ async def test_pinned_sorts_first_and_list_counts(
         headers=admin_headers,
         json={"title": "First", "body": "Body one."},
     )
-    second = await client.post(
+    await client.post(
         "/api/v1/announcements",
         headers=admin_headers,
         json={"title": "Second", "body": "Body two.", "pinned": True},

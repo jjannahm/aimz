@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Response
+from fastapi import APIRouter
 from sqlalchemy import select, update
 
 from app.api.deps import AdminUser, CurrentUser, SessionDep
