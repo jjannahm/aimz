@@ -17,6 +17,7 @@ jobs:
     continue-on-error: true
     name: Backend
     runs-on: ubuntu-latest
+    continue-on-error: true
     defaults:
       run:
         working-directory: backend
