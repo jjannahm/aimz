@@ -15,6 +15,7 @@ import { registerReportRoutes } from "./reports";
 import { registerRosterRoutes } from "./roster";
 import { registerStatsRoutes } from "./stats";
 import { registerTrainingRoutes } from "./training";
+import { registerTrainingStatsRoutes } from "./training-stats";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -76,6 +77,7 @@ registerStatsRoutes(app);
 registerAuditRoutes(app);
 registerKnockoutRoutes(app);
 registerTrainingRoutes(app);
+registerTrainingStatsRoutes(app);
 registerAnnouncementRoutes(app);
 registerAssignmentRoutes(app);
 registerRosterRoutes(app);
