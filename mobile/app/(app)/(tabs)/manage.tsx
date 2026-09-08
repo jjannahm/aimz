@@ -21,6 +21,7 @@ import { FamilyIcon } from '@/src/components/FamilyIcon';
 import { FormField } from '@/src/components/FormField';
 import { PlayerPickerField } from '@/src/components/PlayerPickerField';
 import { PositionField } from '@/src/components/PositionField';
+import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { AccountsSection } from '@/src/components/manage/AccountsSection';
 import { BulkPlayerImport } from '@/src/components/manage/BulkPlayerImport';
 import { AnnouncementsManager, ScheduleManager } from '@/src/components/manage/HubManagers';
@@ -42,9 +43,23 @@ type LegacyResource = 'teams' | 'competitions' | 'opponents' | 'players' | 'matc
 type HubResource = 'schedule' | 'announcements';
 type Resource = LegacyResource | HubResource;
 type Entity = Team | Competition | Player | Match | RegistrationInvite;
+
+/**
+ * The pills across the top. Fewer than the sections behind them: an opposing
+ * club is a squad with `is_aimz` off, and a match and a training session are
+ * both something in the diary, so each pair shares a pill and separates
+ * underneath it.
+ */
+type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'announcements' | 'invites';
 /** `short`, where it is given, is the wording the navigation pill uses: a
  * quarter of a phone's width does not hold every label at the pill's type size. */
-const resources: { label: string; short?: string; value: Resource }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Opponents', value: 'opponents' }, { label: 'Players', value: 'players' }, { label: 'Matches', value: 'matches' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }];
+const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }];
+/** Whose squads the Squads pill is showing. */
+const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
+/** Which half of the diary the Schedule pill is showing. */
+const scheduleKinds = [{ label: 'Training Sessions', value: 'schedule' }, { label: 'Matches', value: 'matches' }] as const;
+type SquadKind = (typeof squadKinds)[number]['value'];
+type ScheduleKind = (typeof scheduleKinds)[number]['value'];
 const formSummary: Record<LegacyResource, string> = {
   teams: 'A squad’s name, age group, competition and coaches.',
   competitions: 'A league, knockout or friendly, and the season it runs in.',
@@ -226,7 +241,10 @@ export default function ManageScreen() {
   const styles = useThemedStyles(stylesheet);
   const { user } = useAuth();
   const client = useQueryClient();
-  const [resource, setResource] = React.useState<Resource>('teams');
+  const [tab, setTab] = React.useState<Tab>('teams');
+  /** Each shared pill remembers which half of itself is showing. */
+  const [squadKind, setSquadKind] = React.useState<SquadKind>('teams');
+  const [scheduleKind, setScheduleKind] = React.useState<ScheduleKind>('schedule');
   const [editing, setEditing] = React.useState<Entity | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
   /** Every section arrives folded; editing a row, or drawing up a knockout, unfolds it. */
@@ -244,19 +262,37 @@ export default function ManageScreen() {
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: defaults });
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
 
-  const switchResource = (next: Resource) => { setResource(next); setEditing(null); setFormOpen(false); form.reset(defaults); setFormError(null); setSearch(''); };
-  // Eight sections stay visible in a fixed two-by-four grid. Every cell keeps
-  // its quarter of the width whatever it holds, so the two rows line up, and
-  // the cells stretch their pills to an even row height.
+  // Anything half-typed belongs to the section it was typed in, so leaving one
+  // clears it — and moving between the two halves of a shared pill is leaving
+  // one just as much as changing pill is.
+  const leaveSection = () => { setEditing(null); setFormOpen(false); form.reset(defaults); setFormError(null); setSearch(''); };
+  // A pill always reopens on its first half. Coming back to Squads and landing
+  // on the opposing clubs, because that is where you were twenty minutes ago,
+  // reads as the app having lost your place rather than kept it.
+  const switchResource = (next: Tab) => { setTab(next); setSquadKind('teams'); setScheduleKind('schedule'); leaveSection(); };
+  const switchSquadKind = (next: SquadKind) => { setSquadKind(next); leaveSection(); };
+  const switchScheduleKind = (next: ScheduleKind) => { setScheduleKind(next); leaveSection(); };
+  // Every cell keeps its quarter of the width whatever it holds, so the rows
+  // line up and the cells stretch their pills to an even row height.
   const resourceChips = <View style={styles.chips}>{resources.map((item) => <View key={item.value} style={styles.chipCell}>
-    <AnimatedTabPill accessibilityLabel={item.label} compact label={item.short ?? item.label} onPress={() => switchResource(item.value)} selected={resource === item.value} style={styles.chip} testID={`manage-tab-${item.value}`} />
+    <AnimatedTabPill accessibilityLabel={item.label} compact label={item.short ?? item.label} onPress={() => switchResource(item.value)} selected={tab === item.value} style={styles.chip} testID={`manage-tab-${item.value}`} />
   </View>)}</View>;
+  // The section actually being managed, which for two of the pills depends on
+  // which half of it is showing. Everything below reads this rather than the
+  // pill, so the sections themselves did not have to change.
+  const resource: Resource = tab === 'teams' ? squadKind : tab === 'schedule' ? scheduleKind : tab;
+  const subTabs = tab === 'teams'
+    ? <SegmentedControl label="Squad kind" onChange={switchSquadKind} options={squadKinds} value={squadKind} />
+    : tab === 'schedule'
+      ? <SegmentedControl label="Schedule kind" onChange={switchScheduleKind} options={scheduleKinds} value={scheduleKind} />
+      : null;
   // The academy's own age squads, which is what a session or a notice is for.
   // `is_aimz` alone would name the league's clubs too: they carry it so that
   // players, lineups and live scoring work for them, and they have no age group.
   const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
   if (resource === 'schedule' || resource === 'announcements') return <Screen scrollRef={pageRef} title="Manage Academy">
     {resourceChips}
+    {subTabs}
     <View style={styles.content} testID="manage-content">
       {resource === 'schedule' ? <ScheduleManager teams={aimzTeams} /> : <AnnouncementsManager teams={aimzTeams} />}
     </View>
@@ -264,7 +300,9 @@ export default function ManageScreen() {
   const query = resource === 'teams' || resource === 'opponents' ? teams : resource === 'competitions' ? competitions : resource === 'players' ? players : resource === 'matches' ? matches : invites;
   const allTeams = teams.data?.items ?? [];
   const items: Entity[] = resource === 'teams' ? allTeams.filter((team) => team.is_aimz) : resource === 'opponents' ? allTeams.filter((team) => !team.is_aimz) : resource === 'competitions' ? competitions.data?.items ?? [] : resource === 'players' ? players.data?.items ?? [] : resource === 'matches' ? matches.data?.items ?? [] : invites.data ?? [];
-  const listLabel = resources.find((item) => item.value === resource)?.label.toLowerCase() ?? 'items';
+  // Named after the section rather than the pill: under Squads the pill says
+  // "Squads" for both halves, and "Add squads" is wrong above a list of clubs.
+  const listLabel = resource === 'opponents' ? 'opponents' : resource === 'matches' ? 'matches' : resources.find((item) => item.value === tab)?.label.toLowerCase() ?? 'items';
   // A hundred players is quicker to search than to scroll. A row is matched on
   // the two lines it actually shows, so a position or a shirt number finds one.
   const shown = narrowBySearch(items, search, (item) => `${entityTitle(item)} ${entityMeta(item)}`);
@@ -402,6 +440,7 @@ export default function ManageScreen() {
 
   return <Screen scrollRef={pageRef} title="Manage Academy">
     {resourceChips}
+    {subTabs}
     <View style={styles.content} testID="manage-content">
       {!appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}
       <CollapsibleCard onOpenChange={setFormOpen} open={formOpen} summary={formSummary[resource]} title={`${editing ? 'Edit' : 'Add'} ${listLabel}`} tone="raised">{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields competitions={competitions.data?.items ?? []} control={form.control} editingId={editing && resource === 'competitions' ? editing.id : null} errors={form.formState.errors} players={players.data?.items ?? []} resource={resource} setValue={form.setValue} teams={teams.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></CollapsibleCard>

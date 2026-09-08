@@ -59,6 +59,18 @@ const emptyPage = { items: [], total: 0, limit: 100, offset: 0 };
 const openForm = async (screen: Awaited<ReturnType<typeof render>>, section: string) =>
   fireEvent.press(await screen.findByRole('button', { name: `Show add ${section} form` }));
 
+/**
+ * The navigation pills, by testID rather than by role: the sub-tabs under
+ * Squads and Schedule are a SegmentedControl, whose segments are tabs too, so
+ * a role query would return both rows mixed together.
+ */
+const pills = (screen: Awaited<ReturnType<typeof render>>) =>
+  screen.getAllByTestId(/^manage-tab-[a-z]+$/u).map((pill) => pill.props.accessibilityLabel);
+
+/** One half of a shared pill: Squads and Schedule each hold two sections. */
+const subTab = async (screen: Awaited<ReturnType<typeof render>>, name: string) =>
+  fireEvent.press(await screen.findByRole('tab', { name }));
+
 describe('ManageScreen navigation', () => {
   beforeEach(() => {
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
@@ -74,23 +86,55 @@ describe('ManageScreen navigation', () => {
     jest.restoreAllMocks();
   });
 
-  it('offers all eight animated tabs with full accessible labels', async () => {
+  it('offers a pill for each section, with opponents and matches folded into their pair', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await screen.findByText('Add squads');
 
-    expect(screen.getAllByRole('tab').map((tab) => tab.props.accessibilityLabel)).toEqual([
+    expect(pills(screen)).toEqual([
       'Squads',
       'Competitions',
-      'Opponents',
       'Players',
-      'Matches',
       'Schedule',
       'Announcements',
       'Invites',
     ]);
-    expect(screen.getByRole('tab', { name: 'Squads' }).props.accessibilityState.selected).toBe(true);
+    // The two that were merged away are reachable, but underneath their pill.
+    expect(screen.queryByTestId('manage-tab-opponents')).toBeNull();
+    expect(screen.queryByTestId('manage-tab-matches')).toBeNull();
     expect(screen.getByTestId('manage-tab-teams-fill')).toBeTruthy();
     expect(screen.getByTestId('manage-content')).toBeTruthy();
+  });
+
+  it('opens the Squads pill on our own squads, with opponents alongside', async () => {
+    const screen = await render(<ManageScreen />, { wrapper });
+    expect(await screen.findByRole('tab', { name: 'AIMZ Squads' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'AIMZ Squads' }).props.accessibilityState.selected).toBe(true);
+    expect(await screen.findByText('Add squads')).toBeTruthy();
+
+    await subTab(screen, 'Opponent Squads');
+    expect(await screen.findByText('Add opponents')).toBeTruthy();
+  });
+
+  it('opens the Schedule pill on training, with matches alongside', async () => {
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.press(screen.getByTestId('manage-tab-schedule'));
+    expect(await screen.findByText('Schedule manager content')).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Training Sessions' }).props.accessibilityState.selected).toBe(true);
+
+    await subTab(screen, 'Matches');
+    expect(await screen.findByText('Add matches')).toBeTruthy();
+    expect(screen.queryByText('Schedule manager content')).toBeNull();
+  });
+
+  // Each pill keeps its own half; leaving and coming back starts over.
+  it('starts a pill back on its first half when it is left and returned to', async () => {
+    const screen = await render(<ManageScreen />, { wrapper });
+    await subTab(screen, 'Opponent Squads');
+    await screen.findByText('Add opponents');
+
+    await fireEvent.press(screen.getByTestId('manage-tab-players'));
+    await fireEvent.press(screen.getByTestId('manage-tab-teams'));
+    expect(await screen.findByText('Add squads')).toBeTruthy();
   });
 
   it('changes section, clears the previous form, and reaches hub sections', async () => {
@@ -99,20 +143,20 @@ describe('ManageScreen navigation', () => {
     const teamName = await screen.findByLabelText('Team or squad name');
     await fireEvent.changeText(teamName, 'Unsaved squad');
 
-    await fireEvent.press(screen.getByRole('tab', { name: 'Opponents' }));
+    await subTab(screen, 'Opponent Squads');
     // The new section arrives folded, so the previous form is gone from the page.
     expect(screen.queryByLabelText('Opponent name')).toBeNull();
     await openForm(screen, 'opponents');
     expect(await screen.findByLabelText('Opponent name')).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Opponents' }).props.accessibilityState.selected).toBe(true);
+    expect(screen.getByRole('tab', { name: 'Opponent Squads' }).props.accessibilityState.selected).toBe(true);
 
-    await fireEvent.press(screen.getByRole('tab', { name: 'Squads' }));
+    await subTab(screen, 'AIMZ Squads');
     await openForm(screen, 'squads');
     await waitFor(() => expect(screen.getByLabelText('Team or squad name').props.value).toBe(''));
 
-    await fireEvent.press(screen.getByRole('tab', { name: 'Schedule' }));
+    await fireEvent.press(screen.getByTestId('manage-tab-schedule'));
     expect(await screen.findByText('Schedule manager content')).toBeTruthy();
-    await fireEvent.press(screen.getByRole('tab', { name: 'Announcements' }));
+    await fireEvent.press(screen.getByTestId('manage-tab-announcements'));
     expect(await screen.findByText('Announcements manager content')).toBeTruthy();
   });
 
@@ -219,7 +263,7 @@ describe('ManageScreen confirmations', () => {
   it('calls an opposing club an opponent, not a squad', async () => {
     jest.mocked(api.createTeam).mockResolvedValue({ id: 't-2' } as never);
     const screen = await render(<ManageScreen />, { wrapper });
-    await fireEvent.press(await screen.findByRole('tab', { name: 'Opponents' }));
+    await subTab(screen, 'Opponent Squads');
     await openForm(screen, 'opponents');
     await fireEvent.changeText(await screen.findByLabelText('Opponent name'), 'Cairo Stars');
     await fireEvent.press(screen.getByText('Add item'));
