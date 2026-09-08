@@ -194,6 +194,79 @@ export type AvailabilityStatus = 'going' | 'not_going';
 
 /** Whether a player turned up, or null while nobody has said either way. */
 export type AttendanceStatus = 'present' | 'absent';
+
+/** Where a charge stands. Worked out by the server on every read. */
+export type FeeStatus = 'void' | 'paid' | 'partial' | 'overdue' | 'unpaid';
+export type PaymentMethod = 'cash' | 'instapay' | 'bank_transfer' | 'other';
+
+/** A recurring monthly amount for one squad. Money is whole piastres. */
+export type FeePlan = {
+  id: string;
+  team_id: string;
+  team: Team | null;
+  label: string;
+  amount_piastres: number;
+  due_day: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type FeePayment = {
+  id: string;
+  fee_charge_id: string;
+  amount_piastres: number;
+  paid_on: string;
+  method: PaymentMethod;
+  note: string | null;
+  recorded_by_name: string;
+  created_at: string;
+};
+
+/** One amount owed by one player, monthly or one-off. */
+export type FeeCharge = {
+  id: string;
+  player_id: string;
+  player: Player | null;
+  team_id: string;
+  fee_plan_id: string | null;
+  period: string | null;
+  label: string;
+  amount_piastres: number;
+  paid_piastres: number;
+  outstanding_piastres: number;
+  status: FeeStatus;
+  due_on: string;
+  voided_at: string | null;
+  void_reason: string | null;
+  /** Only on a single charge read, not in a list. */
+  payments?: FeePayment[];
+};
+
+/** One squad's ledger: the totals, and a line per player. */
+export type FeeSummary = {
+  team: Team | null;
+  period: string | null;
+  totals: {
+    charged_piastres: number;
+    paid_piastres: number;
+    outstanding_piastres: number;
+    players_total: number;
+    players_paid: number;
+    players_overdue: number;
+    players_outstanding: number;
+  };
+  players: {
+    player: Player | null;
+    charged_piastres: number;
+    paid_piastres: number;
+    outstanding_piastres: number;
+    status: FeeStatus;
+  }[];
+};
+
+/** What generating a month reports back. */
+export type FeeGeneration = { period: string; created: number; skipped: number; squad_size: number };
 export type AttendanceMark = { player: Player; status: AttendanceStatus | null; marked_at: string | null };
 /** One session's register, with the tallies worked out server-side. */
 export type TrainingRegister = { items: AttendanceMark[]; present: number; absent: number; unmarked: number };

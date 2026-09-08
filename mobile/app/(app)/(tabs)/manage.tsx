@@ -24,6 +24,7 @@ import { PositionField } from '@/src/components/PositionField';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { AccountsSection } from '@/src/components/manage/AccountsSection';
 import { BulkPlayerImport } from '@/src/components/manage/BulkPlayerImport';
+import { FeesManager } from '@/src/components/manage/FeesManager';
 import { AnnouncementsManager, ScheduleManager } from '@/src/components/manage/HubManagers';
 import { Screen } from '@/src/components/Screen';
 import { narrowBySearch } from '@/src/components/SearchField';
@@ -40,7 +41,7 @@ import { ADVANCE_PER_GROUP, describeCustomDraw, EXTRA_TIME_PERIODS, GROUP_SIZE, 
 import type { BadgeStyle, Competition, InviteKind, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
 
 type LegacyResource = 'teams' | 'competitions' | 'opponents' | 'players' | 'matches' | 'invites';
-type HubResource = 'schedule' | 'announcements';
+type HubResource = 'schedule' | 'announcements' | 'fees';
 type Resource = LegacyResource | HubResource;
 type Entity = Team | Competition | Player | Match | RegistrationInvite;
 
@@ -50,10 +51,10 @@ type Entity = Team | Competition | Player | Match | RegistrationInvite;
  * both something in the diary, so each pair shares a pill and separates
  * underneath it.
  */
-type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'announcements' | 'invites';
+type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'announcements' | 'invites' | 'fees';
 /** `short`, where it is given, is the wording the navigation pill uses: a
  * quarter of a phone's width does not hold every label at the pill's type size. */
-const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }];
+const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }, { label: 'Fees', value: 'fees' }];
 /** Whose squads the Squads pill is showing. */
 const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
 /** Which half of the diary the Schedule pill is showing. */
@@ -290,11 +291,15 @@ export default function ManageScreen() {
   // `is_aimz` alone would name the league's clubs too: they carry it so that
   // players, lineups and live scoring work for them, and they have no age group.
   const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
-  if (resource === 'schedule' || resource === 'announcements') return <Screen scrollRef={pageRef} title="Manage Academy">
+  // The sections that manage themselves rather than through the shared form
+  // scaffold below: each is a screen of its own shape.
+  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees') return <Screen scrollRef={pageRef} title="Manage Academy">
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
-      {resource === 'schedule' ? <ScheduleManager teams={aimzTeams} /> : <AnnouncementsManager teams={aimzTeams} />}
+      {resource === 'schedule' ? <ScheduleManager teams={aimzTeams} />
+        : resource === 'announcements' ? <AnnouncementsManager teams={aimzTeams} />
+          : <FeesManager teams={aimzTeams} />}
     </View>
   </Screen>;
   const query = resource === 'teams' || resource === 'opponents' ? teams : resource === 'competitions' ? competitions : resource === 'players' ? players : resource === 'matches' ? matches : invites;
