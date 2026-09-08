@@ -45,7 +45,7 @@ export default function SharedReportScreen() {
           onRetry={() => report.refetch()}
         />
         : <>
-          <ReportCard report={report.data} />
+          <ReportCard report={report.data} size="page" />
           {/* No PDF library anywhere in this app, and none needed: the browser
             * prints this page, and Save as PDF is inside its own dialog. */}
           {Platform.OS === 'web' ? <View style={styles.print}>

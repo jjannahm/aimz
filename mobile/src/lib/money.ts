@@ -35,3 +35,16 @@ export function parseEgp(text: string): number | null {
   if (!Number.isFinite(pounds)) return null;
   return Math.round(pounds * PIASTRES_IN_POUND);
 }
+
+/**
+ * The same amount, without the decimals when there are none: `3,600 EGP`.
+ *
+ * For a report, which says what a family owes rather than accounting for it.
+ * The ledger keeps `formatEgp`, because a screen where money is taken has to
+ * show the exact figure.
+ */
+export function formatEgpRound(piastres: number): string {
+  return piastres % PIASTRES_IN_POUND === 0
+    ? `${piastres < 0 ? '−' : ''}${new Intl.NumberFormat('en-EG').format(Math.abs(piastres) / PIASTRES_IN_POUND)} EGP`
+    : formatEgp(piastres);
+}
