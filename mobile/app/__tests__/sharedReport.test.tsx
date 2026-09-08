@@ -54,8 +54,8 @@ describe('the page a shared report link opens', () => {
     await waitFor(() => expect(screen.getByText('86%')).toBeTruthy());
     expect(screen.getByText('12 of 14')).toBeTruthy();
     expect(screen.getByText('604')).toBeTruthy();
-    expect(screen.getByText('3,600.00 EGP')).toBeTruthy();
-    expect(screen.getByText('700.00 EGP')).toBeTruthy();
+    expect(screen.getByText('3,600 EGP')).toBeTruthy();
+    expect(screen.getByText('700 EGP')).toBeTruthy();
     expect(screen.getByText('Outstanding, overdue')).toBeTruthy();
     expect(screen.getByText('Reads the game well and is first to every second ball.')).toBeTruthy();
     expect(screen.getByText('Written by Coach Nour on 20 December 2026.')).toBeTruthy();

@@ -1,4 +1,4 @@
-import { formatEgp, parseEgp, poundsOf } from '@/src/lib/money';
+import { formatEgp, formatEgpRound, parseEgp, poundsOf } from '@/src/lib/money';
 
 describe('formatEgp', () => {
   it('reads a whole subscription as pounds', () => {
@@ -41,5 +41,25 @@ describe('parseEgp', () => {
     for (const piastres of [0, 1, 999, 120000, 100_000_000]) {
       expect(parseEgp(poundsOf(piastres))).toBe(piastres);
     }
+  });
+});
+
+describe('formatEgpRound', () => {
+  // A report says what a family owes; the trailing .00 is accounting noise, and
+  // at report size it is what pushes an amount onto a second line.
+  it('drops the decimals when there are none', () => {
+    expect(formatEgpRound(360000)).toBe('3,600 EGP');
+    expect(formatEgpRound(70000)).toBe('700 EGP');
+    expect(formatEgpRound(0)).toBe('0 EGP');
+  });
+
+  it('keeps them when the amount is not whole pounds', () => {
+    expect(formatEgpRound(1230)).toBe('12.30 EGP');
+    expect(formatEgpRound(1)).toBe('0.01 EGP');
+  });
+
+  it('marks a refund the same way the exact figure does', () => {
+    expect(formatEgpRound(-5000)).toBe('−50 EGP');
+    expect(formatEgpRound(-1230)).toBe('−12.30 EGP');
   });
 });
