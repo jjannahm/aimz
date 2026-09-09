@@ -19,6 +19,23 @@ const readTotal = (metric: TrainingMetric, value: number) =>
 const shortLabel = (metric: TrainingMetric) => metric.kind === 'rating' ? `${metric.label} avg` : metric.label;
 
 /**
+ * How far from the squad's average still counts as being at it.
+ *
+ * Landing exactly on the average is rare, so without a band almost everybody
+ * reads as above or below it, and one missed session flips a player from one to
+ * the other. Five points either way is wide enough to be steady.
+ */
+const SAME_AS_SQUAD = 5;
+
+/** Where this player sits against her squad, in a word. */
+function standing(pct: number | null, teamPct: number | null) {
+  if (pct === null || teamPct === null) return null;
+  const gap = pct - teamPct;
+  if (Math.abs(gap) <= SAME_AS_SQUAD) return 'average' as const;
+  return gap > 0 ? 'above' as const : 'below' as const;
+}
+
+/**
  * What a player did at training, as against what they did in matches.
  *
  * The tallies are one panel divided by hairlines rather than six cards with
@@ -39,6 +56,12 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
   if (query.isError || !query.data) return <ErrorState message={(query.error as ApiError)?.message ?? 'Training stats not found.'} onRetry={() => query.refetch()} />;
   const { attendance, totals, sessions, metrics } = query.data;
   const byId = new Map(metrics.map((metric) => [metric.id, metric]));
+  const sits = standing(attendance.pct, attendance.team_pct);
+  const verdict = { above: 'Above average', average: 'Average', below: 'Below average' } as const;
+  // Above in the same green a present mark carries. Below in amber rather than
+  // the red beside it: this is a child's attendance read by her own family, and
+  // red states a failure where the figure only shows a gap.
+  const verdictTone = { above: colors.live, average: colors.textMuted, below: colors.warning } as const;
 
   // A metric nobody has recorded is left out rather than shown as a zero: a
   // nought here would read as a mark given, not as one never given.
@@ -46,8 +69,21 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
     ...(attendance.expected > 0 ? [
       { key: 'attended', label: 'Attended', value: `${attendance.attended} of ${attendance.expected}` },
       { key: 'attendance', label: 'Attendance', value: `${attendance.pct}%`, tone: colors.accentSoft },
+      // Her own percentage says nothing on its own — 80% in a squad averaging
+      // 95 is not 80% in one averaging 60 — so the squad's figure sits beside
+      // it with where she falls against it underneath. Inside this block on
+      // purpose: a squad average with no personal figure next to it is a number
+      // with nothing to compare.
+      ...(attendance.team_pct === null ? [] : [{
+        key: 'team-attendance',
+        label: 'Team average',
+        value: `${attendance.team_pct}%`,
+        ...(sits ? { note: verdict[sits], noteTone: verdictTone[sits] } : {}),
+      }]),
     ] : []),
-    ...totals.filter((total) => total.value !== null).map((total) => ({
+    // Ratings only. A season's worth of minutes is a total rather than a mark
+    // against a scale, and it is still on every session row below.
+    ...totals.filter((total) => total.value !== null && total.metric.kind === 'rating').map((total) => ({
       key: total.metric.id,
       label: shortLabel(total.metric),
       value: readTotal(total.metric, total.value!),
