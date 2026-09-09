@@ -98,10 +98,10 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
     },
   ] : [];
 
-  const block = (title: string, figures: Figure[], empty: string) => <>
+  const block = (title: string, figures: Figure[], empty: string, divided = true) => <>
     <Text accessibilityRole="header" style={[styles.heading, at('heading')]}>{title}</Text>
     {figures.length
-      ? <FlatCard radius={theme.radius.md} style={styles.grid}><Figures figures={figures} size={size} /></FlatCard>
+      ? <FlatCard radius={theme.radius.md} style={divided ? styles.grid : styles.block}><Figures divided={divided} figures={figures} size={size} /></FlatCard>
       : <FlatCard radius={theme.radius.md} style={styles.block}><Text style={styles.muted}>{empty}</Text></FlatCard>}
   </>;
 
@@ -118,7 +118,11 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
 
     {snapshot ? <>
       {block('Training', training, 'Nothing was recorded at training over this period.')}
-      {block('Matches', matches, 'No matches played over this period.')}
+      {/* Undivided, unlike the other two: how many figures a match record has
+        * depends on whether there were cards, so its last row is usually a
+        * partial one and the lines stop halfway across with nothing under
+        * them. Training and fees fill their rows. */}
+      {block('Matches', matches, 'No matches played over this period.', false)}
       {block('Fees', fees, 'Nothing has been charged.')}
     </> : null}
 
@@ -145,19 +149,20 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
  * figures are what somebody came for. The same grid the player's own training
  * page uses, so a reader moving between the two is looking at one thing.
  */
-function Figures({ figures, size }: { figures: Figure[]; size: ReportSize }) {
+function Figures({ figures, size, divided }: { figures: Figure[]; size: ReportSize; divided: boolean }) {
   const styles = useThemedStyles(stylesheet);
   const big = size === 'page';
   // Two sit as halves; more divide into thirds and wrap, so the rows line up
   // column for column however many there turn out to be.
   const across = figures.length <= 2 ? 2 : 3;
-  return <View style={styles.row}>{figures.map((figure, index) => <View
+  return <View style={[styles.row, !divided && styles.rowPlain]}>{figures.map((figure, index) => <View
     key={figure.key}
     style={[
       styles.cell,
+      !divided && styles.cellPlain,
       { flexBasis: `${100 / across}%` },
-      index % across !== 0 && styles.dividerLeft,
-      index >= across && styles.dividerTop,
+      divided && index % across !== 0 && styles.dividerLeft,
+      divided && index >= across && styles.dividerTop,
     ]}
   >
     <Text
@@ -182,6 +187,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // The dividers are drawn inside the card, so it keeps its own rounded edge.
   grid: { overflow: 'hidden', padding: 0 },
   row: { flexDirection: 'row', flexWrap: 'wrap' },
+  // Without lines the rows need their own air, which the dividers were giving.
+  rowPlain: { rowGap: theme.spacing.md },
+  cellPlain: { paddingVertical: 0 },
   cell: { alignItems: 'center', gap: 2, minWidth: 0, paddingHorizontal: theme.spacing.xs, paddingVertical: theme.spacing.md },
   dividerLeft: { borderLeftColor: colors.border, borderLeftWidth: StyleSheet.hairlineWidth },
   dividerTop: { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
