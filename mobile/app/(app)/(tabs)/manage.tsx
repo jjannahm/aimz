@@ -282,6 +282,14 @@ export default function ManageScreen() {
   // off. Everything left is already scoped by the API, which is what makes
   // reusing the sections wholesale safe rather than merely convenient.
   const visibleResources = isManager ? resources.filter((item) => !ACADEMY_ONLY.includes(item.value)) : resources;
+  // The pill actually open. A pill left selected from another role, or named by
+  // hand, falls back to the first one this account has rather than rendering a
+  // section it may not open.
+  //
+  // Declared here, above everything that reads it: the chips below are built
+  // eagerly rather than in a callback, so a `const` declared after them is
+  // read inside its own dead zone and the whole screen throws.
+  const openTab: Tab = visibleResources.some((item) => item.value === tab) ? tab : 'teams';
 
   // Anything half-typed belongs to the section it was typed in, so leaving one
   // clears it — and moving between the two halves of a shared pill is leaving
@@ -302,7 +310,6 @@ export default function ManageScreen() {
   // The section actually being managed, which for two of the pills depends on
   // which half of it is showing. Everything below reads this rather than the
   // pill, so the sections themselves did not have to change.
-  const openTab: Tab = visibleResources.some((item) => item.value === tab) ? tab : 'teams';
   const resource: Resource = openTab === 'teams' ? squadKind : openTab === 'schedule' ? scheduleKind : openTab === 'reports' ? reportKind : openTab;
   const subTabs = openTab === 'teams'
     ? (isManager ? null : <SegmentedControl label="Squad kind" onChange={switchSquadKind} options={squadKinds} value={squadKind} />)
