@@ -21,9 +21,13 @@ const report: SharedReport = {
   published_at: '2026-12-20T09:00:00.000Z',
   published_by_name: 'Coach Nour',
   snapshot: {
-    version: 1,
+    version: 2,
     player: { name: 'Layla Hassan', team_name: 'AIMZ U14', position: 'CM', jersey_number: 8 },
     attendance: { attended: 12, expected: 14, pct: 86 },
+    training: [
+      { key: 'minutes_trained', label: 'Minutes trained', kind: 'count', max_value: null, value: 840, sessions: 12 },
+      { key: 'dribbling', label: 'Dribbling', kind: 'rating', max_value: 10, value: 7.5, sessions: 12 },
+    ],
     matches: { appearances: 9, minutes: 604, goals: 3, assists: 2, yellow_cards: 1, red_cards: 0 },
     fees: { charged_piastres: 360000, paid_piastres: 290000, outstanding_piastres: 70000, overdue: 1 },
     generated_at: '2026-12-20T09:00:00.000Z',
@@ -57,6 +61,11 @@ describe('the page a shared report link opens', () => {
     expect(screen.getByText('3,600 EGP')).toBeTruthy();
     expect(screen.getByText('700 EGP')).toBeTruthy();
     expect(screen.getByText('Outstanding, overdue')).toBeTruthy();
+    // The marks sit beside the register: how she trained, not only that she came.
+    expect(screen.getByText('840')).toBeTruthy();
+    expect(screen.getByText('Minutes trained')).toBeTruthy();
+    expect(screen.getByText('7.5/10')).toBeTruthy();
+    expect(screen.getByText('Dribbling avg')).toBeTruthy();
     expect(screen.getByText('Reads the game well and is first to every second ball.')).toBeTruthy();
     expect(screen.getByText('Written by Coach Nour on 20 December 2026.')).toBeTruthy();
   });
@@ -73,11 +82,22 @@ describe('the page a shared report link opens', () => {
   it('says nothing was recorded rather than showing a misleading zero', async () => {
     jest.mocked(api.sharedReport).mockResolvedValue({
       ...report,
-      snapshot: { ...report.snapshot!, attendance: { attended: 0, expected: 0, pct: null }, matches: { ...report.snapshot!.matches, appearances: 0 }, fees: { charged_piastres: 0, paid_piastres: 0, outstanding_piastres: 0, overdue: 0 } },
+      snapshot: { ...report.snapshot!, attendance: { attended: 0, expected: 0, pct: null }, training: [], matches: { ...report.snapshot!.matches, appearances: 0 }, fees: { charged_piastres: 0, paid_piastres: 0, outstanding_piastres: 0, overdue: 0 } },
     });
     const screen = await render(<SharedReportScreen />, { wrapper });
-    await waitFor(() => expect(screen.getByText('No register was taken over this period.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Nothing was recorded at training over this period.')).toBeTruthy());
     expect(screen.getByText('No matches played over this period.')).toBeTruthy();
     expect(screen.getByText('Nothing has been charged.')).toBeTruthy();
+  });
+
+  // A report published before the marks existed carries none, and simply
+  // shows the register rather than breaking.
+  it('reads a report written before training was marked', async () => {
+    const { training, ...older } = report.snapshot!;
+    jest.mocked(api.sharedReport).mockResolvedValue({ ...report, snapshot: { ...older, version: 1 } });
+    const screen = await render(<SharedReportScreen />, { wrapper });
+    await waitFor(() => expect(screen.getByText('12 of 14')).toBeTruthy());
+    expect(screen.getByText('86%')).toBeTruthy();
+    expect(screen.queryByText('Dribbling avg')).toBeNull();
   });
 });

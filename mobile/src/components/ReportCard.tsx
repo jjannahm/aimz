@@ -46,6 +46,11 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
   // than as a second copy of the whole sheet.
   const big = size === 'page';
   const at = (key: keyof typeof PAGE_TYPE) => (big ? { fontSize: PAGE_TYPE[key] } : null);
+  // The register and the marks share one block, so how many go across depends
+  // on how many there are: two sit as halves, more divide into thirds.
+  const marks = snapshot?.training ?? [];
+  const figures = (snapshot && snapshot.attendance.expected > 0 ? 2 : 0) + marks.length;
+  const training = { marks, figures, across: figures <= 2 ? 2 : 3 };
 
   return <View style={styles.stack}>
     <FlatCard radius={theme.radius.lg} style={styles.head}>
@@ -61,13 +66,26 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
     {snapshot ? <>
       <Text accessibilityRole="header" style={[styles.heading, at('heading')]}>Training</Text>
       <FlatCard radius={theme.radius.md} style={styles.block}>
-        {snapshot.attendance.expected === 0
+        {training.figures === 0
           // A zero would read as never turning up, when it means nobody kept a
-          // register over these weeks.
-          ? <Text style={styles.muted}>No register was taken over this period.</Text>
+          // register or gave a mark over these weeks.
+          ? <Text style={styles.muted}>Nothing was recorded at training over this period.</Text>
           : <View style={styles.figures}>
-            <Figure label="Attended" of={2} size={size} value={`${snapshot.attendance.attended} of ${snapshot.attendance.expected}`} />
-            <Figure label="Attendance" of={2} size={size} tone={colors.accentSoft} value={`${snapshot.attendance.pct}%`} />
+            {snapshot.attendance.expected > 0 ? <>
+              <Figure label="Attended" of={training.across} size={size} value={`${snapshot.attendance.attended} of ${snapshot.attendance.expected}`} />
+              <Figure label="Attendance" of={training.across} size={size} tone={colors.accentSoft} value={`${snapshot.attendance.pct}%`} />
+            </> : null}
+            {/* The marks, beside the register: how a player trained, not only
+              * whether they were there. A report published before these were
+              * recorded carries none, and simply shows the register. */}
+            {training.marks.map((mark) => <Figure
+              key={mark.key}
+              dense={mark.kind === 'count'}
+              label={mark.kind === 'rating' ? `${mark.label} avg` : mark.label}
+              of={training.across}
+              size={size}
+              value={mark.kind === 'rating' ? `${mark.value}/${mark.max_value ?? 10}` : mark.value}
+            />)}
           </View>}
       </FlatCard>
 

@@ -1193,7 +1193,7 @@ describe('player reports', () => {
     expect(await shared.json()).toMatchObject({
       title: 'Autumn term',
       coach_feedback: 'Reads the game well.',
-      snapshot: { version: 1, player: { name: 'Layla' } },
+      snapshot: { version: 2, player: { name: 'Layla' } },
     });
   });
 
@@ -1205,6 +1205,48 @@ describe('player reports', () => {
     const body = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<Record<string, unknown>>();
     for (const key of ['id', 'player_id', 'team_id', 'share_token']) expect(body[key]).toBeUndefined();
     expect(JSON.stringify(body)).not.toContain(mine.id);
+  });
+
+  // A report is about the whole of a term, not only the matches in it.
+  it('carries the training marks given inside the period', async () => {
+    const { admin, team, mine } = await setUp();
+    const sessions = await (await request('/api/v1/training-sessions', json('POST', {
+      team_id: team.id, venue: 'Palm', notes: null, duration_minutes: 90,
+      occurrences: ['2026-10-01T15:00:00.000Z', '2026-10-08T15:00:00.000Z'],
+    }, admin.token))).json<{ id: string }[]>();
+    const metrics = await (await request('/api/v1/training-metrics', json('GET', undefined, admin.token))).json<{ items: { id: string; key: string }[] }>();
+    const dribbling = metrics.items.find((metric) => metric.key === 'dribbling')!;
+    const minutes = metrics.items.find((metric) => metric.key === 'minutes_trained')!;
+    for (const [index, mark] of [6, 9].entries()) {
+      await request(`/api/v1/training-sessions/${sessions[index]!.id}/performance`, json('PUT', {
+        entries: [{ player_id: mine.id, metric_id: dribbling.id, value: mark }, { player_id: mine.id, metric_id: minutes.id, value: 90 }],
+      }, admin.token));
+    }
+
+    const report = await draft(mine.id, admin.token);
+    const published = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
+    const body = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<{ snapshot: { version: number; training: { key: string; value: number; sessions: number }[] } }>();
+
+    expect(body.snapshot.version).toBe(2);
+    // A rating averages, a count adds up.
+    expect(body.snapshot.training.find((row) => row.key === 'dribbling')).toMatchObject({ value: 7.5, sessions: 2 });
+    expect(body.snapshot.training.find((row) => row.key === 'minutes_trained')).toMatchObject({ value: 180, sessions: 2 });
+  });
+
+  it('leaves the marks out of a period they were not given in', async () => {
+    const { admin, team, mine } = await setUp();
+    const sessions = await (await request('/api/v1/training-sessions', json('POST', {
+      team_id: team.id, venue: 'Palm', notes: null, duration_minutes: 90, occurrences: ['2027-03-01T15:00:00.000Z'],
+    }, admin.token))).json<{ id: string }[]>();
+    const metrics = await (await request('/api/v1/training-metrics', json('GET', undefined, admin.token))).json<{ items: { id: string; key: string }[] }>();
+    const dribbling = metrics.items.find((metric) => metric.key === 'dribbling')!;
+    await request(`/api/v1/training-sessions/${sessions[0]!.id}/performance`, json('PUT', { entries: [{ player_id: mine.id, metric_id: dribbling.id, value: 9 }] }, admin.token));
+
+    // The report runs to December; the session is in March.
+    const report = await draft(mine.id, admin.token);
+    const published = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
+    const body = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<{ snapshot: { training: unknown[] } }>();
+    expect(body.snapshot.training).toEqual([]);
   });
 
   it('carries the fee standing the academy asked for', async () => {
