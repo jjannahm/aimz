@@ -1,5 +1,5 @@
 import type { Hono } from "hono";
-import { ApiProblem, adminUser, booleanField, enumField, jsonArray, jsonObject, nowIso, numberField, publicPlayer, publicStat, publicTeam, stringField } from "./helpers";
+import { ApiProblem, booleanField, enumField, jsonArray, jsonObject, nowIso, numberField, publicPlayer, publicStat, publicTeam, stringField } from "./helpers";
 import { computeGoalkeeperStats, playersWhoTookTheField } from "./goalkeeping";
 import { recordAudit } from "./audit";
 import { describeEvent, eventCounter, isOpponentOnly, LOGGABLE_EVENTS, PENALTY_OUTCOMES, SUBSTITUTION_REASONS } from "./scoring-rules";
@@ -7,6 +7,7 @@ import { getJoinedMatch, joinedMatch } from "./domain";
 import { MatchPhaseTransitionError, transitionMatchPhase } from "./match-clock";
 import { POSITION_CODES } from "./positions";
 import type { CompetitionRow, CompetitionStatus, EventRow, LineupRow, MatchRow, PlayerRow, StatRow, TeamRow } from "./types";
+import { guardMatch, manageMatch } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -82,7 +83,7 @@ export async function squadsForMatch(env: Env, matchId: string): Promise<Map<str
 
 export function registerMatchRoutes(app: App): void {
   app.post("/api/v1/matches/:id/phase", async (c) => {
-    const admin = await adminUser(c);
+    const admin = await manageMatch(c, c.req.param("id"));
     const match = await getJoinedMatch(c.env, c.req.param("id"));
     requireScorable(match); requireOpenSeason(match);
     const body = await jsonObject(c);
@@ -119,7 +120,7 @@ export function registerMatchRoutes(app: App): void {
    * it again on a finished match is how a wrong score is corrected.
    */
   app.post("/api/v1/matches/:id/result", async (c) => {
-    const admin = await adminUser(c);
+    const admin = await manageMatch(c, c.req.param("id"));
     const match = await getJoinedMatch(c.env, c.req.param("id"));
     if (!isOpponentOnly(match.home_is_aimz, match.away_is_aimz)) {
       throw new ApiProblem(409, "not_opponent_only", "This match has an AIMZ squad in it. Score it from live scoring.");
@@ -137,7 +138,7 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.post("/api/v1/matches/:id/man-of-the-match", async (c) => {
-    const admin = await adminUser(c);
+    const admin = await manageMatch(c, c.req.param("id"));
     const match = await getJoinedMatch(c.env, c.req.param("id"));
     requireScorable(match); requireOpenSeason(match);
     if (match.status !== "finished") throw new ApiProblem(409, "match_not_finished", "Pick man of the match once the match has finished.");
@@ -164,6 +165,7 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.get("/api/v1/matches/:id/live", async (c) => {
+    await guardMatch(c, c.req.param("id"));
     const match = await getJoinedMatch(c.env, c.req.param("id"));
     const etag = `W/\"${match.id}-${match.revision}\"`;
     if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
@@ -182,13 +184,14 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.get("/api/v1/matches/:id/events", async (c) => {
+    await guardMatch(c, c.req.param("id"));
     await getJoinedMatch(c.env, c.req.param("id"));
     const result = await c.env.DB.prepare("SELECT * FROM match_events WHERE match_id = ? ORDER BY COALESCE(minute, 999), created_at").bind(c.req.param("id")).all<EventRow>();
     return c.json(result.results.map(publicEvent));
   });
 
   app.post("/api/v1/matches/:id/events", async (c) => {
-    const admin = await adminUser(c);
+    const admin = await manageMatch(c, c.req.param("id"));
     const match = await getJoinedMatch(c.env, c.req.param("id"));
     requireScorable(match); requireOpenSeason(match);
     const body = await jsonObject(c);
@@ -253,7 +256,7 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.patch("/api/v1/matches/:matchId/events/:eventId", async (c) => {
-    const admin = await adminUser(c);
+    const admin = await manageMatch(c, c.req.param("matchId"));
     const match = await getJoinedMatch(c.env, c.req.param("matchId"));
     requireScorable(match); requireOpenSeason(match);
     const current = await c.env.DB.prepare("SELECT * FROM match_events WHERE id = ? AND match_id = ?").bind(c.req.param("eventId"), match.id).first<EventRow>();
@@ -284,7 +287,7 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.delete("/api/v1/matches/:matchId/events/:eventId", async (c) => {
-    const admin = await adminUser(c);
+    const admin = await manageMatch(c, c.req.param("matchId"));
     const match = await getJoinedMatch(c.env, c.req.param("matchId"));
     requireScorable(match); requireOpenSeason(match);
     const exists = await c.env.DB.prepare("SELECT id FROM match_events WHERE id = ? AND match_id = ?").bind(c.req.param("eventId"), match.id).first();
@@ -301,7 +304,7 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.put("/api/v1/matches/:id/lineup", async (c) => {
-    const admin = await adminUser(c); const match = await getJoinedMatch(c.env, c.req.param("id"));
+    const admin = await manageMatch(c, c.req.param("id")); const match = await getJoinedMatch(c.env, c.req.param("id"));
     requireScorable(match); requireOpenSeason(match);
     // Once under way, who is on the pitch changes through substitutions.
     if (match.status !== "scheduled") throw new ApiProblem(409, "lineup_locked", "The lineup is locked once the match starts. Log a substitution instead."); const body = await jsonArray(c); const statements = [c.env.DB.prepare("DELETE FROM match_lineup_entries WHERE match_id = ?").bind(match.id)]; const output: LineupRow[] = [];
@@ -318,7 +321,7 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.put("/api/v1/matches/:id/player-stats", async (c) => {
-    const admin = await adminUser(c); const match = await getJoinedMatch(c.env, c.req.param("id")); requireScorable(match); requireOpenSeason(match); const body = await jsonArray(c); const now = nowIso(); const statements = []; const playerIds: string[] = [];
+    const admin = await manageMatch(c, c.req.param("id")); const match = await getJoinedMatch(c.env, c.req.param("id")); requireScorable(match); requireOpenSeason(match); const body = await jsonArray(c); const now = nowIso(); const statements = []; const playerIds: string[] = [];
     // Which squad each player turned out for, taken from the lineup and falling
     // back to the squad she is on now. Stamped on the statistic so a promotion
     // to an older age group never carries this match's record with her.
@@ -337,6 +340,7 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.get("/api/v1/matches/:id/player-stats", async (c) => {
+    await guardMatch(c, c.req.param("id"));
     await getJoinedMatch(c.env, c.req.param("id")); const result = await c.env.DB.prepare("SELECT * FROM player_match_stats WHERE match_id=? ORDER BY player_id").bind(c.req.param("id")).all<StatRow>(); return c.json(result.results.map(publicStat));
   });
 

@@ -8,6 +8,6 @@
  * and left web handing React an undefined component. Sharing the names makes
  * `Record<TabIconName, …>` refuse to compile in both until both are answered.
  */
-export const TAB_ICON_NAMES = ['manage', 'matches', 'myTeam', 'players', 'reports', 'settings'] as const;
+export const TAB_ICON_NAMES = ['manage', 'matches', 'myTeam', 'players', 'reports', 'settings', 'squad'] as const;
 
 export type TabIconName = (typeof TAB_ICON_NAMES)[number];

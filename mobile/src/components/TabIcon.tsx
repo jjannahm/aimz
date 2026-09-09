@@ -12,6 +12,9 @@ type Props = {
 };
 
 const nativeIconNames: Record<Exclude<TabIconName, 'matches'>, keyof typeof Ionicons.glyphMap> = {
+  // A crest rather than a group of people: the tab is the squad — its record,
+  // its table, its fixtures — and the roster is one section inside it.
+  squad: 'shield-outline',
   reports: 'document-text-outline',
   players: 'people-outline',
   manage: 'create-outline',

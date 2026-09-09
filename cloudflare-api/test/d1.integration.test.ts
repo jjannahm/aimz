@@ -14,23 +14,30 @@ const json = (method: string, body?: unknown, token?: string): RequestInit => ({
 });
 const request = (path: string, init?: RequestInit) => app.request(`http://aimz.test${path}`, init, testEnv);
 
-const ROLE_NAMES = { admin: 'Test Admin', player: 'Test Player', parent: 'Test Parent' } as const;
+const ROLE_NAMES = { admin: 'Test Admin', player: 'Test Player', parent: 'Test Parent', manager: 'Test Manager' } as const;
 
-async function seedUser(role: 'admin' | 'player' | 'parent', playerId: string | null = null): Promise<{ id: string; token: string }> {
+async function seedUser(role: 'admin' | 'player' | 'parent' | 'manager', playerId: string | null = null): Promise<{ id: string; token: string }> {
   const id = crypto.randomUUID();
   await testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
     .bind(id, ROLE_NAMES[role], `${id}@aimz.test`, 'unused', role, playerId, now, now).run();
   return { id, token: await createAccessToken(id, role, testEnv.JWT_SECRET, 900) };
 }
 
+/** Gives a manager account a squad to run. */
+async function assignSquad(userId: string, teamId: string): Promise<void> {
+  await testEnv.DB.prepare('INSERT INTO user_teams (user_id, team_id, created_at) VALUES (?, ?, ?)').bind(userId, teamId, now).run();
+}
+
 beforeEach(async () => {
   await applyD1Migrations(testEnv.DB, JSON.parse(testEnv.TEST_MIGRATIONS));
 });
 
+
+
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0031_training_performance.sql');
+    expect(applied.results.at(-1)?.name).toBe('0032_manager_role.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -231,6 +238,18 @@ describe('the users rebuild keeps what points at it', () => {
     const rejected = testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, 1, ?, ?)')
       .bind(crypto.randomUUID(), 'Nobody', 'nobody@aimz.test', 'unused', 'coach', now, now).run();
     await expect(rejected, 'the CHECK still refuses a role nobody defined').rejects.toThrow();
+
+    // Replaying 0023 leaves `users` on the CHECK 0023 wrote, and this database
+    // is not rebuilt between tests. The chain does not stop there, so neither
+    // does this: 0032 goes back over the top, exactly as it does in production,
+    // and the table is left as the finished chain leaves it.
+    const managerRole = migrations.find((migration) => migration.name === '0032_manager_role.sql');
+    expect(managerRole, 'the manager-role migration is in the chain').toBeTruthy();
+    // Its own new tables are already there and are not what is being restored,
+    // so only the half that rebuilds `users` is replayed.
+    for (const query of managerRole!.queries.filter((query) => !/user_teams|invite_teams/u.test(query))) {
+      await testEnv.DB.prepare(query).run();
+    }
   });
 });
 
@@ -1597,5 +1616,141 @@ describe('a player read against their own squad', () => {
     // Nought would read as a squad that never turns up, rather than one nobody
     // has taken a register for yet.
     expect(stats.attendance).toMatchObject({ pct: null, team_pct: null });
+  });
+});
+
+describe('role scope', () => {
+  /**
+   * Two squads in two competitions, with an account attached to each side, so
+   * every assertion below is about the boundary between them rather than about
+   * an empty database.
+   */
+  async function twoSquads() {
+    const admin = await seedUser('admin');
+    const unique = crypto.randomUUID().slice(0, 8);
+    const post = async <T>(path: string, body: unknown): Promise<T> => (await request(path, json('POST', body, admin.token))).json<T>();
+    const league = await post<{ id: string }>('/api/v1/competitions', { name: `Cairo League ${unique}`, season: '2026/27', type: 'league' });
+    const other = await post<{ id: string }>('/api/v1/competitions', { name: `Delta League ${unique}`, season: '2026/27', type: 'league' });
+    const mine = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ U13 ${unique}`, is_aimz: true, competition_id: league.id });
+    const theirs = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ U15 ${unique}`, is_aimz: true, competition_id: other.id });
+    const rival = await post<{ id: string }>('/api/v1/teams', { name: `Cairo Comets ${unique}`, is_aimz: false, competition_id: league.id });
+    const myPlayer = await post<{ id: string }>('/api/v1/players', { name: 'Aya Nabil', team_id: mine.id, position: 'CB' });
+    const theirPlayer = await post<{ id: string }>('/api/v1/players', { name: 'Amina Adel', team_id: theirs.id, position: 'ST' });
+    const myMatch = await post<{ id: string }>('/api/v1/matches', { competition_id: league.id, home_team_id: mine.id, away_team_id: rival.id, kickoff_datetime: now, venue: 'Cairo', status: 'scheduled' });
+    const theirMatch = await post<{ id: string }>('/api/v1/matches', { competition_id: other.id, home_team_id: theirs.id, away_team_id: rival.id, kickoff_datetime: now, venue: 'Tanta', status: 'scheduled' });
+    return { admin, unique, league, other, mine, theirs, rival, myPlayer, theirPlayer, myMatch, theirMatch };
+  }
+
+  it('holds a player to their own squad, in every list and by id', async () => {
+    const world = await twoSquads();
+    const player = await seedUser('player', world.myPlayer.id);
+
+    const matches = await (await request('/api/v1/matches', json('GET', undefined, player.token))).json<{ items: { id: string }[] }>();
+    expect(matches.items.map((item) => item.id)).toEqual([world.myMatch.id]);
+
+    const players = await (await request('/api/v1/players', json('GET', undefined, player.token))).json<{ items: { id: string }[] }>();
+    expect(players.items.map((item) => item.id)).toEqual([world.myPlayer.id]);
+
+    const competitions = await (await request('/api/v1/competitions', json('GET', undefined, player.token))).json<{ items: { id: string }[] }>();
+    expect(competitions.items.map((item) => item.id)).toEqual([world.league.id]);
+
+    // Naming another squad's resource directly is refused, not answered.
+    for (const path of [
+      `/api/v1/matches/${world.theirMatch.id}/live`,
+      `/api/v1/players/${world.theirPlayer.id}/stats`,
+      `/api/v1/competitions/${world.other.id}/standings`,
+      `/api/v1/teams/${world.theirs.id}/squad-stats`,
+    ]) {
+      expect((await request(path, json('GET', undefined, player.token))).status).toBe(404);
+    }
+    // A team_id in the query string cannot widen the list either.
+    const asked = await (await request(`/api/v1/players?team_id=${world.theirs.id}`, json('GET', undefined, player.token))).json<{ items: unknown[] }>();
+    expect(asked.items).toEqual([]);
+  });
+
+  it('gives a parent their children and nothing else', async () => {
+    const world = await twoSquads();
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, world.myPlayer.id, now).run();
+
+    const matches = await (await request('/api/v1/matches', json('GET', undefined, parent.token))).json<{ items: { id: string }[] }>();
+    expect(matches.items.map((item) => item.id)).toEqual([world.myMatch.id]);
+    expect((await request(`/api/v1/matches/${world.theirMatch.id}/live`, json('GET', undefined, parent.token))).status).toBe(404);
+  });
+
+  it('shows no league to a squad that is in none', async () => {
+    const world = await twoSquads();
+    // The squad leaves its league but keeps a friendly, which is the case the
+    // app hides the standings tab for.
+    await testEnv.DB.prepare('UPDATE teams SET competition_id=NULL WHERE id=?').bind(world.mine.id).run();
+    const friendly = await (await request('/api/v1/competitions', json('POST', { name: `Pre-season ${crypto.randomUUID().slice(0, 8)}`, season: '2026/27', type: 'friendly' }, world.admin.token))).json<{ id: string }>();
+    await request('/api/v1/matches', json('POST', { competition_id: friendly.id, home_team_id: world.mine.id, away_team_id: world.rival.id, kickoff_datetime: now, venue: 'Cairo', status: 'scheduled' }, world.admin.token));
+    await testEnv.DB.prepare('DELETE FROM matches WHERE id=?').bind(world.myMatch.id).run();
+
+    const player = await seedUser('player', world.myPlayer.id);
+    const competitions = await (await request('/api/v1/competitions', json('GET', undefined, player.token))).json<{ items: { type: string }[] }>();
+    // The friendly is still there — it is where their fixture lives — but no
+    // league is, so there is nothing to draw a standings tab from.
+    expect(competitions.items).toHaveLength(1);
+    expect(competitions.items[0]?.type).toBe('friendly');
+    const matches = await (await request('/api/v1/matches', json('GET', undefined, player.token))).json<{ items: unknown[] }>();
+    expect(matches.items).toHaveLength(1);
+  });
+
+  it('lets a manager run their own squad and refuses them another', async () => {
+    const { unique, ...world } = await twoSquads();
+    const manager = await seedUser('manager');
+    await assignSquad(manager.id, world.mine.id);
+
+    // Their own squad: the same admin routes, answering normally.
+    const added = await request('/api/v1/players', json('POST', { name: 'Nour Hassan', team_id: world.mine.id, position: 'GK' }, manager.token));
+    expect(added.status).toBe(201);
+    expect((await request(`/api/v1/matches/${world.myMatch.id}/phase`, json('POST', { action: 'start_match' }, manager.token))).status).toBe(200);
+    expect((await request(`/api/v1/teams/${world.mine.id}`, json('PATCH', { name: `AIMZ U13 ${unique} renamed` }, manager.token))).status).toBe(200);
+    expect((await request('/api/v1/training-sessions', json('POST', { team_id: world.mine.id, occurrences: ['2027-03-01T15:00:00.000Z'], duration_minutes: 90, venue: 'Cairo pitch' }, manager.token))).status).toBe(201);
+
+    // Somebody else's squad: refused at the API, whatever the URL says.
+    const intruding = await request('/api/v1/players', json('POST', { name: 'Not Mine', team_id: world.theirs.id, position: 'GK' }, manager.token));
+    expect(intruding.status).toBe(403);
+    expect(await intruding.json()).toMatchObject({ detail: { code: 'team_access_denied' } });
+    expect((await request(`/api/v1/matches/${world.theirMatch.id}/phase`, json('POST', { action: 'start_match' }, manager.token))).status).toBe(403);
+    expect((await request(`/api/v1/teams/${world.theirs.id}`, json('PATCH', { name: 'Taken over' }, manager.token))).status).toBe(403);
+    expect((await request('/api/v1/training-sessions', json('POST', { team_id: world.theirs.id, occurrences: ['2027-03-01T15:00:00.000Z'], duration_minutes: 90, venue: 'Tanta pitch' }, manager.token))).status).toBe(403);
+    expect((await request(`/api/v1/players/${world.theirPlayer.id}`, json('PATCH', { name: 'Renamed' }, manager.token))).status).toBe(403);
+
+    // And the academy's own business stays with the academy.
+    expect((await request('/api/v1/competitions', json('POST', { name: 'Mine', season: '2026/27', type: 'league' }, manager.token))).status).toBe(403);
+    expect((await request('/api/v1/teams', json('POST', { name: 'A New Squad', is_aimz: true }, manager.token))).status).toBe(403);
+    expect((await request('/api/v1/admin/registration-invites', json('POST', { label: 'x', code: `CODE-${unique}`, player_ids: [world.myPlayer.id] }, manager.token))).status).toBe(403);
+  });
+
+  it('gives an unlinked account empty lists rather than an error', async () => {
+    await twoSquads();
+    // A player account created before anybody linked it to a roster record,
+    // and a manager created before anybody assigned a squad. Both are ordinary
+    // states an administrator passes through, and neither should look like a
+    // broken app on the opening screen.
+    for (const account of [await seedUser('player'), await seedUser('manager')]) {
+      for (const path of ['/api/v1/matches', '/api/v1/teams', '/api/v1/players', '/api/v1/competitions']) {
+        const response = await request(path, json('GET', undefined, account.token));
+        expect(response.status, `${path} for an unlinked account`).toBe(200);
+        expect((await response.json<{ items: unknown[] }>()).items).toEqual([]);
+      }
+    }
+  });
+
+  it('creates a manager account from an invitation naming squads', async () => {
+    const { unique, ...world } = await twoSquads();
+    const invite = await request('/api/v1/admin/registration-invites', json('POST', { label: 'U13 coach', code: `MANAGER-${unique}`, kind: 'manager', team_ids: [world.mine.id] }, world.admin.token));
+    expect(invite.status).toBe(201);
+
+    const registered = await request('/api/v1/auth/register', json('POST', { name: 'Coach Sara', email: `sara-${unique}@aimz.test`, password: 'a-long-enough-password', invite_code: `MANAGER-${unique}` }));
+    expect(registered.status).toBe(201);
+    const session = await registered.json<{ access_token: string; user: { role: string } }>();
+    expect(session.user.role).toBe('manager');
+
+    const auth = { Authorization: `Bearer ${session.access_token}` };
+    const matches = await (await request('/api/v1/matches', { headers: auth })).json<{ items: { id: string }[] }>();
+    expect(matches.items.map((item) => item.id)).toEqual([world.myMatch.id]);
   });
 });

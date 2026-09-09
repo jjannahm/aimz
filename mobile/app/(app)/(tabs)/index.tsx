@@ -15,6 +15,8 @@ import { groupMatches } from '@/src/lib/matchGroups';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { MatchStatus } from '@/src/types/api';
+import { useAuth } from '@/src/auth/AuthProvider';
+import { useHasCompetition } from '@/src/lib/squad';
 
 /**
  * What the page is showing. The table reads as the end of the same sequence —
@@ -23,9 +25,10 @@ import type { MatchStatus } from '@/src/types/api';
  */
 type Segment = MatchStatus | 'standings';
 
-const filters: { label: string; value: Segment }[] = [
-  { label: 'Live', value: 'live' }, { label: 'Upcoming', value: 'scheduled' }, { label: 'Results', value: 'finished' }, { label: 'Standings', value: 'standings' },
+const MATCH_SEGMENTS: { label: string; value: Segment }[] = [
+  { label: 'Live', value: 'live' }, { label: 'Upcoming', value: 'scheduled' }, { label: 'Results', value: 'finished' },
 ];
+const STANDINGS: { label: string; value: Segment } = { label: 'Standings', value: 'standings' };
 
 export default function MatchesScreen() {
   const styles = useThemedStyles(stylesheet);
@@ -36,6 +39,21 @@ export default function MatchesScreen() {
   // page that is already mounted, which no initialiser would run again for.
   const { competition } = useLocalSearchParams<{ competition?: string }>();
   useEffect(() => { if (competition) setStatus('standings'); }, [competition]);
+  // A squad entered in no competition has no table, and an empty Standings
+  // segment is worse than no segment. An administrator keeps it whatever the
+  // answer: they are the one who enters a squad in a competition, and would
+  // otherwise have no way back to the screen after a season closed.
+  const { hasCompetition, isLoading: askingCompetitions } = useHasCompetition();
+  const { user } = useAuth();
+  // Kept while the answer is still coming: a segment that appears a moment
+  // after the page reads as the page changing shape under the reader, and it
+  // is only dropped once there is something that says to.
+  const showStandings = user?.role === 'admin' || hasCompetition || askingCompetitions;
+  const filters = showStandings ? [...MATCH_SEGMENTS, STANDINGS] : MATCH_SEGMENTS;
+  // The segment can go while it is the one being read — the last season of a
+  // squad's only competition closing does it — and the page falls back to the
+  // fixtures rather than to a segment that is no longer on the control.
+  useEffect(() => { if (!showStandings && status === 'standings') setStatus('live'); }, [showStandings, status]);
   const table = status === 'standings';
   // Nothing to ask the matches endpoint for while the table is up, so the
   // twelve-second poll stops with it rather than running behind the page.

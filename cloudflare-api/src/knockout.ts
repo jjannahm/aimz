@@ -4,6 +4,7 @@ import { outcome } from "./scoring-rules";
 import { ADVANCE_PER_GROUP, GROUP_SIZE, groupCountFor, resolveShape, roundLabel, roundsFor, TEAM_COUNTS } from "./knockout-shape";
 import type { Shape } from "./knockout-shape";
 import type { BracketSlotRow, CompetitionGroupRow, CompetitionRow, CompetitionStatus, MatchRow, TeamRow } from "./types";
+import { guardCompetition } from "./team-access";
 
 export { ADVANCE_PER_GROUP, GROUP_SIZE, groupCountFor, roundLabel, roundsFor, TEAM_COUNTS };
 
@@ -121,6 +122,7 @@ function requireOpenCompetition(competition: { status?: CompetitionStatus | null
 
 export function registerKnockoutRoutes(app: Hono<{ Bindings: Env }>): void {
   app.get("/api/v1/competitions/:id/groups", async (c) => {
+    await guardCompetition(c, c.req.param("id"));
     const competition = await competitionOr404(c.env, c.req.param("id"));
     if (competition.team_count === null) return c.json([]);
     const [groups, teams] = await Promise.all([
@@ -157,6 +159,7 @@ export function registerKnockoutRoutes(app: Hono<{ Bindings: Env }>): void {
   });
 
   app.get("/api/v1/competitions/:id/bracket", async (c) => {
+    await guardCompetition(c, c.req.param("id"));
     const competition = await competitionOr404(c.env, c.req.param("id"));
     return c.json(await readBracket(c.env, competition));
   });

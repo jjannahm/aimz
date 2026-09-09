@@ -1,7 +1,8 @@
 import type { Hono } from "hono";
-import { ApiProblem, adminUser, booleanField, jsonObject, nowIso, parsePagination, publicTeam, stringField } from "./helpers";
+import { ApiProblem, booleanField, jsonObject, nowIso, parsePagination, publicTeam, stringField } from "./helpers";
 import { requireAimzTeam, scopedTeams } from "./team-access";
 import type { AnnouncementRow, TeamRow } from "./types";
+import { assertAdminOnly, assertCanManageTeam, managingUser } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -38,9 +39,13 @@ export function registerAnnouncementRoutes(app: App): void {
   });
 
   app.post("/api/v1/announcements", async (c) => {
-    const actor = await adminUser(c);
+    const { user: actor, scope } = await managingUser(c);
     const body = await jsonObject(c);
     const teamId = stringField(body, "team_id", { optional: true, nullable: true, max: 36 }) ?? null;
+    // A notice with no squad goes to the whole academy, which is not a
+    // manager's to send.
+    if (!teamId) assertAdminOnly(actor, "An announcement to the whole academy");
+    else assertCanManageTeam(scope, teamId);
     if (teamId) await requireAimzTeam(c.env, teamId);
     const now = nowIso();
     const row: AnnouncementRow = { id: crypto.randomUUID(), team_id: teamId, title: stringField(body, "title", { min: 2, max: 160 })!, body: stringField(body, "body", { min: 2, max: 5000 })!, author_id: actor.id, pinned: booleanField(body, "pinned", false) ? 1 : 0, created_at: now, updated_at: now };
@@ -49,10 +54,14 @@ export function registerAnnouncementRoutes(app: App): void {
   });
 
   app.patch("/api/v1/announcements/:id", async (c) => {
-    const actor = await adminUser(c);
+    const { user: actor, scope } = await managingUser(c);
     const current = await announcementById(c.env, c.req.param("id"));
+    if (!current.team_id) assertAdminOnly(actor, "An announcement to the whole academy");
+    else assertCanManageTeam(scope, current.team_id);
     const body = await jsonObject(c);
     const teamId = body.team_id === undefined ? current.team_id : stringField(body, "team_id", { nullable: true, max: 36 }) ?? null;
+    if (!teamId) assertAdminOnly(actor, "An announcement to the whole academy");
+    else assertCanManageTeam(scope, teamId);
     if (teamId) await requireAimzTeam(c.env, teamId);
     const row: AnnouncementRow = { ...current, team_id: teamId, title: stringField(body, "title", { optional: true, min: 2, max: 160 }) ?? current.title, body: stringField(body, "body", { optional: true, min: 2, max: 5000 }) ?? current.body, pinned: body.pinned === undefined ? current.pinned : booleanField(body, "pinned") ? 1 : 0, updated_at: nowIso() };
     await c.env.DB.prepare("UPDATE announcements SET team_id=?, title=?, body=?, pinned=?, updated_at=? WHERE id=?").bind(row.team_id, row.title, row.body, row.pinned, row.updated_at, row.id).run();
@@ -60,7 +69,10 @@ export function registerAnnouncementRoutes(app: App): void {
   });
 
   app.delete("/api/v1/announcements/:id", async (c) => {
-    await adminUser(c);
+    const { user: actor, scope } = await managingUser(c);
+    const current = await announcementById(c.env, c.req.param("id"));
+    if (!current.team_id) assertAdminOnly(actor, "An announcement to the whole academy");
+    else assertCanManageTeam(scope, current.team_id);
     const result = await c.env.DB.prepare("DELETE FROM announcements WHERE id=?").bind(c.req.param("id")).run();
     if (!result.meta.changes) throw new ApiProblem(404, "announcement_not_found", "Announcement not found.");
     return c.body(null, 204);
