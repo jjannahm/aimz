@@ -119,7 +119,9 @@ describe('PlayersScreen', () => {
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
-    fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    await fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    // My Stats opens on the training half now, so the match half is a press away.
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Match Stats' }));
     expect(await screen.findByText('Salma Nabil')).toBeTruthy();
     expect(screen.getByText('Appearances')).toBeTruthy();
     expect(screen.getByText('Match breakdown')).toBeTruthy();
@@ -136,7 +138,9 @@ describe('PlayersScreen', () => {
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
-    fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    await fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    // My Stats opens on the training half now, so the match half is a press away.
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Match Stats' }));
 
     expect(await screen.findByLabelText('Season All stats')).toBeTruthy();
     expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
@@ -156,7 +160,9 @@ describe('PlayersScreen', () => {
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
-    fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    await fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    // My Stats opens on the training half now, so the match half is a press away.
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Match Stats' }));
     await screen.findByText('Salma Nabil');
 
     expect(screen.queryByTestId('season-picker')).toBeNull();
@@ -176,7 +182,9 @@ describe('PlayersScreen', () => {
     });
     jest.mocked(api.matches).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
     const screen = await render(<PlayersScreen />, { wrapper });
-    fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    await fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+    // My Stats opens on the training half now, so the match half is a press away.
+    await fireEvent.press(await screen.findByRole('tab', { name: 'Match Stats' }));
     // The first child is read without choosing, and the other is offered.
     await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined));
     fireEvent.press(await screen.findByRole('tab', { name: 'Mariam Adel' }));
@@ -305,6 +313,24 @@ describe('PlayersScreen', () => {
 
     fireEvent.press(screen.getByLabelText('Hide the full top scorer ranking'));
     await waitFor(() => expect(screen.queryByText('AIMZ U13, 5 goals in 4 appearances')).toBeNull());
+  });
+
+  it('opens My Stats on the training half, with the match half beside it', async () => {
+    jest.mocked(api.playerTrainingStats).mockResolvedValue({
+      player: { id: 'p-1', name: 'Salma Nabil' },
+      metrics: [],
+      attendance: { attended: 4, expected: 5, pct: 80 },
+      totals: [],
+      sessions: [],
+    } as never);
+    const screen = await render(<PlayersScreen />, { wrapper });
+    await fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
+
+    expect(await screen.findByRole('tab', { name: 'Training Stats' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Training Stats' }).props.accessibilityState.selected).toBe(true);
+    expect(screen.getByRole('tab', { name: 'Match Stats' })).toBeTruthy();
+    // She trains every week and plays some weeks, so this is the fuller half.
+    expect(await screen.findByText('4 of 5')).toBeTruthy();
   });
 
   it('offers the training half of My Stats beside the match half', async () => {
