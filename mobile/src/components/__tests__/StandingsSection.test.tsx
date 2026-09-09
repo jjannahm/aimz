@@ -100,6 +100,29 @@ describe('StandingsSection', () => {
     expect(screen.getAllByText('2026')).toHaveLength(1);
   });
 
+  /**
+   * Which table and which season are one choice, so they read as one strip.
+   * Nothing else would notice if the season drifted back onto a row of its own,
+   * hence pinning that they share a parent rather than merely both existing.
+   */
+  it('holds the season on the same line as the competitions', async () => {
+    // Two running this season so there are pills to sit beside, and one from a
+    // season past so the season is a control rather than a bare year.
+    jest.mocked(api.competitions).mockResolvedValue({
+      items: [league, cup, competition('c-3', 'Legacy Cup', '2025')], total: 3, limit: 100, offset: 0,
+    });
+    const screen = await render(<StandingsSection />, { wrapper });
+
+    // The row is drawn before the competitions arrive, so waiting on the row
+    // itself would race the query it is waiting for.
+    await screen.findByRole('tab', { name: 'Women Academy League' });
+    const row = screen.getByTestId('standings-chooser');
+    const inside = JSON.stringify(row);
+    expect(inside).toContain('competition-tab-c-1');
+    expect(inside).toContain('season-picker');
+    expect(StyleSheet.flatten(row.props.style)).toMatchObject({ alignItems: 'center', flexDirection: 'row' });
+  });
+
   it('offers a switcher and changes table when several competitions run', async () => {
     jest.mocked(api.competitions).mockResolvedValue({ items: [league, cup], total: 2, limit: 100, offset: 0 });
     const screen = await render(<StandingsSection />, { wrapper });
