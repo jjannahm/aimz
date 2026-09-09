@@ -24,7 +24,9 @@ export default function PlayerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const styles = useThemedStyles(stylesheet);
   const [season, setSeason] = React.useState<string>(ALL_SEASONS);
-  const [half, setHalf] = React.useState<Half>('match');
+  // Opens on training, the same half My Stats opens on: a coach reading somebody
+  // else's record and a family reading their own are looking at one thing.
+  const [half, setHalf] = React.useState<Half>('training');
   // The unfiltered read, which is what knows every season she has played in, so
   // the switcher does not lose its own options once a season is chosen. Keyed
   // the way the panel keys an unfiltered read, so "Career" is one shared fetch.
@@ -35,8 +37,11 @@ export default function PlayerDetailScreen() {
 
   if (!id) return <Screen action={<CloseButton />} title="Player" />;
 
-  return <Screen action={<CloseButton />} title="Player stats">
-    {plays ? <SegmentedControl label="Which statistics" onChange={setHalf} options={[MATCH, TRAINING]} value={showing} /> : null}
+  // Her name heads the page rather than the word "Player stats". The match
+  // panel used to be the only thing on here that named her, which left the
+  // training half — the half this opens on now — with nobody's name on it.
+  return <Screen action={<CloseButton />} title={career.data?.player.name ?? 'Player stats'}>
+    {plays ? <SegmentedControl label="Which statistics" onChange={setHalf} options={[TRAINING, MATCH]} value={showing} /> : null}
 
     {showing === 'match' ? <>
       <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />

@@ -419,7 +419,7 @@ export default function ManageScreen() {
       confirmManageSave(nounFor[resource], wasEditing);
       if (finished) {
         setDrawnUp((current) => current.filter((id) => id !== finished!.id));
-        router.push({ pathname: '/(app)/(tabs)/standings', params: { competition: finished.id } });
+        router.push({ pathname: '/(app)/(tabs)', params: { competition: finished.id } });
       }
     } catch (error) { setFormError(error instanceof ApiError || error instanceof Error ? error.message : 'Could not save this item.'); }
   });

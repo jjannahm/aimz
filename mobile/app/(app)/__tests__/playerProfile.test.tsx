@@ -54,6 +54,17 @@ const summary = (over: Partial<PlayerSeasonSummary> = {}): PlayerSeasonSummary =
   ...over,
 } as PlayerSeasonSummary);
 
+/**
+ * The page opens on the training half now, so anything about the match half has
+ * to ask for it first. Kept here rather than repeated: a squad entered in no
+ * competition has no match half at all, and those tests render directly.
+ */
+async function matchHalf() {
+  const screen = await render(<PlayerDetailScreen />, { wrapper });
+  await fireEvent.press(await screen.findByRole('tab', { name: 'Match Stats' }));
+  return screen;
+}
+
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -78,7 +89,7 @@ describe('PlayerDetailScreen', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('names the player and her position in full, not the stored code', async () => {
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     // The panel's identity card carries the name, so the header bar does not
     // repeat it — hence findAllByText rather than a single match.
     expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
@@ -86,14 +97,14 @@ describe('PlayerDetailScreen', () => {
   });
 
   it('shows what she is closest to next, and the run she is on', async () => {
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect(await screen.findByText('1 more appearance to 50')).toBeTruthy();
     expect(screen.getByText('Scored in 3 consecutive matches')).toBeTruthy();
     expect(screen.getByText('10 goals')).toBeTruthy();
   });
 
   it('marks an honour from a finished season apart from one still in play', async () => {
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect(await screen.findByText('Top scorer')).toBeTruthy();
     expect(screen.getByText('Most assists')).toBeTruthy();
     // The season still being played says so rather than claiming she has won it.
@@ -102,7 +113,7 @@ describe('PlayerDetailScreen', () => {
 
   // The reason the squad is on the statistic at all.
   it('names the squad she played for when it is not the one she is on now', async () => {
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect(await screen.findByText('vs Cairo Stars')).toBeTruthy();
     expect(screen.getByText(/AIMZ U14 · 90 min/u)).toBeTruthy();
   });
@@ -110,7 +121,7 @@ describe('PlayerDetailScreen', () => {
   // The same control a player gets over their own stats, so both read the
   // same way and say the same words.
   it('reads every season until one is chosen', async () => {
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect(await screen.findByLabelText('Season All stats')).toBeTruthy();
     expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
 
@@ -122,7 +133,7 @@ describe('PlayerDetailScreen', () => {
 
   it('offers the filter to a player with a single season on record', async () => {
     jest.mocked(api.playerStats).mockResolvedValue(summary({ seasons: ['2026/27'] }));
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
     expect(screen.getByTestId('season-picker')).toBeTruthy();
   });
@@ -130,7 +141,7 @@ describe('PlayerDetailScreen', () => {
   // Nothing to filter, so nothing is drawn.
   it('leaves the filter out for a player with no season on record', async () => {
     jest.mocked(api.playerStats).mockResolvedValue(summary({ seasons: [] }));
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
     expect(screen.queryByTestId('season-picker')).toBeNull();
   });
@@ -140,7 +151,7 @@ describe('PlayerDetailScreen', () => {
       seasons: [], matches: [], trainings_attended: 0, trainings_expected: 0, training_attendance_pct: null, milestones: { reached: [], streaks: [], next: [] },
     }));
     jest.mocked(api.playerHonours).mockResolvedValue({ player, honours: [] });
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect(await screen.findByText('Milestones and honours appear once she has played a match.')).toBeTruthy();
   });
 
@@ -152,7 +163,7 @@ describe('PlayerDetailScreen', () => {
     jest.mocked(api.playerStats).mockResolvedValue(summary({
       trainings_attended: 7, trainings_expected: 10, training_attendance_pct: 70,
     }));
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect(await screen.findByText('Appearances')).toBeTruthy();
     expect(screen.queryByText('70%')).toBeNull();
     expect(screen.queryByText('Training · 7/10')).toBeNull();
@@ -162,17 +173,23 @@ describe('PlayerDetailScreen', () => {
     jest.mocked(api.playerStats).mockResolvedValue(summary({
       trainings_attended: 0, trainings_expected: 0, training_attendance_pct: null,
     }));
-    const screen = await render(<PlayerDetailScreen />, { wrapper });
+    const screen = await matchHalf();
     expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
     expect(screen.queryByText('Training · 0/0')).toBeNull();
   });
 
   describe('the two halves of a training record', () => {
-    it('opens on the match half, with training alongside it', async () => {
+    it('opens on the training half, with the match half alongside it', async () => {
       const screen = await render(<PlayerDetailScreen />, { wrapper });
-      expect(await screen.findByRole('tab', { name: 'Match Stats' })).toBeTruthy();
-      expect(screen.getByRole('tab', { name: 'Match Stats' }).props.accessibilityState.selected).toBe(true);
-      expect(screen.getByRole('tab', { name: 'Training Stats' })).toBeTruthy();
+      expect(await screen.findByRole('tab', { name: 'Training Stats' })).toBeTruthy();
+      expect(screen.getByRole('tab', { name: 'Training Stats' }).props.accessibilityState.selected).toBe(true);
+      expect(screen.getByRole('tab', { name: 'Match Stats' })).toBeTruthy();
+      // Whichever half is up, the header says whose record this is.
+      expect(screen.getAllByText('Nour Hassan').length).toBeGreaterThan(0);
+      // The half that opens is the one on the left, here as under My Stats.
+      const tabs = screen.getAllByRole('tab');
+      expect(tabs.indexOf(screen.getByRole('tab', { name: 'Training Stats' })))
+        .toBeLessThan(tabs.indexOf(screen.getByRole('tab', { name: 'Match Stats' })));
     });
 
     it('reads the training record when that half is chosen', async () => {

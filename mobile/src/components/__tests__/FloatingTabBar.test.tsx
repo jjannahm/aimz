@@ -18,27 +18,29 @@ const navigate = jest.fn();
 const emit = jest.fn(() => ({ defaultPrevented: false }));
 
 /**
- * The four an administrator is offered, with the two the layout hides
- * alongside. `href: null` is not what a bar sees: expo-router takes `href` off
- * the options and marks the item `display: 'none'`, so that is what is mocked.
+ * The three an administrator is offered, with the three the layout hides
+ * alongside, in the order the layout declares them. `href: null` is not what a
+ * bar sees: expo-router takes `href` off the options and marks the item
+ * `display: 'none'`, so that is what is mocked. The default index is Matches,
+ * which is where the app lands.
  */
-function props(index = 0): { state: { index: number; routes: { key: string; name: string }[] }; descriptors: Descriptors; navigation: { emit: typeof emit; navigate: typeof navigate } } {
+function props(index = 2): { state: { index: number; routes: { key: string; name: string }[] }; descriptors: Descriptors; navigation: { emit: typeof emit; navigate: typeof navigate } } {
   const routes = [
-    { key: 'k-index', name: 'index' },
-    { key: 'k-standings', name: 'standings' },
-    { key: 'k-players', name: 'players' },
     { key: 'k-my-team-hidden', name: 'my-team' },
+    { key: 'k-players', name: 'players' },
+    { key: 'k-index', name: 'index' },
+    { key: 'k-reports-hidden', name: 'reports' },
     { key: 'k-manage', name: 'manage' },
     { key: 'k-settings', name: 'settings' },
   ];
   return {
     state: { index, routes },
     descriptors: {
-      'k-index': { options: { title: 'Matches' } },
-      'k-standings': { options: { title: 'Standings' } },
       'k-players': { options: { title: 'Players' } },
+      'k-index': { options: { title: 'Matches' } },
       'k-manage': { options: { title: 'Manage' } },
       'k-my-team-hidden': { options: { title: 'Hub', tabBarItemStyle: hidden } },
+      'k-reports-hidden': { options: { title: 'Reports', tabBarItemStyle: hidden } },
       'k-settings': { options: { title: 'Settings', tabBarItemStyle: hidden } },
     },
     navigation: { emit, navigate },
@@ -54,51 +56,55 @@ describe('FloatingTabBar', () => {
 
   it('leaves out the routes the layout hid', async () => {
     const screen = await render(<FloatingTabBar {...props()} />);
-    expect(screen.getAllByRole('tab')).toHaveLength(4);
-    // The calendar belongs inside Manage and the Hub, not the bar itself.
+    expect(screen.getAllByRole('tab')).toHaveLength(3);
+    // Hub and Reports are a family's; Settings is nobody's — it lives in the
+    // header now.
     expect(screen.queryByLabelText('Hub')).toBeNull();
+    expect(screen.queryByLabelText('Reports')).toBeNull();
     expect(screen.queryByLabelText('Settings')).toBeNull();
     expect(screen.getByLabelText('Manage')).toBeTruthy();
   });
 
-  // The label belongs to the selected tab alone; the rest are their glyph.
-  // The bar a player is offered: Manage is theirs to lack, Hub is theirs to
-  // have, and Settings is nobody's — it lives in the header now.
-  it('offers a player Matches, Standings, Players and Hub, and nothing else', async () => {
+  // A family reads their own week first and the academy's second, so the bar
+  // runs Hub, Players, Matches, Reports. Manage is theirs to lack, and Settings
+  // is nobody's — it lives in the header now.
+  it('offers a player Hub, Players, Matches and Reports, and nothing else', async () => {
     const forPlayer = props(0);
     forPlayer.state.routes = [
-      { key: 'k-index', name: 'index' },
-      { key: 'k-standings', name: 'standings' },
-      { key: 'k-players', name: 'players' },
       { key: 'k-my-team', name: 'my-team' },
+      { key: 'k-players', name: 'players' },
+      { key: 'k-index', name: 'index' },
+      { key: 'k-reports', name: 'reports' },
       { key: 'k-manage-hidden', name: 'manage' },
       { key: 'k-settings', name: 'settings' },
     ];
     forPlayer.descriptors = {
-      'k-index': { options: { title: 'Matches' } },
-      'k-standings': { options: { title: 'Standings' } },
-      'k-players': { options: { title: 'Players' } },
       'k-my-team': { options: { title: 'Hub' } },
+      'k-players': { options: { title: 'Players' } },
+      'k-index': { options: { title: 'Matches' } },
+      'k-reports': { options: { title: 'Reports' } },
       'k-manage-hidden': { options: { title: 'Manage', tabBarItemStyle: hidden } },
       'k-settings': { options: { title: 'Settings', tabBarItemStyle: hidden } },
     };
     const screen = await render(<FloatingTabBar {...forPlayer} />);
-    expect(screen.getAllByRole('tab').map((tab) => tab.props.accessibilityLabel)).toEqual(['Matches', 'Standings', 'Players', 'Hub']);
+    expect(screen.getAllByRole('tab').map((tab) => tab.props.accessibilityLabel)).toEqual(['Hub', 'Players', 'Matches', 'Reports']);
   });
 
-  it('offers an administrator Matches, Standings, Players and Manage, and nothing else', async () => {
-    const screen = await render(<FloatingTabBar {...props(0)} />);
-    expect(screen.getAllByRole('tab').map((tab) => tab.props.accessibilityLabel)).toEqual(['Matches', 'Standings', 'Players', 'Manage']);
+  // The same order with the two hidden ones taken out, so the tabs an admin
+  // shares with a family sit where a family has them.
+  it('offers an administrator Players, Matches and Manage, and nothing else', async () => {
+    const screen = await render(<FloatingTabBar {...props()} />);
+    expect(screen.getAllByRole('tab').map((tab) => tab.props.accessibilityLabel)).toEqual(['Players', 'Matches', 'Manage']);
   });
 
   it('names every tab, not only the one that is selected', async () => {
-    const screen = await render(<FloatingTabBar {...props(0)} />);
-    expect(screen.getByText('Matches')).toBeTruthy();
-    expect(screen.getByText('Standings')).toBeTruthy();
+    const screen = await render(<FloatingTabBar {...props()} />);
     expect(screen.getByText('Players')).toBeTruthy();
+    expect(screen.getByText('Matches')).toBeTruthy();
     expect(screen.getByText('Manage')).toBeTruthy();
-    // The one the layout hid stays out, name and all.
+    // The ones the layout hid stay out, name and all.
     expect(screen.queryByText('Hub')).toBeNull();
+    expect(screen.queryByText('Reports')).toBeNull();
   });
 
   // Every tab is named now, so the selection has to read off its own state
@@ -110,48 +116,50 @@ describe('FloatingTabBar', () => {
   });
 
   it('opens the tab that was pressed', async () => {
-    const screen = await render(<FloatingTabBar {...props(0)} />);
+    const screen = await render(<FloatingTabBar {...props()} />);
     fireEvent.press(screen.getByLabelText('Players'));
     expect(emit).toHaveBeenCalledWith({ type: 'tabPress', target: 'k-players', canPreventDefault: true });
     expect(navigate).toHaveBeenCalledWith('players');
   });
 
   it('stays put when the tab already open is pressed', async () => {
-    const screen = await render(<FloatingTabBar {...props(0)} />);
+    const screen = await render(<FloatingTabBar {...props()} />);
     fireEvent.press(screen.getByLabelText('Matches'));
     expect(navigate).not.toHaveBeenCalled();
   });
 
   it('does not navigate when the press was handled elsewhere', async () => {
     emit.mockReturnValueOnce({ defaultPrevented: true });
-    const screen = await render(<FloatingTabBar {...props(0)} />);
-    fireEvent.press(screen.getByLabelText('Standings'));
+    const screen = await render(<FloatingTabBar {...props()} />);
+    fireEvent.press(screen.getByLabelText('Players'));
     expect(navigate).not.toHaveBeenCalled();
   });
 
   // The marker travels to the tab that was opened rather than blinking onto it.
   it('slides the marker onto the tab that was opened', async () => {
     const spring = jest.spyOn(Animated, 'spring');
-    const screen = await render(<FloatingTabBar {...props(0)} />);
+    const screen = await render(<FloatingTabBar {...props()} />);
     await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
     spring.mockClear();
 
-    await screen.rerender(<FloatingTabBar {...props(2)} />);
+    await screen.rerender(<FloatingTabBar {...props(4)} />);
 
+    // Manage is the third of the three the admin can see, hidden routes having
+    // been taken out before the marker was placed.
     expect(spring).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ toValue: 2 }));
   });
 
   it('places the marker outright for somebody who asked for less motion', async () => {
     jest.mocked(AccessibilityInfo.isReduceMotionEnabled).mockResolvedValue(true);
     const spring = jest.spyOn(Animated, 'spring');
-    const screen = await render(<FloatingTabBar {...props(0)} />);
+    const screen = await render(<FloatingTabBar {...props()} />);
     await waitFor(() => expect(AccessibilityInfo.isReduceMotionEnabled).toHaveBeenCalled());
     spring.mockClear();
 
-    await screen.rerender(<FloatingTabBar {...props(2)} />);
+    await screen.rerender(<FloatingTabBar {...props(4)} />);
 
     expect(spring).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Players').props.accessibilityState).toMatchObject({ selected: true });
+    expect(screen.getByLabelText('Manage').props.accessibilityState).toMatchObject({ selected: true });
   });
 });
 

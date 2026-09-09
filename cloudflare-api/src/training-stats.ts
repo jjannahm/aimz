@@ -125,9 +125,21 @@ export function registerTrainingStatsRoutes(app: App): void {
       throw new ApiProblem(403, "player_access_denied", "You can only see your own family's training.");
     }
 
-    const [metrics, attendance, readings, sessions] = await Promise.all([
+    const [metrics, attendance, squad, readings, sessions] = await Promise.all([
       activeMetrics(c.env),
       c.env.DB.prepare("SELECT SUM(CASE WHEN status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected FROM training_attendance WHERE player_id=?").bind(player.id).first<{ attended: number | null; expected: number }>(),
+      // What the rest of her squad manages, so her own figure has something to
+      // be read against: 80% means one thing in a squad averaging 95 and
+      // another in one averaging 60.
+      //
+      // The squad's own present-to-expected ratio rather than the mean of each
+      // player's percentage. A mean of percentages lets somebody marked for a
+      // single session swing the whole figure; a ratio weights everybody by how
+      // many sessions they were actually marked for. She is counted in it —
+      // leaving her out would make two players' figures incomparable.
+      c.env.DB.prepare(`SELECT SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected
+        FROM training_attendance a JOIN players p ON p.id = a.player_id
+        WHERE p.team_id = ?`).bind(player.team_id).first<{ attended: number | null; expected: number }>(),
       c.env.DB.prepare(`SELECT m.*, s.starts_at, s.venue, s.id session_id
         FROM training_player_metrics m JOIN training_sessions s ON s.id = m.training_session_id
         WHERE m.player_id = ? ORDER BY s.starts_at DESC`).bind(player.id).all<TrainingPlayerMetricRow & { starts_at: string; venue: string; session_id: string }>(),
@@ -163,10 +175,17 @@ export function registerTrainingStatsRoutes(app: App): void {
 
     const attended = attendance?.attended ?? 0;
     const expected = attendance?.expected ?? 0;
+    const squadAttended = squad?.attended ?? 0;
+    const squadExpected = squad?.expected ?? 0;
     return c.json({
       player: publicPlayer(player),
       metrics: metrics.map(publicMetric),
-      attendance: { attended, expected, pct: expected ? Math.round((attended / expected) * 100) : null },
+      attendance: {
+        attended,
+        expected,
+        pct: expected ? Math.round((attended / expected) * 100) : null,
+        team_pct: squadExpected ? Math.round((squadAttended / squadExpected) * 100) : null,
+      },
       totals,
       sessions: history,
     });

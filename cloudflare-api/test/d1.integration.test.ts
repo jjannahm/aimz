@@ -1569,6 +1569,56 @@ describe('training performance', () => {
   });
 });
 
+describe('a player read against their own squad', () => {
+  /**
+   * The figure this exists for. A percentage on its own says nothing — 80% in a
+   * squad averaging 95 is not 80% in one averaging 60 — so the squad's own
+   * ratio comes back beside it. A join that forgot `team_id` would quietly
+   * return the academy's average, and every number on the page would still look
+   * plausible.
+   */
+  it('averages the whole squad, not the reader, and not the academy', async () => {
+    const admin = await seedUser('admin');
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U12', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const elsewhere = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U18', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const always = await (await request('/api/v1/players', json('POST', { name: 'Salma', team_id: squad.id, position: 'ST' }, admin.token))).json<{ id: string }>();
+    const sometimes = await (await request('/api/v1/players', json('POST', { name: 'Hana', team_id: squad.id, position: 'CM' }, admin.token))).json<{ id: string }>();
+    // On another squad, and absent from everything: if she were counted the
+    // squad average would come out lower than it should.
+    const outsider = await (await request('/api/v1/players', json('POST', { name: 'Layla', team_id: elsewhere.id, position: 'GK' }, admin.token))).json<{ id: string }>();
+
+    const ours = await (await request('/api/v1/training-sessions', json('POST', { team_id: squad.id, venue: 'Palm', notes: null, duration_minutes: 60, occurrences: ['2026-08-25T15:00:00.000Z', '2026-08-27T15:00:00.000Z'] }, admin.token))).json<{ id: string }[]>();
+    const theirs = await (await request('/api/v1/training-sessions', json('POST', { team_id: elsewhere.id, venue: 'Palm', notes: null, duration_minutes: 60, occurrences: ['2026-08-26T15:00:00.000Z'] }, admin.token))).json<{ id: string }[]>();
+
+    // Salma turns up twice; Hana once out of two. Three present of four marked.
+    await request(`/api/v1/training-sessions/${ours[0]!.id}/attendance`, json('PUT', { entries: [{ player_id: always.id, status: 'present' }, { player_id: sometimes.id, status: 'present' }] }, admin.token));
+    await request(`/api/v1/training-sessions/${ours[1]!.id}/attendance`, json('PUT', { entries: [{ player_id: always.id, status: 'present' }, { player_id: sometimes.id, status: 'absent' }] }, admin.token));
+    await request(`/api/v1/training-sessions/${theirs[0]!.id}/attendance`, json('PUT', { entries: [{ player_id: outsider.id, status: 'absent' }] }, admin.token));
+
+    const perfect = await (await request(`/api/v1/players/${always.id}/training-stats`, json('GET', undefined, admin.token))).json<{ attendance: { pct: number; team_pct: number } }>();
+    expect(perfect.attendance).toMatchObject({ pct: 100, team_pct: 75 });
+
+    // The same squad figure whoever is being read, so two players compare.
+    const patchy = await (await request(`/api/v1/players/${sometimes.id}/training-stats`, json('GET', undefined, admin.token))).json<{ attendance: { pct: number; team_pct: number } }>();
+    expect(patchy.attendance).toMatchObject({ pct: 50, team_pct: 75 });
+
+    // Her own squad has one absence and nothing else, which is nobody else's 75.
+    const away = await (await request(`/api/v1/players/${outsider.id}/training-stats`, json('GET', undefined, admin.token))).json<{ attendance: { pct: number; team_pct: number } }>();
+    expect(away.attendance).toMatchObject({ pct: 0, team_pct: 0 });
+  });
+
+  it('leaves the squad figure empty rather than nought when no register exists', async () => {
+    const admin = await seedUser('admin');
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U10', is_aimz: true }, admin.token))).json<{ id: string }>();
+    const player = await (await request('/api/v1/players', json('POST', { name: 'Nour', team_id: squad.id, position: 'ST' }, admin.token))).json<{ id: string }>();
+
+    const stats = await (await request(`/api/v1/players/${player.id}/training-stats`, json('GET', undefined, admin.token))).json<{ attendance: { pct: null; team_pct: null } }>();
+    // Nought would read as a squad that never turns up, rather than one nobody
+    // has taken a register for yet.
+    expect(stats.attendance).toMatchObject({ pct: null, team_pct: null });
+  });
+});
+
 describe('role scope', () => {
   /**
    * Two squads in two competitions, with an account attached to each side, so

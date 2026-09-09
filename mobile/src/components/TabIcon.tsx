@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { View, type ColorValue } from 'react-native';
 
-export type TabIconName = 'manage' | 'matches' | 'myTeam' | 'players' | 'settings' | 'standings';
+import type { TabIconName } from '@/src/components/tabIcons';
+
+export type { TabIconName };
 
 type Props = {
   color: ColorValue;
@@ -10,7 +12,10 @@ type Props = {
 };
 
 const nativeIconNames: Record<Exclude<TabIconName, 'matches'>, keyof typeof Ionicons.glyphMap> = {
-  standings: 'podium-outline',
+  // A crest rather than a group of people: the tab is the squad — its record,
+  // its table, its fixtures — and the roster is one section inside it.
+  squad: 'shield-outline',
+  reports: 'document-text-outline',
   players: 'people-outline',
   manage: 'create-outline',
   myTeam: 'calendar-outline',

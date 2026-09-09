@@ -32,9 +32,10 @@ const isHidden = (style: StyleProp<ViewStyle>): boolean => StyleSheet.flatten(st
 /** Which glyph a route wears, keyed by the route's own name. */
 const icons: Record<string, TabIconName> = {
   index: 'matches',
-  standings: 'standings',
   players: 'players',
+  reports: 'reports',
   'my-team': 'myTeam',
+  squad: 'squad',
   manage: 'manage',
 };
 

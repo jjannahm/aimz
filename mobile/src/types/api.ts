@@ -225,7 +225,8 @@ export type TrainingPerformance = {
 export type PlayerTrainingStats = {
   player: Player;
   metrics: TrainingMetric[];
-  attendance: { attended: number; expected: number; pct: number | null };
+  /** `team_pct` is the whole squad's ratio, for this player to be read against. */
+  attendance: { attended: number; expected: number; pct: number | null; team_pct: number | null };
   totals: { metric: TrainingMetric; value: number | null; sessions: number }[];
   sessions: { id: string; starts_at: string; venue: string; status: 'present' | 'absent' | null; values: Record<string, number> }[];
 };

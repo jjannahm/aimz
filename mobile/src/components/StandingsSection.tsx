@@ -7,9 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { BracketView } from '@/src/components/BracketView';
-import { Screen } from '@/src/components/Screen';
 import { SeasonPicker } from '@/src/components/SeasonPicker';
-import { SettingsButton } from '@/src/components/SettingsButton';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { FormStrip } from '@/src/components/FormStrip';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
@@ -51,7 +49,14 @@ function CompareToggle({ comparing, onPress }: { comparing: boolean; onPress: ()
 
 const VIEWS = [{ label: 'Groups', value: 'groups' }, { label: 'Bracket', value: 'bracket' }] as const;
 
-export default function StandingsScreen() {
+/**
+ * The league table, and everything that reads with it.
+ *
+ * A section rather than a screen: Standings sits inside Match Centre now,
+ * one segment along from Results, so it draws its own body and leaves the
+ * page header to the screen around it.
+ */
+export function StandingsSection() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const { user } = useAuth();
@@ -122,21 +127,26 @@ export default function StandingsScreen() {
   const pickedName = table.data?.find((row) => row.team.id === picking?.[0])?.team.name;
 
   const closed = competition?.status === 'completed';
-  // The header's own settings button sits left of a screen's action, which
-  // would put the gear between the title and the season. Here the two are
-  // given in the order they should read: the season, then settings on the edge.
-  return <Screen action={<><SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} /><SettingsButton /></>} hideSettings title="Standings">
+  return <View style={styles.section}>
     {closed ? <View style={styles.archived}>
       <Ionicons accessibilityElementsHidden color={colors.textMuted} name="lock-closed-outline" size={14} />
       <Text style={styles.archivedText}>{competition?.name} {competition?.season} has ended. This table is final.</Text>
     </View> : null}
-    {/* Only worth a switcher when more than one competition is running. */}
-    {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.tabs} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
-      {eligible.map((item) => {
-        const active = item.id === competitionId;
-        return <AnimatedTabPill key={item.id} label={item.name} onPress={() => { setSelected(item.id); setSelectedName(item.name); }} selected={active} style={styles.tab} testID={`competition-tab-${item.id}`} />;
-      })}
-    </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
+    {/* Which table and which season are one choice, so they share a line: the
+      * competitions on the left, the season held to the right of them. The
+      * season had a row of its own when it still had a screen header to sit in.
+      * Only worth a switcher when more than one competition is running. */}
+    <View style={styles.chooserRow} testID="standings-chooser">
+      <View style={styles.chooserSide}>
+        {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.tabs} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
+          {eligible.map((item) => {
+            const active = item.id === competitionId;
+            return <AnimatedTabPill key={item.id} label={item.name} onPress={() => { setSelected(item.id); setSelectedName(item.name); }} selected={active} style={styles.tab} testID={`competition-tab-${item.id}`} />;
+          })}
+        </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
+      </View>
+      <SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} />
+    </View>
     <View style={styles.content} testID="standings-content">
       {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
       {picking ? <View style={styles.compareBar}>
@@ -150,7 +160,7 @@ export default function StandingsScreen() {
         : knockout ? <View style={styles.groups}>{groupedRows.map((group) => <View key={group.name} style={styles.group}><Text style={styles.groupName}>{group.name}</Text>{tableFor(group.rows)}</View>)}</View>
         : tableFor(table.data)}
     </View>
-  </Screen>;
+  </View>;
 
   function tableFor(rows: StandingRow[]) {
     return <View style={styles.table}>
@@ -234,6 +244,17 @@ const POINTS_COLUMN = 34;
 const COMPARE_CONTROL = 22;
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  // The spacing Screen gave these children while this was a page of its own.
+  section: { gap: theme.size.sectionGap },
+  // The pills and the season on one line. Both controls are already built to
+  // the same metrics — touch.minimum tall, pill radius — so centring is all the
+  // row needs to make them read as one strip.
+  chooserRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
+  // SeasonPicker takes no style of its own, so what holds it to the right is a
+  // left side that always takes the slack. It is also what bounds the pill
+  // scroller: without it a long list would shove the season off the edge
+  // rather than scroll under it.
+  chooserSide: { flex: 1, minWidth: 0 },
   // The section the switcher swaps, which keeps the page's own rhythm between
   // whatever it is showing.
   content: { gap: theme.spacing.lg },

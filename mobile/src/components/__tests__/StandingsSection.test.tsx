@@ -5,13 +5,13 @@ import { AccessibilityInfo, StyleSheet, type ViewStyle } from 'react-native';
 
 import { useLocalSearchParams } from 'expo-router';
 
-import StandingsScreen from '@/app/(app)/(tabs)/standings';
+import { StandingsSection } from '@/src/components/StandingsSection';
 import { api } from '@/src/lib/api';
 import type { Competition, StandingRow, Team } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'player' } }) }));
-// Reached from the tab bar here, so no competition is named in the route.
+// Reached from the Standings segment here, so no competition is named in the route.
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, useLocalSearchParams: jest.fn(() => ({})), usePathname: () => '/' }));
 
 jest.mock('@/src/lib/api', () => ({
@@ -53,7 +53,7 @@ beforeEach(() => {
 
 afterEach(() => jest.restoreAllMocks());
 
-describe('StandingsScreen', () => {
+describe('StandingsSection', () => {
   beforeEach(() => {
     jest.mocked(api.competitions).mockResolvedValue({ items: [league], total: 1, limit: 100, offset: 0 });
     jest.mocked(api.standings).mockResolvedValue(table);
@@ -61,7 +61,7 @@ describe('StandingsScreen', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('names the competition once, in its tab, and not again below', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     // The selected tab already says which competition this is, so a card
     // repeating the name and season under it was only spending vertical space.
     expect(await screen.findByText('Women Academy League')).toBeTruthy();
@@ -75,7 +75,7 @@ describe('StandingsScreen', () => {
   // The gold edge used to be a left border, which is part of the box: it inset
   // the leader's cells and left them sitting right of every row beneath.
   it('lays the leading row out on the same columns as the rest', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     await screen.findByText('Giza Lions');
     // The card, not the tap targets inside it: the card is what carries the
     // border and padding the columns are measured from.
@@ -92,7 +92,7 @@ describe('StandingsScreen', () => {
   });
 
   it('still names the competition when there is no switcher to name it', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     expect(await screen.findByText('Women Academy League')).toBeTruthy();
     expect(screen.queryAllByRole('tab')).toHaveLength(0);
     // One season on record needs no control, so it is stated rather than offered.
@@ -100,9 +100,32 @@ describe('StandingsScreen', () => {
     expect(screen.getAllByText('2026')).toHaveLength(1);
   });
 
+  /**
+   * Which table and which season are one choice, so they read as one strip.
+   * Nothing else would notice if the season drifted back onto a row of its own,
+   * hence pinning that they share a parent rather than merely both existing.
+   */
+  it('holds the season on the same line as the competitions', async () => {
+    // Two running this season so there are pills to sit beside, and one from a
+    // season past so the season is a control rather than a bare year.
+    jest.mocked(api.competitions).mockResolvedValue({
+      items: [league, cup, competition('c-3', 'Legacy Cup', '2025')], total: 3, limit: 100, offset: 0,
+    });
+    const screen = await render(<StandingsSection />, { wrapper });
+
+    // The row is drawn before the competitions arrive, so waiting on the row
+    // itself would race the query it is waiting for.
+    await screen.findByRole('tab', { name: 'Women Academy League' });
+    const row = screen.getByTestId('standings-chooser');
+    const inside = JSON.stringify(row);
+    expect(inside).toContain('competition-tab-c-1');
+    expect(inside).toContain('season-picker');
+    expect(StyleSheet.flatten(row.props.style)).toMatchObject({ alignItems: 'center', flexDirection: 'row' });
+  });
+
   it('offers a switcher and changes table when several competitions run', async () => {
     jest.mocked(api.competitions).mockResolvedValue({ items: [league, cup], total: 2, limit: 100, offset: 0 });
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
 
     expect(await screen.findByRole('tab', { name: 'Women Academy League' })).toBeTruthy();
     expect(screen.getAllByRole('tab')).toHaveLength(2);
@@ -120,7 +143,7 @@ describe('StandingsScreen', () => {
     const knockout = { ...league, team_count: 8, group_size: 4 };
     jest.mocked(api.competitions).mockResolvedValue({ items: [knockout], total: 1, limit: 100, offset: 0 });
     jest.mocked(api.bracket).mockResolvedValue({ competition_id: knockout.id, team_count: 8, rounds: [] });
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
 
     expect(await screen.findByRole('tab', { name: 'Groups' })).toBeTruthy();
     fireEvent.press(screen.getByRole('tab', { name: 'Bracket' }));
@@ -129,7 +152,7 @@ describe('StandingsScreen', () => {
   });
 
   it('badges each team by whether it is ours', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     await screen.findByText('Giza Lions');
     // One AIMZ squad and one opponent are in the fixture table.
     expect(screen.getByTestId('badge-aimz', { includeHiddenElements: true })).toBeTruthy();
@@ -137,14 +160,14 @@ describe('StandingsScreen', () => {
   });
 
   it('marks first place with a trophy that nobody else gets', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     await screen.findByText('Giza Lions');
     // Rank 1 only — a second trophy would make the highlight meaningless.
     expect(screen.getAllByLabelText('First place')).toHaveLength(1);
   });
 });
 
-describe('StandingsScreen — form guide', () => {
+describe('StandingsSection — form guide', () => {
   beforeEach(() => {
     jest.mocked(api.competitions).mockResolvedValue({ items: [league], total: 1, limit: 100, offset: 0 });
     jest.mocked(api.standings).mockResolvedValue(table);
@@ -152,7 +175,7 @@ describe('StandingsScreen — form guide', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('reads the last five results newest first', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     // Both fixture rows carry W, D, L, L, so both teams get a strip.
     expect(await screen.findAllByLabelText('Recent form: won, drew, lost, lost')).toHaveLength(table.length);
   });
@@ -161,7 +184,7 @@ describe('StandingsScreen — form guide', () => {
     jest.mocked(api.standings).mockResolvedValue([
       { ...row(1, team('t-3', 'Newly Entered'), 0), played: 0, won: 0, drawn: 0, lost: 0, form: [] },
     ]);
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     await screen.findByText('Newly Entered');
     expect(screen.queryByLabelText(/^Recent form/)).toBeNull();
   });
@@ -169,7 +192,7 @@ describe('StandingsScreen — form guide', () => {
 
 // Arriving from Manage after setting a competition up: the admin should land on
 // that table, not on whichever competition happens to sort first.
-describe('StandingsScreen — arriving from Manage', () => {
+describe('StandingsSection — arriving from Manage', () => {
   beforeEach(() => {
     jest.mocked(api.competitions).mockResolvedValue({ items: [league, cup], total: 2, limit: 100, offset: 0 });
     jest.mocked(api.standings).mockResolvedValue(table);
@@ -178,20 +201,20 @@ describe('StandingsScreen — arriving from Manage', () => {
 
   it('opens the competition the route names', async () => {
     jest.mocked(useLocalSearchParams).mockReturnValue({ competition: 'c-2' });
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-2'));
     expect(screen.getByLabelText('Delta Cup').props.accessibilityState.selected).toBe(true);
   });
 
   it('falls back to the first competition when the route names none', async () => {
     jest.mocked(useLocalSearchParams).mockReturnValue({});
-    await render(<StandingsScreen />, { wrapper });
+    await render(<StandingsSection />, { wrapper });
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-1'));
   });
 });
 
 
-describe('StandingsScreen — opening a team, and comparing two', () => {
+describe('StandingsSection — opening a team, and comparing two', () => {
   beforeEach(() => {
     jest.mocked(api.competitions).mockResolvedValue({ items: [league], total: 1, limit: 100, offset: 0 });
     jest.mocked(api.standings).mockResolvedValue(table);
@@ -205,7 +228,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
   const aimz = /^AIMZ U18 Women, 6 points/u;
 
   it('opens a team when its row is tapped', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     fireEvent.press(await screen.findByLabelText(lions));
 
     expect(push()).toHaveBeenCalledWith({ pathname: '/team/[id]', params: { id: 't-1' } });
@@ -213,7 +236,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
 
   // Comparing is one action, so it gets one control however long the table is.
   it('carries a single compare control for the whole table', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     await screen.findByText('Giza Lions');
 
     expect(screen.getAllByLabelText('Compare two teams')).toHaveLength(1);
@@ -223,7 +246,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
   // The control took a column of its own out of every row; the figures still
   // have to sit under the labels that name them.
   it('keeps the numbers under the labels they belong to', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     await screen.findByText('Giza Lions');
     const width = (node: { props: { style?: unknown } }) => (StyleSheet.flatten(node.props.style) as ViewStyle).width;
 
@@ -233,7 +256,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
 
   // One control for an action taken once: the table asks who, the rows answer.
   it('asks for two teams when the header control is pressed', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     fireEvent.press(await screen.findByLabelText('Compare two teams'));
 
     expect(push()).not.toHaveBeenCalled();
@@ -242,7 +265,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
 
   // Nothing picked yet, so there is nobody for a row to open.
   it('picks a team instead of opening it while comparing', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     fireEvent.press(await screen.findByLabelText('Compare two teams'));
     fireEvent.press(await screen.findByLabelText(lions));
 
@@ -252,7 +275,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
   });
 
   it('lets the same row put a team back down', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     fireEvent.press(await screen.findByLabelText('Compare two teams'));
     fireEvent.press(await screen.findByLabelText(lions));
     fireEvent.press(await screen.findByLabelText(lions));
@@ -262,7 +285,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
   });
 
   it('compares only once a second team is picked', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     fireEvent.press(await screen.findByLabelText('Compare two teams'));
     fireEvent.press(await screen.findByLabelText(lions));
     expect(push()).not.toHaveBeenCalled();
@@ -272,7 +295,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
   });
 
   it('offers a way out of comparison without choosing anyone', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     fireEvent.press(await screen.findByLabelText('Compare two teams'));
     fireEvent.press(await screen.findByLabelText(lions));
     fireEvent.press(await screen.findByLabelText('Cancel comparison'));
@@ -284,7 +307,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
 
   // The mode is a mode: leaving it hands the rows back to opening teams.
   it('opens teams again once the comparison is off', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     fireEvent.press(await screen.findByLabelText('Compare two teams'));
     fireEvent.press(await screen.findByLabelText('Compare two teams'));
     fireEvent.press(await screen.findByLabelText(lions));
@@ -297,7 +320,7 @@ describe('StandingsScreen — opening a team, and comparing two', () => {
 const lastSeason = competition('c-old', 'Women Academy League', '2025');
 const thisSeason = competition('c-new', 'Women Academy League', '2026');
 
-describe('StandingsScreen — seasons', () => {
+describe('StandingsSection — seasons', () => {
   beforeEach(() => {
     jest.mocked(api.competitions).mockResolvedValue({ items: [lastSeason, thisSeason], total: 2, limit: 100, offset: 0 });
     jest.mocked(api.standings).mockResolvedValue(table);
@@ -306,7 +329,7 @@ describe('StandingsScreen — seasons', () => {
 
   // The season being played, not whichever row came back first.
   it('opens on the season still being played', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     expect(await screen.findByLabelText('Season 2026')).toBeTruthy();
     await waitFor(() => expect(api.standings).toHaveBeenCalledWith('c-new'));
   });
@@ -316,14 +339,14 @@ describe('StandingsScreen — seasons', () => {
       items: [{ ...lastSeason, status: 'completed' as const }, { ...thisSeason, status: 'completed' as const }],
       total: 2, limit: 100, offset: 0,
     });
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     expect(await screen.findByLabelText('Season 2026, ended')).toBeTruthy();
   });
 
   // The point of the whole thing: the season decides which competition is read,
   // so the table comes from the API rather than being sieved in the screen.
   it('reads the chosen season from its own competition', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     fireEvent.press(await screen.findByTestId('season-picker'));
     fireEvent.press(await screen.findByTestId('season-option-2025'));
 
@@ -334,12 +357,12 @@ describe('StandingsScreen — seasons', () => {
     jest.mocked(api.competitions).mockResolvedValue({
       items: [{ ...thisSeason, status: 'completed' as const }], total: 1, limit: 100, offset: 0,
     });
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     expect(await screen.findByText(/has ended\. This table is final\./u)).toBeTruthy();
   });
 
   it('leaves an open season unmarked', async () => {
-    const screen = await render(<StandingsScreen />, { wrapper });
+    const screen = await render(<StandingsSection />, { wrapper });
     await screen.findByText('Giza Lions');
     expect(screen.queryByText(/has ended/u)).toBeNull();
   });
