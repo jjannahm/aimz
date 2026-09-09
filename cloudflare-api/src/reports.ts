@@ -20,6 +20,13 @@ interface ReportSnapshot {
   attendance: { attended: number; expected: number; pct: number | null };
   /** How the player was marked at training over the period. */
   training?: { key: string; label: string; kind: "rating" | "count"; max_value: number | null; value: number; sessions: number }[];
+  /**
+   * Marks this player has that fall outside the period, if any.
+   *
+   * A report covering the wrong weeks is silent about it otherwise: the block
+   * simply comes back empty and looks broken rather than looking wrong.
+   */
+  marks_outside?: { sessions: number; first: string; last: string } | null;
   matches: { appearances: number; minutes: number; goals: number; assists: number; yellow_cards: number; red_cards: number };
   fees: { charged_piastres: number; paid_piastres: number; outstanding_piastres: number; overdue: number };
   generated_at: string;
@@ -50,7 +57,7 @@ async function reportById(env: Env, id: string): Promise<PlayerReportRow> {
 async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapshot> {
   const player = await env.DB.prepare("SELECT * FROM players WHERE id=?").bind(report.player_id).first<PlayerRow>();
   const team = await env.DB.prepare("SELECT * FROM teams WHERE id=?").bind(report.team_id).first<TeamRow>();
-  const [attendance, marks, matches, charges] = await Promise.all([
+  const [attendance, marks, outside, matches, charges] = await Promise.all([
     // Only sessions inside the period, and only those somebody took a register
     // for: a session nobody marked counts against nobody.
     env.DB.prepare(`SELECT SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected
@@ -69,6 +76,12 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
       GROUP BY t.id ORDER BY t.sort_order, t.label`)
       .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`)
       .all<{ key: string; label: string; kind: "rating" | "count"; max_value: number | null; sort_order: number; sessions: number; total: number }>(),
+    // Marked sessions this player has that the period does not cover.
+    env.DB.prepare(`SELECT COUNT(DISTINCT s.id) sessions, MIN(s.starts_at) first, MAX(s.starts_at) last
+      FROM training_player_metrics m JOIN training_sessions s ON s.id = m.training_session_id
+      WHERE m.player_id = ? AND (s.starts_at < ? OR s.starts_at >= ?)`)
+      .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`)
+      .first<{ sessions: number; first: string | null; last: string | null }>(),
     env.DB.prepare(`SELECT COALESCE(SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END), 0) appearances,
       COALESCE(SUM(s.minutes_played), 0) minutes, COALESCE(SUM(s.goals), 0) goals,
       COALESCE(SUM(s.assists), 0) assists, COALESCE(SUM(s.yellow_cards), 0) yellow_cards,
@@ -120,6 +133,9 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
     },
     attendance: { attended, expected, pct: expected ? Math.round((attended / expected) * 100) : null },
     training,
+    marks_outside: outside && outside.sessions > 0 && outside.first && outside.last
+      ? { sessions: outside.sessions, first: outside.first, last: outside.last }
+      : null,
     matches: {
       appearances: matches?.appearances ?? 0,
       minutes: matches?.minutes ?? 0,
