@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { FlatCard } from '@/src/components/FlatCard';
+import { StatGrid, type Stat } from '@/src/components/StatGrid';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
@@ -41,7 +42,7 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
 
   // A metric nobody has recorded is left out rather than shown as a zero: a
   // nought here would read as a mark given, not as one never given.
-  const tiles = [
+  const tiles: Stat[] = [
     ...(attendance.expected > 0 ? [
       { key: 'attended', label: 'Attended', value: `${attendance.attended} of ${attendance.expected}` },
       { key: 'attendance', label: 'Attendance', value: `${attendance.pct}%`, tone: colors.accentSoft },
@@ -59,17 +60,7 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
   }
 
   return <>
-    {tiles.length ? <FlatCard radius={theme.radius.md} style={styles.summary}>
-      <View style={styles.grid}>{tiles.map((tile, index) => <View
-        key={tile.key}
-        // Hairlines between the cells rather than around them: a border only
-        // where two figures meet, and none at the edges of the panel.
-        style={[styles.cell, index % 3 !== 0 && styles.dividerLeft, index >= 3 && styles.dividerTop]}
-      >
-        <Text numberOfLines={1} style={[styles.value, tile.tone ? { color: tile.tone } : null]}>{tile.value}</Text>
-        <Text numberOfLines={1} style={styles.label}>{tile.label}</Text>
-      </View>)}</View>
-    </FlatCard> : null}
+    <StatGrid stats={tiles} />
 
     <Text accessibilityRole="header" style={styles.heading}>Session breakdown</Text>
     {!sessions.length ? <Text style={styles.empty}>No sessions recorded yet.</Text>
@@ -94,17 +85,6 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
-  summary: { overflow: 'hidden', padding: 0 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  // Exactly a third, so the two rows line up column for column.
-  cell: { alignItems: 'center', flexBasis: '33.33%', gap: 2, minWidth: 0, paddingHorizontal: theme.spacing.xs, paddingVertical: theme.spacing.md },
-  dividerLeft: { borderLeftColor: colors.border, borderLeftWidth: StyleSheet.hairlineWidth },
-  dividerTop: { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
-  // Dominant, but not so large that "10/10" cannot sit on one line in a third
-  // of a phone. `numberOfLines` holds it there whatever the figure turns out
-  // to be; the scale is the metric's to change.
-  value: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.heading, fontVariant: ['tabular-nums'] },
-  label: { color: colors.textMuted, fontSize: theme.type.caption, textAlign: 'center' },
 
   heading: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading },
   session: { padding: theme.spacing.md },
