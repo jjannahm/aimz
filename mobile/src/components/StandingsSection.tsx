@@ -127,22 +127,26 @@ export function StandingsSection() {
   const pickedName = table.data?.find((row) => row.team.id === picking?.[0])?.team.name;
 
   const closed = competition?.status === 'completed';
-  // The season sat beside the gear while Standings owned a screen. Nested under
-  // Match Centre there is no header of its own to sit in, so it heads the
-  // section instead — kept to the right, where it has always been read.
   return <View style={styles.section}>
-    <View style={styles.seasonRow}><SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} /></View>
     {closed ? <View style={styles.archived}>
       <Ionicons accessibilityElementsHidden color={colors.textMuted} name="lock-closed-outline" size={14} />
       <Text style={styles.archivedText}>{competition?.name} {competition?.season} has ended. This table is final.</Text>
     </View> : null}
-    {/* Only worth a switcher when more than one competition is running. */}
-    {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.tabs} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
-      {eligible.map((item) => {
-        const active = item.id === competitionId;
-        return <AnimatedTabPill key={item.id} label={item.name} onPress={() => { setSelected(item.id); setSelectedName(item.name); }} selected={active} style={styles.tab} testID={`competition-tab-${item.id}`} />;
-      })}
-    </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
+    {/* Which table and which season are one choice, so they share a line: the
+      * competitions on the left, the season held to the right of them. The
+      * season had a row of its own when it still had a screen header to sit in.
+      * Only worth a switcher when more than one competition is running. */}
+    <View style={styles.chooserRow} testID="standings-chooser">
+      <View style={styles.chooserSide}>
+        {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.tabs} horizontal showsHorizontalScrollIndicator={false} style={styles.tabBar}>
+          {eligible.map((item) => {
+            const active = item.id === competitionId;
+            return <AnimatedTabPill key={item.id} label={item.name} onPress={() => { setSelected(item.id); setSelectedName(item.name); }} selected={active} style={styles.tab} testID={`competition-tab-${item.id}`} />;
+          })}
+        </ScrollView> : competition ? <Text style={styles.soleCompetition}>{competition.name}</Text> : null}
+      </View>
+      <SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} />
+    </View>
     <View style={styles.content} testID="standings-content">
       {knockout ? <SegmentedControl label="Groups or bracket" onChange={setView} options={VIEWS} value={view} /> : null}
       {picking ? <View style={styles.compareBar}>
@@ -242,7 +246,15 @@ const COMPARE_CONTROL = 22;
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   // The spacing Screen gave these children while this was a page of its own.
   section: { gap: theme.size.sectionGap },
-  seasonRow: { alignItems: 'flex-end' },
+  // The pills and the season on one line. Both controls are already built to
+  // the same metrics — touch.minimum tall, pill radius — so centring is all the
+  // row needs to make them read as one strip.
+  chooserRow: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm },
+  // SeasonPicker takes no style of its own, so what holds it to the right is a
+  // left side that always takes the slack. It is also what bounds the pill
+  // scroller: without it a long list would shove the season off the edge
+  // rather than scroll under it.
+  chooserSide: { flex: 1, minWidth: 0 },
   // The section the switcher swaps, which keeps the page's own rhythm between
   // whatever it is showing.
   content: { gap: theme.spacing.lg },
