@@ -146,13 +146,16 @@ describe('PlayerDetailScreen', () => {
 
   // A percentage is only worth showing once a register has named her. A zero
   // before that reads as never turning up, when it means nobody has taken one.
-  it('shows training attendance once she has been marked', async () => {
+  // Training belongs to the other half of the record and is read there, so it
+  // does not appear a second time beside the match figures.
+  it('keeps training out of the match half', async () => {
     jest.mocked(api.playerStats).mockResolvedValue(summary({
       trainings_attended: 7, trainings_expected: 10, training_attendance_pct: 70,
     }));
     const screen = await render(<PlayerDetailScreen />, { wrapper });
-    expect(await screen.findByText('70%')).toBeTruthy();
-    expect(screen.getByText('Training · 7/10')).toBeTruthy();
+    expect(await screen.findByText('Appearances')).toBeTruthy();
+    expect(screen.queryByText('70%')).toBeNull();
+    expect(screen.queryByText('Training · 7/10')).toBeNull();
   });
 
   it('leaves training attendance out until a register names her', async () => {

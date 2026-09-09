@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { FlatCard } from '@/src/components/FlatCard';
+import { StatGrid, type Stat } from '@/src/components/StatGrid';
 import { isGoalkeeper, positionName } from '@/src/lib/positions';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
@@ -21,28 +22,23 @@ export function PlayerStatsPanel({ playerId, season }: { playerId: string; seaso
   // zeroes that say nothing, and they would crowd out the tallies that do.
   const keeping = { clean_sheets: query.data.clean_sheets ?? 0, goals_conceded: query.data.goals_conceded ?? 0, penalties_saved: query.data.penalties_saved ?? 0 };
   const keeps = isGoalkeeper(query.data.player.position) || keeping.clean_sheets > 0 || keeping.penalties_saved > 0 || keeping.goals_conceded > 0;
-  const tiles: { label: string; value: number | string }[] = [
-    { label: 'Appearances', value: query.data.appearances },
-    { label: 'Minutes', value: query.data.minutes_played },
-    { label: 'Goals', value: query.data.goals },
-    { label: 'Assists', value: query.data.assists },
-    { label: 'Yellow cards', value: query.data.yellow_cards },
-    { label: 'Red cards', value: query.data.red_cards },
-    // Only once a register has named her. Before that a zero would read as
-    // never turning up, when it means nobody has taken one yet.
-    ...(query.data.training_attendance_pct === null || query.data.training_attendance_pct === undefined ? [] : [{
-      label: `Training · ${query.data.trainings_attended}/${query.data.trainings_expected}`,
-      value: `${query.data.training_attendance_pct}%`,
-    }]),
+  // Training belongs to the other half of the record, and is read there.
+  const tiles: Stat[] = [
+    { key: 'appearances', label: 'Appearances', value: query.data.appearances },
+    { key: 'minutes', label: 'Minutes', value: query.data.minutes_played },
+    { key: 'goals', label: 'Goals', value: query.data.goals },
+    { key: 'assists', label: 'Assists', value: query.data.assists },
+    { key: 'yellow', label: 'Yellow cards', value: query.data.yellow_cards },
+    { key: 'red', label: 'Red cards', value: query.data.red_cards },
     ...(keeps ? [
-      { label: 'Clean sheets', value: keeping.clean_sheets },
-      { label: 'Goals conceded', value: keeping.goals_conceded },
-      { label: 'Penalties saved', value: keeping.penalties_saved },
+      { key: 'clean-sheets', label: 'Clean sheets', value: keeping.clean_sheets },
+      { key: 'conceded', label: 'Goals conceded', value: keeping.goals_conceded },
+      { key: 'penalties', label: 'Penalties saved', value: keeping.penalties_saved },
     ] : []),
   ];
   return <>
     <FlatCard radius={theme.radius.lg} style={styles.profile}>{query.data.player.photo_url ? <Image accessibilityLabel={`${query.data.player.name} profile photo`} source={{ uri: mediaUrl(query.data.player.photo_url) }} style={styles.profilePhoto} /> : <View style={styles.number}><Text style={styles.numberText}>{query.data.player.jersey_number ?? '–'}</Text></View>}<View><Text style={styles.name}>{query.data.player.name}</Text><Text style={styles.position}>{positionName(query.data.player.position)}</Text><Text style={styles.season}>{query.data.season ?? 'All recorded seasons'}</Text></View></FlatCard>
-    <View style={styles.grid}>{tiles.map((item) => <FlatCard key={item.label} radius={theme.radius.md} style={styles.stat}><Text style={styles.value}>{item.value}</Text><Text style={styles.label}>{item.label}</Text></FlatCard>)}</View>
+    <StatGrid stats={tiles} />
     <Text style={styles.heading}>Match breakdown</Text>
     {query.data.matches.length === 0 ? <Text style={styles.empty}>No finished-match statistics yet.</Text> : query.data.matches.map((item) => <FlatCard key={item.id} radius={theme.radius.md} style={styles.match}>
       <Text style={styles.matchTitle}>{item.opponent ? `vs ${item.opponent.name}` : `${item.minutes_played} minutes`}</Text>
