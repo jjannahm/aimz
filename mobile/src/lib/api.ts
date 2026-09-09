@@ -2,7 +2,19 @@ import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
 import type { AdminAccount, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
-type RequestOptions = Omit<RequestInit, 'body'> & { body?: unknown; authenticated?: boolean };
+type RequestOptions = Omit<RequestInit, 'body'> & {
+  body?: unknown;
+  authenticated?: boolean;
+  /**
+   * Set only by the 401 retry below, so a request refreshes at most once.
+   *
+   * Without it a token the server keeps rejecting recurses forever: refresh
+   * succeeds, the retry is refused again, and it refreshes again. The app hangs
+   * on requests that never settle rather than saying anything, which reads as a
+   * dead page rather than a session that has run out.
+   */
+  refreshed?: boolean;
+};
 
 export class ApiError extends Error {
   constructor(
@@ -124,13 +136,20 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       headers,
       signal: controller.signal,
     });
-    if (response.status === 401 && authenticated && session) {
+    if (response.status === 401 && authenticated && session && !options.refreshed) {
       const next = await refreshSession();
       return request<T>(path, {
         ...options,
+        refreshed: true,
         headers: { ...Object.fromEntries(headers), Authorization: `Bearer ${next.access_token}` },
       });
     }
+    // Refused again on a token minted seconds ago: the session is spent, not
+    // stale, so put it down. The API answers 403 when somebody is signed in but
+    // not allowed, so a 401 here is about the session and nothing else. Clearing
+    // it is what moves the reader on to the sign-in screen; leaving it would
+    // strand them on a page that can never load.
+    if (response.status === 401 && authenticated && session && options.refreshed) await sessionStore.clear();
     if (!response.ok) throw await parseError(response);
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;
