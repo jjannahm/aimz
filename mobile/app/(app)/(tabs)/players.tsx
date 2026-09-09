@@ -50,7 +50,10 @@ const sectionsFor = (linked: boolean): Section[] =>
  * keeps its own options once a season is chosen — keyed the way the panel keys
  * its own unfiltered read, so the two share one fetch rather than making two.
  */
-const STAT_HALVES = [{ label: 'Match Stats', value: 'match' }, { label: 'Training Stats', value: 'training' }] as const;
+// Training leads, because it is the half this opens on and the fuller record:
+// she trains every week and plays some weeks. A selected tab sitting second
+// with an empty one to its left reads as though something was skipped.
+const STAT_HALVES = [{ label: 'Training Stats', value: 'training' }, { label: 'Match Stats', value: 'match' }] as const;
 
 function MyStats({ playerId }: { playerId: string }) {
   const styles = useThemedStyles(stylesheet);

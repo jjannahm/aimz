@@ -41,7 +41,7 @@ export default function PlayerDetailScreen() {
   // panel used to be the only thing on here that named her, which left the
   // training half — the half this opens on now — with nobody's name on it.
   return <Screen action={<CloseButton />} title={career.data?.player.name ?? 'Player stats'}>
-    {plays ? <SegmentedControl label="Which statistics" onChange={setHalf} options={[MATCH, TRAINING]} value={showing} /> : null}
+    {plays ? <SegmentedControl label="Which statistics" onChange={setHalf} options={[TRAINING, MATCH]} value={showing} /> : null}
 
     {showing === 'match' ? <>
       <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />
