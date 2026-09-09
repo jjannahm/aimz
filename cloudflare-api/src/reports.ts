@@ -10,10 +10,16 @@ type App = Hono<{ Bindings: Env }>;
 
 /** What a report says, as it stood when it was published. */
 interface ReportSnapshot {
-  /** Bumped when the shape changes, so an old link keeps rendering. */
-  version: 1;
+  /**
+   * Bumped when the shape changes, so an old link keeps rendering. Two adds
+   * the training marks; a report published before them has no `training` and
+   * is read as having none, which is what it recorded.
+   */
+  version: 1 | 2;
   player: { name: string; team_name: string | null; position: string | null; jersey_number: number | null };
   attendance: { attended: number; expected: number; pct: number | null };
+  /** How the player was marked at training over the period. */
+  training?: { key: string; label: string; kind: "rating" | "count"; max_value: number | null; value: number; sessions: number }[];
   matches: { appearances: number; minutes: number; goals: number; assists: number; yellow_cards: number; red_cards: number };
   fees: { charged_piastres: number; paid_piastres: number; outstanding_piastres: number; overdue: number };
   generated_at: string;
@@ -44,7 +50,7 @@ async function reportById(env: Env, id: string): Promise<PlayerReportRow> {
 async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapshot> {
   const player = await env.DB.prepare("SELECT * FROM players WHERE id=?").bind(report.player_id).first<PlayerRow>();
   const team = await env.DB.prepare("SELECT * FROM teams WHERE id=?").bind(report.team_id).first<TeamRow>();
-  const [attendance, matches, charges] = await Promise.all([
+  const [attendance, marks, matches, charges] = await Promise.all([
     // Only sessions inside the period, and only those somebody took a register
     // for: a session nobody marked counts against nobody.
     env.DB.prepare(`SELECT SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected
@@ -52,6 +58,17 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
       WHERE a.player_id = ? AND s.starts_at >= ? AND s.starts_at < ?`)
       .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`)
       .first<{ attended: number | null; expected: number }>(),
+    // The marks given inside the period, with the metric they belong to. A
+    // rating averages and a count adds up, which is why the kind comes along.
+    env.DB.prepare(`SELECT t.key, t.label, t.kind, t.max_value, t.sort_order,
+      COUNT(*) sessions, SUM(m.value) total
+      FROM training_player_metrics m
+      JOIN training_metrics t ON t.id = m.metric_id
+      JOIN training_sessions s ON s.id = m.training_session_id
+      WHERE m.player_id = ? AND s.starts_at >= ? AND s.starts_at < ?
+      GROUP BY t.id ORDER BY t.sort_order, t.label`)
+      .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`)
+      .all<{ key: string; label: string; kind: "rating" | "count"; max_value: number | null; sort_order: number; sessions: number; total: number }>(),
     env.DB.prepare(`SELECT COALESCE(SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END), 0) appearances,
       COALESCE(SUM(s.minutes_played), 0) minutes, COALESCE(SUM(s.goals), 0) goals,
       COALESCE(SUM(s.assists), 0) assists, COALESCE(SUM(s.yellow_cards), 0) yellow_cards,
@@ -83,8 +100,18 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
 
   const attended = attendance?.attended ?? 0;
   const expected = attendance?.expected ?? 0;
+  const training = marks.results.map((row) => ({
+    key: row.key,
+    label: row.label,
+    kind: row.kind,
+    max_value: row.max_value,
+    // Averaging minutes, or adding up marks out of ten, would each be
+    // arithmetic that means nothing.
+    value: row.kind === "rating" ? Math.round((row.total / row.sessions) * 10) / 10 : row.total,
+    sessions: row.sessions,
+  }));
   return {
-    version: 1,
+    version: 2,
     player: {
       name: player?.name ?? "Unknown player",
       team_name: team?.name ?? null,
@@ -92,6 +119,7 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
       jersey_number: player?.jersey_number ?? null,
     },
     attendance: { attended, expected, pct: expected ? Math.round((attended / expected) * 100) : null },
+    training,
     matches: {
       appearances: matches?.appearances ?? 0,
       minutes: matches?.minutes ?? 0,
