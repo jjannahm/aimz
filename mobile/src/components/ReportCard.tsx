@@ -77,16 +77,16 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
     })),
   ] : [];
 
-  const matches: Figure[] = snapshot && snapshot.matches.appearances > 0 ? [
-    { key: 'appearances', label: 'Appearances', value: snapshot.matches.appearances },
-    { key: 'minutes', label: 'Minutes', value: snapshot.matches.minutes },
-    { key: 'goals', label: 'Goals', value: snapshot.matches.goals },
-    { key: 'assists', label: 'Assists', value: snapshot.matches.assists },
+  const matches: Figure[] = snapshot && (snapshot.matches.appearances ?? 0) > 0 ? [
+    { key: 'appearances', label: 'Appearances', value: snapshot.matches.appearances ?? 0 },
+    { key: 'minutes', label: 'Minutes', value: snapshot.matches.minutes ?? 0 },
+    { key: 'goals', label: 'Goals', value: snapshot.matches.goals ?? 0 },
+    { key: 'assists', label: 'Assists', value: snapshot.matches.assists ?? 0 },
     // The two cards are shown apart and shown at nought: a yellow and a red are
     // not the same thing to a parent, and six figures fill two rows of three
     // exactly, which is what the divided grid is drawn for.
-    { key: 'yellow', label: 'Yellow cards', value: snapshot.matches.yellow_cards },
-    { key: 'red', label: 'Red cards', value: snapshot.matches.red_cards },
+    { key: 'yellow', label: 'Yellow cards', value: snapshot.matches.yellow_cards ?? 0 },
+    { key: 'red', label: 'Red cards', value: snapshot.matches.red_cards ?? 0 },
   ] : [];
 
   const fees: Figure[] = snapshot && snapshot.fees.charged_piastres !== 0 ? [
