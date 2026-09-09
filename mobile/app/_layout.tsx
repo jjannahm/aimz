@@ -10,9 +10,10 @@ import { StatusBar } from 'expo-status-bar';
 import { useFonts } from 'expo-font';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Platform, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
 
 import { AuthProvider } from '@/src/auth/AuthProvider';
+import { AppErrorBoundary } from '@/src/components/AppErrorBoundary';
 import { DialogHost } from '@/src/components/DialogHost';
 import { ToastHost } from '@/src/components/ToastHost';
 import { ThemeProvider, useAppTheme } from '@/src/theme/ThemeProvider';
@@ -50,6 +51,12 @@ const textFonts = Platform.OS === 'web'
   };
 const appFonts = { ...iconFont, ...textFonts };
 
+/**
+ * Caught by expo-router and shown in place of this layout's tree, so a screen
+ * that throws says so rather than leaving a bare page behind.
+ */
+export { AppErrorBoundary as ErrorBoundary };
+
 export default function RootLayout() {
   return (
     <ThemeProvider>
@@ -67,7 +74,12 @@ function ThemedRoot() {
     defaultOptions: { queries: { retry: 1, staleTime: 20_000 } },
   }));
   const [fontsLoaded, fontError] = useFonts(appFonts);
-  if (!fontsLoaded && !fontError) return <View style={{ backgroundColor: colors.background, flex: 1 }} />;
+  // The document's own splash goes the moment React mounts, and the faces are
+  // seven more files to fetch after the bundle — so without something here the
+  // page would go blank again for exactly as long as that takes.
+  if (!fontsLoaded && !fontError) return <View style={{ alignItems: 'center', backgroundColor: colors.background, flex: 1, justifyContent: 'center' }}>
+    <ActivityIndicator color={colors.textMuted} />
+  </View>;
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
