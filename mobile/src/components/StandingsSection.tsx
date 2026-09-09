@@ -7,9 +7,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { BracketView } from '@/src/components/BracketView';
-import { Screen } from '@/src/components/Screen';
 import { SeasonPicker } from '@/src/components/SeasonPicker';
-import { SettingsButton } from '@/src/components/SettingsButton';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { FormStrip } from '@/src/components/FormStrip';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
@@ -51,7 +49,14 @@ function CompareToggle({ comparing, onPress }: { comparing: boolean; onPress: ()
 
 const VIEWS = [{ label: 'Groups', value: 'groups' }, { label: 'Bracket', value: 'bracket' }] as const;
 
-export default function StandingsScreen() {
+/**
+ * The league table, and everything that reads with it.
+ *
+ * A section rather than a screen: Standings sits inside Match Centre now,
+ * one segment along from Results, so it draws its own body and leaves the
+ * page header to the screen around it.
+ */
+export function StandingsSection() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const { user } = useAuth();
@@ -122,10 +127,11 @@ export default function StandingsScreen() {
   const pickedName = table.data?.find((row) => row.team.id === picking?.[0])?.team.name;
 
   const closed = competition?.status === 'completed';
-  // The header's own settings button sits left of a screen's action, which
-  // would put the gear between the title and the season. Here the two are
-  // given in the order they should read: the season, then settings on the edge.
-  return <Screen action={<><SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} /><SettingsButton /></>} hideSettings title="Standings">
+  // The season sat beside the gear while Standings owned a screen. Nested under
+  // Match Centre there is no header of its own to sit in, so it heads the
+  // section instead — kept to the right, where it has always been read.
+  return <View style={styles.section}>
+    <View style={styles.seasonRow}><SeasonPicker completed={closed} onChange={(next) => { setSeason(next); setSelected(null); }} season={openSeason ?? ''} seasons={seasons} /></View>
     {closed ? <View style={styles.archived}>
       <Ionicons accessibilityElementsHidden color={colors.textMuted} name="lock-closed-outline" size={14} />
       <Text style={styles.archivedText}>{competition?.name} {competition?.season} has ended. This table is final.</Text>
@@ -150,7 +156,7 @@ export default function StandingsScreen() {
         : knockout ? <View style={styles.groups}>{groupedRows.map((group) => <View key={group.name} style={styles.group}><Text style={styles.groupName}>{group.name}</Text>{tableFor(group.rows)}</View>)}</View>
         : tableFor(table.data)}
     </View>
-  </Screen>;
+  </View>;
 
   function tableFor(rows: StandingRow[]) {
     return <View style={styles.table}>
@@ -234,6 +240,9 @@ const POINTS_COLUMN = 34;
 const COMPARE_CONTROL = 22;
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  // The spacing Screen gave these children while this was a page of its own.
+  section: { gap: theme.size.sectionGap },
+  seasonRow: { alignItems: 'flex-end' },
   // The section the switcher swaps, which keeps the page's own rhythm between
   // whatever it is showing.
   content: { gap: theme.spacing.lg },

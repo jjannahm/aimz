@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { View, type ColorValue } from 'react-native';
 
-export type TabIconName = 'manage' | 'matches' | 'myTeam' | 'players' | 'settings' | 'standings';
+export type TabIconName = 'manage' | 'matches' | 'myTeam' | 'players' | 'reports' | 'settings';
 
 type Props = {
   color: ColorValue;
@@ -10,7 +10,7 @@ type Props = {
 };
 
 const nativeIconNames: Record<Exclude<TabIconName, 'matches'>, keyof typeof Ionicons.glyphMap> = {
-  standings: 'podium-outline',
+  reports: 'document-text-outline',
   players: 'people-outline',
   manage: 'create-outline',
   myTeam: 'calendar-outline',
