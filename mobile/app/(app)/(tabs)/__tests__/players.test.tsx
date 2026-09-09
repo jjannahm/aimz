@@ -329,6 +329,11 @@ describe('PlayersScreen', () => {
     expect(await screen.findByRole('tab', { name: 'Training Stats' })).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Training Stats' }).props.accessibilityState.selected).toBe(true);
     expect(screen.getByRole('tab', { name: 'Match Stats' })).toBeTruthy();
+    // Training leads the row as well as opening it: a selected tab sitting
+    // second, with an empty one to its left, reads as a step skipped.
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.indexOf(screen.getByRole('tab', { name: 'Training Stats' })))
+      .toBeLessThan(tabs.indexOf(screen.getByRole('tab', { name: 'Match Stats' })));
     // She trains every week and plays some weeks, so this is the fuller half.
     expect(await screen.findByText('4 of 5')).toBeTruthy();
   });

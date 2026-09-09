@@ -186,6 +186,10 @@ describe('PlayerDetailScreen', () => {
       expect(screen.getByRole('tab', { name: 'Match Stats' })).toBeTruthy();
       // Whichever half is up, the header says whose record this is.
       expect(screen.getAllByText('Nour Hassan').length).toBeGreaterThan(0);
+      // The half that opens is the one on the left, here as under My Stats.
+      const tabs = screen.getAllByRole('tab');
+      expect(tabs.indexOf(screen.getByRole('tab', { name: 'Training Stats' })))
+        .toBeLessThan(tabs.indexOf(screen.getByRole('tab', { name: 'Match Stats' })));
     });
 
     it('reads the training record when that half is chosen', async () => {
