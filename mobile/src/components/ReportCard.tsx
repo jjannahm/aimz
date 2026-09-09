@@ -30,6 +30,20 @@ const PAGE_TYPE = {
   footnote: theme.type.label,
 } as const;
 
+/** One figure in a block. */
+interface Figure {
+  key: string;
+  label: string;
+  value: string | number;
+  tone?: string;
+  /**
+   * A value that is words wide rather than digits wide. Only money is: a fee
+   * carries its currency, and at the figure size it would not fit a third of
+   * a phone. A count of minutes is digits and stands with the rest.
+   */
+  dense?: boolean;
+}
+
 /**
  * A report, as it is read.
  *
@@ -46,11 +60,50 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
   // than as a second copy of the whole sheet.
   const big = size === 'page';
   const at = (key: keyof typeof PAGE_TYPE) => (big ? { fontSize: PAGE_TYPE[key] } : null);
-  // The register and the marks share one block, so how many go across depends
-  // on how many there are: two sit as halves, more divide into thirds.
-  const marks = snapshot?.training ?? [];
-  const figures = (snapshot && snapshot.attendance.expected > 0 ? 2 : 0) + marks.length;
-  const training = { marks, figures, across: figures <= 2 ? 2 : 3 };
+
+  // The register and the marks share one block: between them they answer one
+  // question about how a term went.
+  const training: Figure[] = snapshot ? [
+    ...(snapshot.attendance.expected > 0 ? [
+      { key: 'attended', label: 'Attended', value: `${snapshot.attendance.attended} of ${snapshot.attendance.expected}` },
+      { key: 'attendance', label: 'Attendance', value: `${snapshot.attendance.pct}%`, tone: colors.accentSoft },
+    ] : []),
+    // A report published before the marks existed carries none, and simply
+    // shows the register.
+    ...(snapshot.training ?? []).map((mark) => ({
+      key: mark.key,
+      label: mark.kind === 'rating' ? `${mark.label} avg` : mark.label,
+      value: mark.kind === 'rating' ? `${mark.value}/${mark.max_value ?? 10}` : mark.value,
+    })),
+  ] : [];
+
+  const matches: Figure[] = snapshot && snapshot.matches.appearances > 0 ? [
+    { key: 'appearances', label: 'Appearances', value: snapshot.matches.appearances },
+    { key: 'minutes', label: 'Minutes', value: snapshot.matches.minutes },
+    { key: 'goals', label: 'Goals', value: snapshot.matches.goals },
+    { key: 'assists', label: 'Assists', value: snapshot.matches.assists },
+    ...(snapshot.matches.yellow_cards + snapshot.matches.red_cards > 0
+      ? [{ key: 'cards', label: 'Cards', value: snapshot.matches.yellow_cards + snapshot.matches.red_cards }] : []),
+  ] : [];
+
+  const fees: Figure[] = snapshot && snapshot.fees.charged_piastres !== 0 ? [
+    { key: 'charged', label: 'Charged', value: formatEgpRound(snapshot.fees.charged_piastres), dense: true },
+    { key: 'received', label: 'Received', value: formatEgpRound(snapshot.fees.paid_piastres), tone: colors.live, dense: true },
+    {
+      key: 'outstanding',
+      label: snapshot.fees.overdue > 0 ? 'Outstanding, overdue' : 'Outstanding',
+      value: formatEgpRound(snapshot.fees.outstanding_piastres),
+      tone: snapshot.fees.outstanding_piastres > 0 ? colors.error : undefined,
+      dense: true,
+    },
+  ] : [];
+
+  const block = (title: string, figures: Figure[], empty: string) => <>
+    <Text accessibilityRole="header" style={[styles.heading, at('heading')]}>{title}</Text>
+    {figures.length
+      ? <FlatCard radius={theme.radius.md} style={styles.grid}><Figures figures={figures} size={size} /></FlatCard>
+      : <FlatCard radius={theme.radius.md} style={styles.block}><Text style={styles.muted}>{empty}</Text></FlatCard>}
+  </>;
 
   return <View style={styles.stack}>
     <FlatCard radius={theme.radius.lg} style={styles.head}>
@@ -64,61 +117,9 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
     </FlatCard>
 
     {snapshot ? <>
-      <Text accessibilityRole="header" style={[styles.heading, at('heading')]}>Training</Text>
-      <FlatCard radius={theme.radius.md} style={styles.block}>
-        {training.figures === 0
-          // A zero would read as never turning up, when it means nobody kept a
-          // register or gave a mark over these weeks.
-          ? <Text style={styles.muted}>Nothing was recorded at training over this period.</Text>
-          : <View style={styles.figures}>
-            {snapshot.attendance.expected > 0 ? <>
-              <Figure label="Attended" of={training.across} size={size} value={`${snapshot.attendance.attended} of ${snapshot.attendance.expected}`} />
-              <Figure label="Attendance" of={training.across} size={size} tone={colors.accentSoft} value={`${snapshot.attendance.pct}%`} />
-            </> : null}
-            {/* The marks, beside the register: how a player trained, not only
-              * whether they were there. A report published before these were
-              * recorded carries none, and simply shows the register. */}
-            {training.marks.map((mark) => <Figure
-              key={mark.key}
-              dense={mark.kind === 'count'}
-              label={mark.kind === 'rating' ? `${mark.label} avg` : mark.label}
-              of={training.across}
-              size={size}
-              value={mark.kind === 'rating' ? `${mark.value}/${mark.max_value ?? 10}` : mark.value}
-            />)}
-          </View>}
-      </FlatCard>
-
-      <Text accessibilityRole="header" style={[styles.heading, at('heading')]}>Matches</Text>
-      <FlatCard radius={theme.radius.md} style={styles.block}>
-        {snapshot.matches.appearances === 0
-          ? <Text style={styles.muted}>No matches played over this period.</Text>
-          : <View style={styles.figures}>
-            <Figure label="Appearances" size={size} value={snapshot.matches.appearances} />
-            <Figure label="Minutes" size={size} value={snapshot.matches.minutes} />
-            <Figure label="Goals" size={size} value={snapshot.matches.goals} />
-            <Figure label="Assists" size={size} value={snapshot.matches.assists} />
-            {snapshot.matches.yellow_cards + snapshot.matches.red_cards > 0
-              ? <Figure label="Cards" size={size} value={snapshot.matches.yellow_cards + snapshot.matches.red_cards} /> : null}
-          </View>}
-      </FlatCard>
-
-      <Text accessibilityRole="header" style={[styles.heading, at('heading')]}>Fees</Text>
-      <FlatCard radius={theme.radius.md} style={styles.block}>
-        {snapshot.fees.charged_piastres === 0
-          ? <Text style={styles.muted}>Nothing has been charged.</Text>
-          : <View style={styles.figures}>
-            <Figure dense label="Charged" size={size} value={formatEgpRound(snapshot.fees.charged_piastres)} />
-            <Figure dense label="Received" size={size} tone={colors.live} value={formatEgpRound(snapshot.fees.paid_piastres)} />
-            <Figure
-              dense
-              label={snapshot.fees.overdue > 0 ? 'Outstanding, overdue' : 'Outstanding'}
-              size={size}
-              tone={snapshot.fees.outstanding_piastres > 0 ? colors.error : undefined}
-              value={formatEgpRound(snapshot.fees.outstanding_piastres)}
-            />
-          </View>}
-      </FlatCard>
+      {block('Training', training, 'Nothing was recorded at training over this period.')}
+      {block('Matches', matches, 'No matches played over this period.')}
+      {block('Fees', fees, 'Nothing has been charged.')}
     </> : null}
 
     {report.coach_feedback.trim() ? <>
@@ -137,18 +138,36 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
 }
 
 /**
- * `dense` is for a figure whose value is words wide rather than digits wide.
- * A fee amount at the figure size wraps inside a third of the card once the
- * report is nested in Manage, and a number broken across two lines is worse
- * than a slightly smaller one.
+ * A block's figures, as one panel divided by hairlines.
+ *
+ * A border only where two figures meet, and none around them: outlines at
+ * reading distance are things to look at before a number is read, and the
+ * figures are what somebody came for. The same grid the player's own training
+ * page uses, so a reader moving between the two is looking at one thing.
  */
-function Figure({ label, value, tone, size, dense = false, of = 3 }: { label: string; value: string | number; tone?: string; size: ReportSize; dense?: boolean; of?: number }) {
+function Figures({ figures, size }: { figures: Figure[]; size: ReportSize }) {
   const styles = useThemedStyles(stylesheet);
   const big = size === 'page';
-  return <View style={[styles.figure, { flexBasis: `${100 / of}%` }]}>
-    <Text style={[styles.figureValue, big && { fontSize: dense ? theme.type.body : PAGE_TYPE.figureValue }, tone ? { color: tone } : null]}>{value}</Text>
-    <Text style={[styles.figureLabel, big && { fontSize: PAGE_TYPE.figureLabel }]}>{label}</Text>
-  </View>;
+  // Two sit as halves; more divide into thirds and wrap, so the rows line up
+  // column for column however many there turn out to be.
+  const across = figures.length <= 2 ? 2 : 3;
+  return <View style={styles.row}>{figures.map((figure, index) => <View
+    key={figure.key}
+    style={[
+      styles.cell,
+      { flexBasis: `${100 / across}%` },
+      index % across !== 0 && styles.dividerLeft,
+      index >= across && styles.dividerTop,
+    ]}
+  >
+    <Text
+      numberOfLines={1}
+      style={[styles.value, big && { fontSize: figure.dense ? theme.type.body : PAGE_TYPE.figureValue }, figure.tone ? { color: figure.tone } : null]}
+    >
+      {figure.value}
+    </Text>
+    <Text numberOfLines={2} style={[styles.label, big && { fontSize: PAGE_TYPE.figureLabel }]}>{figure.label}</Text>
+  </View>)}</View>;
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
@@ -160,21 +179,14 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
 
   heading: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 1, marginTop: theme.spacing.xs, textTransform: 'uppercase' },
   block: { padding: theme.spacing.md },
-  // Three to a row, in columns that line up whatever is in them, wrapping to
-  // the next row past the third. A share of the width each rather than a gap
-  // between them, the way the weekday picker fits seven across.
-  //
-  // Each figure is centred in its own third, which is what makes the grid read
-  // as one: left-aligned, a narrow "5 Goals" beside a wide "Appearances" leaves
-  // the card looking ragged even though the columns are exact. The squad
-  // ledger's totals row is centred for the same reason.
-  figures: { flexDirection: 'row', flexWrap: 'wrap', rowGap: theme.spacing.md },
-  // A row of figures divides the card evenly among however many it holds:
-  // three across for matches and fees, halves for the two training figures,
-  // so neither is left sitting beside an empty column.
-  figure: { alignItems: 'center', gap: 2, minWidth: 0, paddingHorizontal: theme.spacing.xs },
-  figureValue: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.body, fontVariant: ['tabular-nums'], textAlign: 'center' },
-  figureLabel: { color: colors.textMuted, fontSize: theme.type.caption, textAlign: 'center' },
+  // The dividers are drawn inside the card, so it keeps its own rounded edge.
+  grid: { overflow: 'hidden', padding: 0 },
+  row: { flexDirection: 'row', flexWrap: 'wrap' },
+  cell: { alignItems: 'center', gap: 2, minWidth: 0, paddingHorizontal: theme.spacing.xs, paddingVertical: theme.spacing.md },
+  dividerLeft: { borderLeftColor: colors.border, borderLeftWidth: StyleSheet.hairlineWidth },
+  dividerTop: { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
+  value: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.body, fontVariant: ['tabular-nums'] },
+  label: { color: colors.textMuted, fontSize: theme.type.caption, textAlign: 'center' },
 
   feedback: { color: colors.textPrimary, fontFamily: theme.font.regular, lineHeight: 22 },
   feedbackPage: { lineHeight: 26 },
