@@ -3,7 +3,6 @@ import { useLocalSearchParams } from 'expo-router';
 import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { AppButton } from '@/src/components/AppButton';
-import { BrandMark } from '@/src/components/BrandMark';
 import { ReportCard } from '@/src/components/ReportCard';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
@@ -32,7 +31,6 @@ export default function SharedReportScreen() {
   });
 
   return <ScrollView contentContainerStyle={styles.page} style={styles.screen}>
-    <View style={styles.masthead}><BrandMark /></View>
     {report.isLoading ? <LoadingState label="Opening the report" />
       : report.isError || !report.data
         // One message for a wrong address, a replaced one and a withdrawn
@@ -45,7 +43,7 @@ export default function SharedReportScreen() {
           onRetry={() => report.refetch()}
         />
         : <>
-          <ReportCard report={report.data} size="page" />
+          <ReportCard brand report={report.data} size="page" />
           {/* No PDF library anywhere in this app, and none needed: the browser
             * prints this page, and Save as PDF is inside its own dialog. */}
           {Platform.OS === 'web' ? <View style={styles.print}>
@@ -59,7 +57,6 @@ export default function SharedReportScreen() {
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   screen: { backgroundColor: colors.background },
   page: { gap: theme.spacing.sm, maxWidth: 760, padding: theme.spacing.lg, width: '100%' },
-  masthead: { alignItems: 'flex-start', paddingBottom: theme.spacing.sm },
   print: { marginTop: theme.spacing.sm },
   privacy: { color: colors.textMuted, fontSize: theme.type.caption, marginTop: theme.spacing.sm },
 });

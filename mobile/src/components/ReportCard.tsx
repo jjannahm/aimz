@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 
+import { BrandMark } from '@/src/components/BrandMark';
 import { FlatCard } from '@/src/components/FlatCard';
 import { formatEgpRound } from '@/src/lib/money';
 import { positionName } from '@/src/lib/positions';
@@ -52,7 +53,7 @@ interface Figure {
  * It takes a plain report and nothing else — no hooks, no queries, no account —
  * because the last of those three has no session to read anything with.
  */
-export function ReportCard({ report, size = 'page' }: { report: SharedReport; size?: ReportSize }) {
+export function ReportCard({ report, size = 'page', brand = false }: { report: SharedReport; size?: ReportSize; brand?: boolean }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
   const snapshot = report.snapshot;
@@ -119,13 +120,19 @@ export function ReportCard({ report, size = 'page' }: { report: SharedReport; si
 
   return <View style={styles.stack}>
     <FlatCard radius={theme.radius.lg} style={styles.head}>
-      <Text accessibilityRole="header" style={[styles.title, at('title')]}>{report.title}</Text>
-      {snapshot ? <Text style={[styles.who, at('who')]}>
-        {snapshot.player.name}
-        {snapshot.player.position ? ` · ${positionName(snapshot.player.position)}` : ''}
-        {snapshot.player.team_name ? ` · ${snapshot.player.team_name}` : ''}
-      </Text> : null}
-      <Text style={[styles.period, at('footnote')]}>{readable(report.period_start)} to {readable(report.period_end)}</Text>
+      {/* The mark sits in the header rather than above it: on the page a parent
+        * opens, this card is the letterhead, and a logo standing on its own
+        * over it is a second thing to look at before the child's name. */}
+      <View style={styles.headText}>
+        <Text accessibilityRole="header" style={[styles.title, at('title')]}>{report.title}</Text>
+        {snapshot ? <Text style={[styles.who, at('who')]}>
+          {snapshot.player.name}
+          {snapshot.player.position ? ` · ${positionName(snapshot.player.position)}` : ''}
+          {snapshot.player.team_name ? ` · ${snapshot.player.team_name}` : ''}
+        </Text> : null}
+        <Text style={[styles.period, at('footnote')]}>{readable(report.period_start)} to {readable(report.period_end)}</Text>
+      </View>
+      {brand ? <BrandMark size={56} /> : null}
     </FlatCard>
 
     {snapshot ? <>
@@ -184,7 +191,10 @@ function Figures({ figures, size }: { figures: Figure[]; size: ReportSize }) {
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   stack: { gap: theme.spacing.sm },
-  head: { gap: 4, padding: theme.spacing.md },
+  head: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md },
+  // The mark keeps its own width; the words take what is left and wrap inside
+  // it rather than pushing it off the card.
+  headText: { flex: 1, gap: 4, minWidth: 0 },
   title: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading },
   who: { color: colors.textPrimary, fontFamily: theme.font.semibold },
   period: { color: colors.textMuted, fontSize: theme.type.label },
