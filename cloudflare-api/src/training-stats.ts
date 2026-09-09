@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
-import { ApiProblem, adminUser, currentUser, jsonObject, nowIso, numberField, publicPlayer, stringField } from "./helpers";
-import { linkedPlayerIds } from "./team-access";
+import { ApiProblem, currentUser, jsonObject, nowIso, numberField, publicPlayer, stringField } from "./helpers";
+import { assertCanManageTeam, guardPlayer, linkedPlayerIds, managingUser } from "./team-access";
 import { requireTrainingAccess, trainingById } from "./training";
 import type { PlayerRow, TrainingMetricRow, TrainingPlayerMetricRow, TrainingRow } from "./types";
 
@@ -73,8 +73,9 @@ export function registerTrainingStatsRoutes(app: App): void {
    * rather than storing a zero — which for a rating would be a mark, not a gap.
    */
   app.put("/api/v1/training-sessions/:id/performance", async (c) => {
-    await adminUser(c);
+    const { scope } = await managingUser(c);
     const session = await trainingById(c.env, c.req.param("id"));
+    assertCanManageTeam(scope, session.team_id);
     const body = await jsonObject(c);
     if (!Array.isArray(body.entries) || body.entries.length > 500) {
       throw new ApiProblem(422, "validation_error", "Send up to 500 readings.", [{ field: "entries", message: "Send up to 500 readings." }]);
@@ -115,7 +116,7 @@ export function registerTrainingStatsRoutes(app: App): void {
    * there is one truth about whether somebody turned up and it already exists.
    */
   app.get("/api/v1/players/:id/training-stats", async (c) => {
-    const actor = await currentUser(c);
+    const actor = await guardPlayer(c, c.req.param("id"));
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>();
     if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
     // A family reads their own children; anybody else signed in reads the

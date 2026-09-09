@@ -181,10 +181,18 @@ function HeadToHeadSection({ team, table }: { team: Team; table: StandingRow[] }
   </>;
 }
 
-export default function TeamProfileScreen() {
+/**
+ * A squad's profile: who they are, how they are doing, who plays for them.
+ *
+ * Named as well as routed, so the manager's own Team tab renders exactly this
+ * rather than a second version of it. The tab passes `asTab`, which drops the
+ * close button — there is nothing to close when the screen is the destination
+ * rather than something opened over another.
+ */
+export function TeamProfile({ id, asTab = false }: { id: string | undefined; asTab?: boolean }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const dismiss = asTab ? undefined : <CloseButton />;
   const [view, setView] = useState<'all' | 'results' | 'upcoming'>('all');
   const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=200') });
   const team = teams.data?.items.find((item) => item.id === id);
@@ -198,10 +206,10 @@ export default function TeamProfileScreen() {
   const last5 = played.slice(0, 5);
   const league = matches.data?.items.find((match) => match.competition)?.competition?.name;
 
-  if (teams.isLoading) return <Screen action={<CloseButton />} title="Team"><LoadingState label="Loading team" /></Screen>;
-  if (!team) return <Screen action={<CloseButton />} title="Team"><EmptyState body="This team is no longer on the roster." title="Team not found" /></Screen>;
+  if (teams.isLoading) return <Screen action={dismiss} title="Team"><LoadingState label="Loading team" /></Screen>;
+  if (!team) return <Screen action={dismiss} title="Team"><EmptyState body="This team is no longer on the roster." title="Team not found" /></Screen>;
 
-  return <Screen action={<CloseButton />} title={team.name}>
+  return <Screen action={dismiss} title={team.name}>
     <View style={styles.hero}>
       <TeamAvatar badgeStyle={team.badge_style} isAimz={team.is_aimz} logoUrl={team.logo_url} name={team.name} size={64} />
       <View style={styles.heroCopy}>
@@ -269,6 +277,11 @@ export default function TeamProfileScreen() {
     <Section title="History"><History team={team} teams={teams.data?.items ?? []} /></Section>
     <View style={styles.footer}><Ionicons accessibilityElementsHidden color={colors.textMuted} name="information-circle-outline" size={14} /><Text style={styles.footerText}>Figures come from finished matches only.</Text></View>
   </Screen>;
+}
+
+export default function TeamProfileScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  return <TeamProfile id={id} />;
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({

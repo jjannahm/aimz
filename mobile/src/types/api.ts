@@ -4,9 +4,15 @@ type Schema = components['schemas'];
 
 // The generated union comes from an API without parent accounts; catches up on
 // the next `npm run api:types`.
-export type UserRole = Schema['UserRole'] | 'parent';
-/** When an account stops working, or null for one that never does. */
-export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole; expires_at?: string | null };
+export type UserRole = Schema['UserRole'] | 'parent' | 'manager';
+/**
+ * `expires_at` is when an account stops working, or null for one that never
+ * does. `team_ids` are the squads it is attached to — a player's own, a
+ * parent's children's, a manager's assigned — or null for an administrator,
+ * who is attached to none because they may open all of them. Only
+ * `GET /users/me` carries it; a session's own copy of the user does not.
+ */
+export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole; expires_at?: string | null; team_ids?: string[] | null };
 /**
  * A private, renewable calendar subscription for one player or family.
  *
@@ -16,7 +22,7 @@ export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole; expires_
  */
 export type CalendarFeed = { url: string | null; subscribed_at: string | null };
 /** What redeeming an invitation creates: one player, or a parent of several. */
-export type InviteKind = 'player' | 'parent';
+export type InviteKind = 'player' | 'parent' | 'manager';
 /** A roster player an account speaks for: itself for a player, a child for a parent. */
 export type LinkedChild = { id: string; name: string; team_id: string; team_name: string | null };
 export type MatchStatus = Schema['MatchStatus'];

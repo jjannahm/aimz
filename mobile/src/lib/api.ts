@@ -278,7 +278,7 @@ export const api = {
   playerStats: (playerId: string, season?: string) => request<PlayerSeasonSummary>(`/api/v1/players/${playerId}/stats${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   playerHonours: (playerId: string) => request<PlayerHonours>(`/api/v1/players/${playerId}/honours`),
   invites: () => request<RegistrationInvite[]>('/api/v1/admin/registration-invites'),
-  createInvite: (payload: { label: string; code: string; kind: InviteKind; player_ids: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
+  createInvite: (payload: { label: string; code: string; kind: InviteKind; player_ids?: string[]; team_ids?: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
   revokeInvite: (id: string) => request<void>(`/api/v1/admin/registration-invites/${id}`, { method: 'DELETE' }),
   myChildren: () => request<{ items: LinkedChild[] }>('/api/v1/users/me/children'),
   adminUsers: (query = '?limit=100') => request<Page<AdminAccount>>(`/api/v1/admin/users${query}`),

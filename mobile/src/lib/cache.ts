@@ -7,6 +7,8 @@ import type { QueryClient } from '@tanstack/react-query';
  * screens are free to scope their own variant without escaping invalidation.
  */
 export const cacheKeys = {
+  /** The signed-in account itself, including the squads it is attached to. */
+  me: ['me'] as const,
   teams: ['teams'] as const,
   players: ['players'] as const,
   competitions: ['competitions'] as const,

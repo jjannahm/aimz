@@ -17,6 +17,15 @@ import {
   publicTeam,
   stringField,
 } from "./helpers";
+import {
+  assertCanManageTeam,
+  callerScope,
+  managingUser,
+  matchScopeClause,
+  scopeClause,
+  visibleCompetitionIds,
+} from "./team-access";
+import type { TeamScope } from "./team-access";
 import type { CompetitionRow, CompetitionStatus, JsonObject, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
 import { MatchPhaseTransitionError, transitionLegacyStatus } from "./match-clock";
 import { isOpponentOnly } from "./scoring-rules";
@@ -117,12 +126,33 @@ function countValue(row: { total: number } | null): number {
   return row?.total ?? 0;
 }
 
+/**
+ * A fixture is a manager's to touch when one of the two teams is theirs.
+ *
+ * The same rule that decides whether they may see it, applied to whether they
+ * may change it, so a fixture cannot be edited into or out of their squad.
+ */
+function assertPlaying(scope: TeamScope, homeTeamId: string, awayTeamId: string): void {
+  if (scope === null) return;
+  if (scope.includes(homeTeamId) || scope.includes(awayTeamId)) return;
+  throw new ApiProblem(403, "team_access_denied", "You can only manage fixtures your own squad is playing in.");
+}
+
 export function registerDomainRoutes(app: App): void {
   app.get("/api/v1/teams", async (c) => {
     const url = new URL(c.req.url);
     const { limit, offset } = parsePagination(url);
     const conditions: string[] = [];
     const values: unknown[] = [];
+    // A restricted account sees its own squads and the clubs they play, which
+    // is what a fixture list needs to name an opponent. Nothing else.
+    const { scope } = await callerScope(c);
+    if (scope !== null) {
+      const own = scopeClause(scope, "id")!;
+      const played = matchScopeClause(scope)!;
+      conditions.push(`(${own.sql} OR id IN (SELECT m.home_team_id FROM matches m WHERE ${played.sql} UNION SELECT m.away_team_id FROM matches m WHERE ${played.sql}))`);
+      values.push(...own.values, ...played.values, ...played.values);
+    }
     const active = url.searchParams.get("active");
     if (active === "true" || active === "false") { conditions.push("is_active = ?"); values.push(active === "true" ? 1 : 0); }
     const isAimz = url.searchParams.get("is_aimz");
@@ -163,7 +193,8 @@ export function registerDomainRoutes(app: App): void {
   });
 
   app.patch("/api/v1/teams/:id", async (c) => {
-    await adminUser(c);
+    const { scope } = await managingUser(c);
+    assertCanManageTeam(scope, c.req.param("id"));
     const body = await jsonObject(c);
     const current = await c.env.DB.prepare("SELECT * FROM teams WHERE id = ?").bind(c.req.param("id")).first<TeamRow>();
     if (!current) throw new ApiProblem(404, "team_not_found", "Team not found.");
@@ -195,6 +226,17 @@ export function registerDomainRoutes(app: App): void {
     const { limit, offset } = parsePagination(url);
     const conditions: string[] = [];
     const values: unknown[] = [];
+    // Only the competitions the caller's squads are in or have fixtures in. A
+    // squad in no league comes back with an empty list rather than the
+    // academy's, which is what lets the app hide the tab instead of showing an
+    // empty one.
+    const { scope } = await callerScope(c);
+    if (scope !== null) {
+      const ids = await visibleCompetitionIds(c.env, scope);
+      if (!ids.length) return c.json({ items: [], total: 0, limit, offset });
+      conditions.push(`id IN (${ids.map(() => "?").join(",")})`);
+      values.push(...ids);
+    }
     for (const field of ["season", "type", "status"] as const) {
       const value = url.searchParams.get(field); if (value) { conditions.push(`${field} = ?`); values.push(value); }
     }
@@ -319,6 +361,12 @@ export function registerDomainRoutes(app: App): void {
   app.get("/api/v1/players", async (c) => {
     const url = new URL(c.req.url); const { limit, offset } = parsePagination(url);
     const conditions: string[] = []; const values: unknown[] = [];
+    // Held to the caller's own squads before any filter they asked for, so a
+    // team_id naming somebody else's squad narrows the list to nothing rather
+    // than opening it.
+    const { scope } = await callerScope(c);
+    const own = scopeClause(scope, "team_id");
+    if (own) { conditions.push(own.sql); values.push(...own.values); }
     const teamId = url.searchParams.get("team_id"); if (teamId) { conditions.push("team_id = ?"); values.push(teamId); }
     const active = url.searchParams.get("active"); if (active === "true" || active === "false") { conditions.push("is_active = ?"); values.push(active === "true" ? 1 : 0); }
     const search = url.searchParams.get("search"); if (search) { conditions.push("name LIKE ?"); values.push(`%${search}%`); }
@@ -330,8 +378,9 @@ export function registerDomainRoutes(app: App): void {
     return c.json({ items: rows.results.map(publicPlayer), total: countValue(count), limit, offset });
   });
   app.post("/api/v1/players", async (c) => {
-    await adminUser(c); const body = await jsonObject(c); const now = nowIso();
+    const { scope } = await managingUser(c); const body = await jsonObject(c); const now = nowIso();
     const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: enumField(body, "position", POSITION_CODES), jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, photo_key: stringField(body, "photo_key", { optional: true, nullable: true, max: 512 }) ?? null, date_of_birth: null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
+    assertCanManageTeam(scope, player.team_id);
     await requireTeam(c.env, player.team_id);
     try { await c.env.DB.prepare("INSERT INTO players (id, name, team_id, position, jersey_number, photo_key, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, now, now).run(); }
     catch { throw new ApiProblem(409, "jersey_conflict", "That jersey number is already used by this team."); }
@@ -348,9 +397,10 @@ export function registerDomainRoutes(app: App): void {
    * `PUT /players/:id/contacts`.
    */
   app.post("/api/v1/players/bulk", async (c) => {
-    await adminUser(c);
+    const { scope } = await managingUser(c);
     const body = await jsonObject(c);
     const teamId = stringField(body, "team_id", { min: 1, max: 36 })!;
+    assertCanManageTeam(scope, teamId);
     await requireTeam(c.env, teamId);
     if (!Array.isArray(body.players) || !body.players.length) {
       throw new ApiProblem(422, "validation_error", "Add at least one player.", [{ field: "players", message: "Add at least one player." }]);
@@ -393,9 +443,12 @@ export function registerDomainRoutes(app: App): void {
   });
 
   app.patch("/api/v1/players/:id", async (c) => {
-    await adminUser(c); const body = await jsonObject(c);
+    const { scope } = await managingUser(c); const body = await jsonObject(c);
     const current = await c.env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(c.req.param("id")).first<PlayerRow>(); if (!current) throw new ApiProblem(404, "player_not_found", "Player not found.");
-    const teamId = stringField(body, "team_id", { optional: true, min: 1, max: 36 }) ?? current.team_id; await requireTeam(c.env, teamId);
+    assertCanManageTeam(scope, current.team_id);
+    // Both ends of a move are checked: a manager cannot post a player out of
+    // their squad into one they do not run, or claim one out of another.
+    const teamId = stringField(body, "team_id", { optional: true, min: 1, max: 36 }) ?? current.team_id; assertCanManageTeam(scope, teamId); await requireTeam(c.env, teamId);
     const player: PlayerRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, team_id: teamId, position: body.position === undefined ? current.position : enumField(body, "position", POSITION_CODES), jersey_number: body.jersey_number === undefined ? current.jersey_number : numberField(body, "jersey_number", { nullable: true, min: 0, max: 99 }) ?? null, photo_key: optionalNullableText(body, "photo_key", current.photo_key, 512), is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active, updated_at: nowIso() };
     try { await c.env.DB.prepare("UPDATE players SET name=?, team_id=?, position=?, jersey_number=?, photo_key=?, is_active=?, updated_at=? WHERE id=?").bind(player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, player.updated_at, player.id).run(); }
     catch { throw new ApiProblem(409, "jersey_conflict", "That jersey number is already used by this team."); }
@@ -408,6 +461,11 @@ export function registerDomainRoutes(app: App): void {
     const status = url.searchParams.get("match_status") ?? url.searchParams.get("status"); if (status) { conditions.push("m.status = ?"); values.push(status); }
     const competition = url.searchParams.get("competition_id"); if (competition) { conditions.push("m.competition_id = ?"); values.push(competition); }
     const team = url.searchParams.get("team_id"); if (team) { conditions.push("(m.home_team_id = ? OR m.away_team_id = ?)"); values.push(team, team); }
+    // The one rule for every kind of fixture: the caller's squad is playing in
+    // it. League, cup, friendly and non-league all pass through here.
+    const { scope } = await callerScope(c);
+    const visible = matchScopeClause(scope);
+    if (visible) { conditions.push(visible.sql); values.push(...visible.values); }
     const where = conditions.length ? ` WHERE ${conditions.join(" AND ")}` : "";
     const [count, rows] = await Promise.all([
       c.env.DB.prepare(`SELECT COUNT(*) total FROM matches m${where}`).bind(...values).first<{ total: number }>(),
@@ -416,7 +474,8 @@ export function registerDomainRoutes(app: App): void {
     return c.json({ items: rows.results.map(joinedMatch), total: countValue(count), limit, offset });
   });
   app.post("/api/v1/matches", async (c) => {
-    await adminUser(c); const body = await jsonObject(c); const match = await matchInput(c.env, body);
+    const { scope } = await managingUser(c); const body = await jsonObject(c); const match = await matchInput(c.env, body);
+    assertPlaying(scope, match.home_team_id, match.away_team_id);
     // A fixture cannot be added to a season that has already been closed.
     const season = await getCompetition(c.env, match.competition_id);
     if (season.status === "completed") throw new ApiProblem(409, "season_completed", `${season.name} ${season.season} has ended. Reopen the season before adding matches.`);
@@ -433,7 +492,8 @@ export function registerDomainRoutes(app: App): void {
     return c.json(joinedMatch(await getJoinedMatch(c.env, row.id)), 201);
   });
   app.patch("/api/v1/matches/:id", async (c) => {
-    await adminUser(c); const body = await jsonObject(c); const current = await getJoinedMatch(c.env, c.req.param("id"));
+    const { scope } = await managingUser(c); const body = await jsonObject(c); const current = await getJoinedMatch(c.env, c.req.param("id"));
+    assertPlaying(scope, current.home_team_id, current.away_team_id);
     // SQLite stores a flag as 0 or 1, but the input rules demand a real boolean.
     // Merging the stored row in raw therefore failed validation on any patch
     // that left the flag alone — a lineup save, which patches only the format,
@@ -456,7 +516,13 @@ export function registerDomainRoutes(app: App): void {
     return c.json(joinedMatch(await getJoinedMatch(c.env, current.id)));
   });
   app.delete("/api/v1/matches/:id", async (c) => {
-    await adminUser(c); const result = await c.env.DB.prepare("DELETE FROM matches WHERE id = ?").bind(c.req.param("id")).run(); if (!result.meta.changes) throw new ApiProblem(404, "match_not_found", "Match not found."); return c.body(null, 204);
+    const { scope } = await managingUser(c);
+    if (scope !== null) {
+      const match = await c.env.DB.prepare("SELECT home_team_id, away_team_id FROM matches WHERE id = ?").bind(c.req.param("id")).first<{ home_team_id: string; away_team_id: string }>();
+      if (!match) throw new ApiProblem(404, "match_not_found", "Match not found.");
+      assertPlaying(scope, match.home_team_id, match.away_team_id);
+    }
+    const result = await c.env.DB.prepare("DELETE FROM matches WHERE id = ?").bind(c.req.param("id")).run(); if (!result.meta.changes) throw new ApiProblem(404, "match_not_found", "Match not found."); return c.body(null, 204);
   });
 }
 
@@ -530,7 +596,16 @@ function optionalNullableText(body: Record<string, unknown>, field: string, curr
 }
 
 async function deleteRestricted(c: Context<{ Bindings: Env }>, table: "teams" | "competitions" | "players", label: string, id: string): Promise<Response> {
-  await adminUser(c);
+  if (table === "players") {
+    // A manager may remove a player from the squad they run. Deleting a squad
+    // or a competition stays with the academy: both reach far past one team.
+    const { scope } = await managingUser(c);
+    const player = await c.env.DB.prepare("SELECT team_id FROM players WHERE id = ?").bind(id).first<{ team_id: string }>();
+    if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
+    assertCanManageTeam(scope, player.team_id);
+  } else {
+    await adminUser(c);
+  }
   try {
     const result = await c.env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
     if (!result.meta.changes) throw new ApiProblem(404, `${label}_not_found`, `${label[0].toUpperCase()}${label.slice(1)} not found.`);

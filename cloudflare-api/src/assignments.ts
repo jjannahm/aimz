@@ -1,8 +1,9 @@
 import type { Context, Hono } from "hono";
 import { getJoinedMatch } from "./domain";
-import { ApiProblem, adminUser, currentUser, jsonObject, nowIso, publicPlayer, stringField } from "./helpers";
+import { ApiProblem, currentUser, jsonObject, nowIso, publicPlayer, stringField } from "./helpers";
 import { requireTrainingAccess, trainingById } from "./training";
 import type { AssignmentRow, PlayerRow, UserRow } from "./types";
+import { guardMatch, manageMatch, manageTrainingSession } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -39,7 +40,9 @@ async function accessAssignment(c: Context<{ Bindings: Env }>, row: AssignmentRo
 }
 
 async function createAssignment(c: Context<{ Bindings: Env }>, refs: Pick<AssignmentRow, "match_id" | "training_session_id">): Promise<Response> {
-  await adminUser(c);
+  // Whichever it hangs off, the thing itself decides who may set it.
+  if (refs.match_id) await manageMatch(c, refs.match_id);
+  if (refs.training_session_id) await manageTrainingSession(c, refs.training_session_id);
   if (refs.match_id) await getJoinedMatch(c.env, refs.match_id);
   if (refs.training_session_id) await trainingById(c.env, refs.training_session_id);
   const body = await jsonObject(c);
@@ -53,14 +56,14 @@ async function createAssignment(c: Context<{ Bindings: Env }>, refs: Pick<Assign
 
 export function registerAssignmentRoutes(app: App): void {
   app.get("/api/v1/matches/:id/assignments", async (c) => {
-    await currentUser(c);
+    await guardMatch(c, c.req.param("id"));
     await getJoinedMatch(c.env, c.req.param("id"));
     const rows = await c.env.DB.prepare("SELECT * FROM event_assignments WHERE match_id=? ORDER BY created_at").bind(c.req.param("id")).all<AssignmentRow>();
     return c.json(await publicAssignments(c.env, rows.results));
   });
   app.post("/api/v1/matches/:id/assignments", (c) => createAssignment(c, { match_id: c.req.param("id"), training_session_id: null }));
   app.delete("/api/v1/matches/:id/assignments/:assignmentId", async (c) => {
-    await adminUser(c);
+    await manageMatch(c, c.req.param("id"));
     const result = await c.env.DB.prepare("DELETE FROM event_assignments WHERE id=? AND match_id=?").bind(c.req.param("assignmentId"), c.req.param("id")).run();
     if (!result.meta.changes) throw new ApiProblem(404, "assignment_not_found", "Assignment not found.");
     return c.body(null, 204);
@@ -75,7 +78,7 @@ export function registerAssignmentRoutes(app: App): void {
   });
   app.post("/api/v1/training-sessions/:id/assignments", (c) => createAssignment(c, { match_id: null, training_session_id: c.req.param("id") }));
   app.delete("/api/v1/training-sessions/:id/assignments/:assignmentId", async (c) => {
-    await adminUser(c);
+    await manageTrainingSession(c, c.req.param("id"));
     const result = await c.env.DB.prepare("DELETE FROM event_assignments WHERE id=? AND training_session_id=?").bind(c.req.param("assignmentId"), c.req.param("id")).run();
     if (!result.meta.changes) throw new ApiProblem(404, "assignment_not_found", "Assignment not found.");
     return c.body(null, 204);
