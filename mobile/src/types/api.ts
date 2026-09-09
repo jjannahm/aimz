@@ -232,6 +232,8 @@ export type ReportSnapshot = {
   attendance: { attended: number; expected: number; pct: number | null };
   /** How the player was marked at training. Absent on a version-one report. */
   training?: { key: string; label: string; kind: 'rating' | 'count'; max_value: number | null; value: number; sessions: number }[];
+  /** Marks the player has that fall outside the period this report covers. */
+  marks_outside?: { sessions: number; first: string; last: string } | null;
   matches: { appearances: number; minutes: number; goals: number; assists: number; yellow_cards: number; red_cards: number };
   fees: { charged_piastres: number; paid_piastres: number; outstanding_piastres: number; overdue: number };
   generated_at: string;
