@@ -1,7 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { View, type ColorValue } from 'react-native';
 
-export type TabIconName = 'manage' | 'matches' | 'myTeam' | 'players' | 'reports' | 'settings';
+import type { TabIconName } from '@/src/components/tabIcons';
+
+export type { TabIconName };
 
 type Props = {
   color: ColorValue;

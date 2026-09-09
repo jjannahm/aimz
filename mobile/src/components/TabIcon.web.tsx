@@ -1,6 +1,8 @@
 import type { ColorValue } from 'react-native';
 
-export type TabIconName = 'manage' | 'matches' | 'myTeam' | 'players' | 'settings' | 'standings';
+import type { TabIconName } from '@/src/components/tabIcons';
+
+export type { TabIconName };
 
 type Props = {
   color: ColorValue;
@@ -24,10 +26,12 @@ function MatchesIcon() {
   </>;
 }
 
-function StandingsIcon() {
+/** A sheet with a folded corner and a few lines written on it. */
+function ReportsIcon() {
   return <>
-    <path d="M4 20h16" />
-    <path d="M5.5 20v-6h4v6M10 20V7h4v13M14.5 20v-9h4v9" />
+    <path d="M6 3.5h7.5L18 8v12.5H6Z" />
+    <path d="M13.5 3.5V8H18" />
+    <path d="M9 12.5h6M9 16h4" />
   </>;
 }
 
@@ -60,7 +64,7 @@ function SettingsIcon() {
 
 const icons: Record<TabIconName, () => React.JSX.Element> = {
   matches: MatchesIcon,
-  standings: StandingsIcon,
+  reports: ReportsIcon,
   players: PlayersIcon,
   manage: ManageIcon,
   myTeam: MyTeamIcon,
