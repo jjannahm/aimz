@@ -754,35 +754,6 @@ class TrainingAvailability(TimestampMixin, Base):
     )
 
 
-class EventAssignment(TimestampMixin, Base):
-    """A job attached to a match or a training session (e.g. "bring the bibs"),
-    optionally claimed by one roster player. Exactly one of match / training is
-    set."""
-
-    __tablename__ = "event_assignments"
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    match_id: Mapped[str | None] = mapped_column(
-        ForeignKey("matches.id", ondelete="CASCADE"), nullable=True, index=True
-    )
-    training_session_id: Mapped[str | None] = mapped_column(
-        ForeignKey("training_sessions.id", ondelete="CASCADE"), nullable=True, index=True
-    )
-    title: Mapped[str] = mapped_column(String(160))
-    assigned_player_id: Mapped[str | None] = mapped_column(
-        ForeignKey("players.id", ondelete="SET NULL"), nullable=True
-    )
-
-    assigned_player: Mapped[Player | None] = relationship()
-
-    __table_args__ = (
-        CheckConstraint(
-            "(match_id IS NULL) <> (training_session_id IS NULL)",
-            name="ck_assignment_one_parent",
-        ),
-    )
-
-
 class CompetitionGroup(Base):
     """One group in a knockout's group stage (Group A, Group B…)."""
 

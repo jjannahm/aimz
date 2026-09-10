@@ -153,16 +153,6 @@ export interface AvailabilityRow {
   updated_at: string;
 }
 
-export interface AssignmentRow {
-  id: string;
-  match_id: string | null;
-  training_session_id: string | null;
-  title: string;
-  assigned_player_id: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 /** Who a notice is addressed to, and how loudly it is said. */
 export type AnnouncementAudience = "academy" | "team" | "coaches";
 export type AnnouncementPriority = "standard" | "pinned" | "urgent";

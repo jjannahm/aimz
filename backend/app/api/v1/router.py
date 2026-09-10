@@ -3,7 +3,6 @@ from fastapi import APIRouter
 from app.api.v1.routes import (
     admin,
     announcements,
-    assignments,
     auth,
     calendar,
     domain,
@@ -29,7 +28,6 @@ api_router.include_router(domain.router, tags=["sports data"])
 api_router.include_router(announcements.router, tags=["announcements"])
 api_router.include_router(roster.router, tags=["roster"])
 api_router.include_router(training.router, tags=["training"])
-api_router.include_router(assignments.router, tags=["assignments"])
 api_router.include_router(calendar.router, tags=["calendar"])
 api_router.include_router(knockout.router, tags=["knockout"])
 api_router.include_router(match_ops.router, prefix="/matches", tags=["match operations"])
