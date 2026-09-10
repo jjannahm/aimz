@@ -66,7 +66,6 @@ IMPORT_ORDER: list[type] = [
     models.Announcement,
     models.TrainingSession,
     models.TrainingAvailability,
-    models.EventAssignment,
     models.BracketSlot,
     models.AuditLog,
 ]

@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, CoachAccount, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, CoachAccount, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -379,13 +379,6 @@ export const api = {
     request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`, { method: 'PUT', body: { entries } }),
   trainingAvailability: (id: string) => request<TrainingAvailability[]>(`/api/v1/training-sessions/${id}/availability`),
   setTrainingAvailability: (id: string, status: TrainingAvailability['status'], note: string | null = null, player_id?: string) => request<TrainingAvailability>(`/api/v1/training-sessions/${id}/availability`, { method: 'PUT', body: { status, note, ...(player_id ? { player_id } : {}) } }),
-  matchAssignments: (id: string) => request<EventAssignment[]>(`/api/v1/matches/${id}/assignments`),
-  trainingAssignments: (id: string) => request<EventAssignment[]>(`/api/v1/training-sessions/${id}/assignments`),
-  createMatchAssignment: (id: string, title: string, assigned_player_id: string | null = null) => request<EventAssignment>(`/api/v1/matches/${id}/assignments`, { method: 'POST', body: { title, assigned_player_id } }),
-  createTrainingAssignment: (id: string, title: string, assigned_player_id: string | null = null) => request<EventAssignment>(`/api/v1/training-sessions/${id}/assignments`, { method: 'POST', body: { title, assigned_player_id } }),
-  updateAssignment: (id: string, assigned_player_id: string | null) => request<EventAssignment>(`/api/v1/event-assignments/${id}`, { method: 'PATCH', body: { assigned_player_id } }),
-  deleteMatchAssignment: (matchId: string, id: string) => request<void>(`/api/v1/matches/${matchId}/assignments/${id}`, { method: 'DELETE' }),
-  deleteTrainingAssignment: (trainingId: string, id: string) => request<void>(`/api/v1/training-sessions/${trainingId}/assignments/${id}`, { method: 'DELETE' }),
   playerRosterDetails: (id: string) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`),
   // The sensitive pair, on routes of their own: an administrator, the player
   // herself, or her parent. A coach is refused both.

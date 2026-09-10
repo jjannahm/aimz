@@ -371,7 +371,7 @@ tooling. Two stages remain before the AWS deployment fully replaces Cloudflare:
 \begin{enumerate}[leftmargin=1.6em]
   \item \textbf{Stage 2 --- FastAPI feature parity.} The Cloudflare Worker is
         ahead of the FastAPI backend by roughly 15 migrations and eight route
-        groups (stats, knockout, training, announcements, assignments, roster,
+        groups (stats, knockout, training, announcements, roster,
         calendar, audit). These must be ported into \texttt{backend/} so the
         AWS API matches the contract the mobile app expects. The Redis cache
         provisioned here is then wired into the hot read paths.

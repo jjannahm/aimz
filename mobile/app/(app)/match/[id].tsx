@@ -4,7 +4,6 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AppButton } from '@/src/components/AppButton';
-import { AssignmentsPanel } from '@/src/components/AssignmentsPanel';
 import { CloseButton } from '@/src/components/CloseButton';
 import { CollapsibleSection } from '@/src/components/CollapsibleSection';
 import { ScoreLine } from '@/src/components/ScoreLine';
@@ -124,7 +123,6 @@ export default function MatchDetailScreen() {
           </>;
         })()}
       </View> : null}
-      <AssignmentsPanel eligibleTeamIds={[query.data.match.home_team, query.data.match.away_team].filter((team) => team?.is_aimz).map((team) => team!.id)} eventId={id} kind="match" />
     </>}
   </Screen>;
 }

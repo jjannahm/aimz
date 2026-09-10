@@ -462,17 +462,6 @@ export type TrainingAvailability = {
   updated_at: string;
 };
 
-export type EventAssignment = {
-  id: string;
-  match_id: string | null;
-  training_session_id: string | null;
-  title: string;
-  assigned_player_id: string | null;
-  assigned_player: Player | null;
-  created_at: string;
-  updated_at: string;
-};
-
 export type PlayerContact = {
   id: string;
   player_id: string;

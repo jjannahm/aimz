@@ -16,7 +16,7 @@ jest.mock('expo-router', () => ({
 jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn() }));
 jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
 jest.mock('@/src/lib/api', () => ({
-  api: { live: jest.fn(), players: jest.fn(), matchAssignments: jest.fn().mockResolvedValue([]) },
+  api: { live: jest.fn(), players: jest.fn() },
   ApiError: class extends Error {},
 }));
 

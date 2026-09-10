@@ -397,9 +397,9 @@ export async function guardPersonalData(c: Context<{ Bindings: Env }>, playerId:
 /**
  * A write boundary for an administrator, or for staff assigned to this squad.
  *
- * Kept as its own name because training, announcements, reports and
- * assignments all ask this one question, and it reads better at those call
- * sites than the scope machinery it is built from.
+ * Kept as its own name because training, announcements and reports all ask
+ * this one question, and it reads better at those call sites than the scope
+ * machinery it is built from.
  */
 export async function requireTeamOperator(c: Context<{ Bindings: Env }>, teamId: string): Promise<UserRow> {
   const { user, scope } = await managingUser(c);

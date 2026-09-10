@@ -38,8 +38,13 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0041_kit_paid_at.sql');
+    expect(applied.results.at(-1)?.name).toBe('0042_drop_event_assignments.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
+    // 0017 raised the volunteer assignments table and 0042 drops it. Both are
+    // still in the chain, so the schema a fresh database ends on is the test:
+    // the table itself is gone.
+    const tables = await testEnv.DB.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='event_assignments'").all<{ name: string }>();
+    expect(tables.results).toHaveLength(0);
 
     const admin = await seedUser('admin');
     const competition = await (await request('/api/v1/competitions', json('POST', { name: 'Opponent League', season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
@@ -74,7 +79,7 @@ describe('D1 migrations and opponent results', () => {
 });
 
 describe('team hub authorization and roster privacy', () => {
-  it('scopes training, deduplicates RSVP, supports assignments, and hides private details', async () => {
+  it('scopes training, deduplicates RSVP, and hides private details', async () => {
     const admin = await seedUser('admin');
     const team = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U14', is_aimz: true }, admin.token))).json<{ id: string }>();
     const otherTeam = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U16', is_aimz: true }, admin.token))).json<{ id: string }>();
@@ -98,13 +103,6 @@ describe('team hub authorization and roster privacy', () => {
     const undecided = await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('PUT', { status: 'maybe', note: null }, playerUser.token));
     expect(undecided.status).toBe(422);
 
-    const slot = await request(`/api/v1/training-sessions/${sessions[0]!.id}/assignments`, json('POST', { title: 'Bring bibs', assigned_player_id: null }, admin.token));
-    expect(slot.status).toBe(201);
-    const assignment = await slot.json<{ id: string }>();
-    const claim = await request(`/api/v1/event-assignments/${assignment.id}`, json('PATCH', { assigned_player_id: player.id }, playerUser.token));
-    expect(await claim.json()).toMatchObject({ assigned_player_id: player.id });
-    const release = await request(`/api/v1/event-assignments/${assignment.id}`, json('PATCH', { assigned_player_id: null }, playerUser.token));
-    expect(await release.json()).toMatchObject({ assigned_player_id: null });
 
     await request('/api/v1/announcements', json('POST', { team_id: null, title: 'Academy update', body: 'For everyone', pinned: false }, admin.token));
     const targeted = await request('/api/v1/announcements', json('POST', { team_id: team.id, title: 'U14 priority', body: 'Meet early', pinned: true }, admin.token));

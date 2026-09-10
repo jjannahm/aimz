@@ -844,27 +844,6 @@ class AvailabilityRead(ORMModel):
     player: PlayerRead | None = None
 
 
-class AssignmentCreate(BaseModel):
-    title: str = Field(min_length=2, max_length=160)
-    assigned_player_id: str | None = Field(default=None, max_length=36)
-
-
-class AssignmentUpdate(BaseModel):
-    # Absent or null both mean "release"; a string claims for that player.
-    assigned_player_id: str | None = Field(default=None, max_length=36)
-
-
-class AssignmentRead(ORMModel):
-    id: str
-    match_id: str | None
-    training_session_id: str | None
-    title: str
-    assigned_player_id: str | None
-    created_at: datetime
-    updated_at: datetime
-    assigned_player: PlayerRead | None = None
-
-
 class CalendarFeedRead(BaseModel):
     url: str | None
     subscribed_at: datetime | None
