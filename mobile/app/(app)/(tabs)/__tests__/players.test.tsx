@@ -4,14 +4,14 @@ import type { ReactNode } from 'react';
 
 import PlayersScreen from '@/app/(app)/(tabs)/players';
 import { api } from '@/src/lib/api';
-import type { AwardRank, Player, Team } from '@/src/types/api';
+import type { AwardRank, Player, Team, TrainingAwardRank } from '@/src/types/api';
 
 // Icon fonts pull in native asset loading that jest-expo does not resolve here.
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, usePathname: () => '/players' }));
 
 jest.mock('@/src/lib/api', () => ({
-  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), playerTrainingStats: jest.fn(), matches: jest.fn(), myChildren: jest.fn(), adminUsers: jest.fn() },
+  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), trainingAwards: jest.fn(), trainingAwardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), playerTrainingStats: jest.fn(), matches: jest.fn(), myChildren: jest.fn(), adminUsers: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -43,6 +43,11 @@ const ever_present: AwardRank[] = [
   { rank: 1, player: players[1]!, team: teams[1]!, value: 3, unit: 'appearances', appearances: 3 },
   { rank: 2, player: players[0]!, team: teams[0]!, value: 1, unit: 'appearances', appearances: 1 },
 ];
+const trainingLeader: TrainingAwardRank = {
+  rank: 1,
+  metric: { key: 'dribbling', label: 'Dribbling', kind: 'rating', min_value: 1, max_value: 10, unit: null, player_kind: 'outfield' },
+  label: 'Best Dribbler', player: players[0]!, team: teams[0]!, value: 8.5, unit: '/10', sessions: 4,
+};
 
 const competition = { id: 'c-1', name: 'Women U11', season: '2026/27', type: 'league' as const, team_count: null, group_size: null, created_at: '', updated_at: '' };
 const awards = {
@@ -68,6 +73,8 @@ describe('PlayersScreen', () => {
     jest.mocked(api.teams).mockResolvedValue({ items: teams, total: teams.length, limit: 100, offset: 0 });
     jest.mocked(api.players).mockResolvedValue({ items: players, total: players.length, limit: 100, offset: 0 });
     jest.mocked(api.awardRanking).mockResolvedValue(scorers);
+    jest.mocked(api.trainingAwards).mockResolvedValue({ team: teams[0]!, player_awards: [trainingLeader] });
+    jest.mocked(api.trainingAwardRanking).mockResolvedValue([trainingLeader]);
     jest.mocked(api.competitions).mockResolvedValue({ items: [competition], total: 1, limit: 100, offset: 0 });
     jest.mocked(api.awards).mockResolvedValue(awards);
   });
@@ -272,6 +279,7 @@ describe('PlayersScreen', () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
     fireEvent.press(screen.getByRole('tab', { name: 'Leaderboards' }));
+    fireEvent.press(await screen.findByRole('tab', { name: 'Match' }));
     expect(await screen.findByText('Top scorer')).toBeTruthy();
     // Collapsed, the award shows only its winner; the ranking is not fetched.
     expect(api.awardRanking).not.toHaveBeenCalled();
@@ -286,6 +294,7 @@ describe('PlayersScreen', () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
     fireEvent.press(screen.getByRole('tab', { name: 'Leaderboards' }));
+    fireEvent.press(await screen.findByRole('tab', { name: 'Match' }));
     await screen.findByText('Top scorer');
     for (const label of ['most man of the match', 'top scorer', 'most appearances']) {
       expect(screen.getByLabelText(`Show the full ${label} ranking`)).toBeTruthy();
@@ -297,6 +306,7 @@ describe('PlayersScreen', () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
     fireEvent.press(screen.getByRole('tab', { name: 'Leaderboards' }));
+    fireEvent.press(await screen.findByRole('tab', { name: 'Match' }));
     fireEvent.press(await screen.findByLabelText('Show the full most appearances ranking'));
     await waitFor(() => expect(api.awardRanking).toHaveBeenCalledWith('c-1', 'appearances'));
     // Counting appearances in appearances would read twice; and one is singular.
@@ -308,11 +318,34 @@ describe('PlayersScreen', () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await screen.findByLabelText('AIMZ U9, 1 player');
     fireEvent.press(screen.getByRole('tab', { name: 'Leaderboards' }));
+    fireEvent.press(await screen.findByRole('tab', { name: 'Match' }));
     fireEvent.press(await screen.findByLabelText('Show the full top scorer ranking'));
     expect(await screen.findByText('AIMZ U13, 5 goals in 4 appearances')).toBeTruthy();
 
     fireEvent.press(screen.getByLabelText('Hide the full top scorer ranking'));
     await waitFor(() => expect(screen.queryByText('AIMZ U13, 5 goals in 4 appearances')).toBeNull());
+  });
+
+  it('opens leaderboards on training and expands a squad metric lazily', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    fireEvent.press(await screen.findByRole('tab', { name: 'Leaderboards' }));
+    expect((await screen.findByRole('tab', { name: 'Training' })).props.accessibilityState.selected).toBe(true);
+    expect(await screen.findByText('Best Dribbler')).toBeTruthy();
+    expect(api.trainingAwardRanking).not.toHaveBeenCalled();
+
+    fireEvent.press(screen.getByLabelText('Show the full best dribbler ranking'));
+    await waitFor(() => expect(api.trainingAwardRanking).toHaveBeenCalledWith('t-u9', 'dribbling'));
+    expect(await screen.findByText('AIMZ U9, 8.5/10 from 4 sessions')).toBeTruthy();
+  });
+
+  it('uses squad pills for training and competition pills only for match', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+    fireEvent.press(await screen.findByRole('tab', { name: 'Leaderboards' }));
+    expect(await screen.findByTestId('training-award-team-t-u9')).toBeTruthy();
+    expect(screen.queryByTestId('award-competition-c-1')).toBeNull();
+    fireEvent.press(screen.getByRole('tab', { name: 'Match' }));
+    expect(await screen.findByText('Top scorer')).toBeTruthy();
+    expect(screen.queryByTestId('training-award-team-t-u9')).toBeNull();
   });
 
   it('opens My Stats on the training half, with the match half beside it', async () => {
