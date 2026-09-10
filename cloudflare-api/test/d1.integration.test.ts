@@ -38,7 +38,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0043_match_reports.sql');
+    expect(applied.results.at(-1)?.name).toBe('0044_fee_invoices.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
     // 0017 raised the volunteer assignments table and 0042 drops it. Both are
     // still in the chain, so the schema a fresh database ends on is the test:
@@ -2727,5 +2727,130 @@ describe('the match report and its link', () => {
     expect((await request(`/api/v1/matches/${match.id}/report`, json('GET', undefined, family.token))).status).toBe(200);
     // Sending it to anybody is the academy's decision, not hers.
     expect((await request(`/api/v1/matches/${match.id}/report/publish`, json('POST', {}, family.token))).status).toBe(403);
+  });
+});
+
+describe('the fee invoice and its link', () => {
+  /** A squad on a monthly subscription, with a month already generated. */
+  async function subscribedSquad(amount = 120000) {
+    const admin = await seedUser('admin');
+    const unique = crypto.randomUUID().slice(0, 8);
+    const post = async <T>(path: string, body: unknown): Promise<T> => (await request(path, json('POST', body, admin.token))).json<T>();
+    const squad = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ Invoice ${unique}`, is_aimz: true, branch: 'Maadi' });
+    const players: { id: string; name: string }[] = [];
+    for (const name of ['Amina Adel', 'Nour Hassan']) {
+      players.push(await post<{ id: string; name: string }>('/api/v1/players', { name, team_id: squad.id, position: 'CM' }));
+    }
+    const plan = await post<{ id: string }>('/api/v1/fee-plans', { team_id: squad.id, label: 'Monthly subscription', amount_piastres: amount, due_day: 5 });
+    return { admin, squad, players, plan, post };
+  }
+
+  /** Marks `count` attended sessions in the given month, which is what earns it. */
+  async function attendMonth(admin: { token: string }, teamId: string, playerIds: string[], month: string, count: number) {
+    const sessions = await (await request('/api/v1/training-sessions', json('POST', {
+      team_id: teamId, venue: 'Cairo pitch', duration_minutes: 90,
+      occurrences: Array.from({ length: count }, (unused, index) => `${month}-${String(index + 6).padStart(2, '0')}T15:00:00.000Z`),
+    }, admin.token))).json<{ id: string }[]>();
+    for (const session of sessions) {
+      await request(`/api/v1/training-sessions/${session.id}/attendance`, json('PUT', { entries: playerIds.map((player_id) => ({ player_id, status: 'present' })) }, admin.token));
+    }
+  }
+
+  /**
+   * The one rule that matters: an invoice must never ask for money the app
+   * itself says is not owed yet.
+   *
+   * A monthly subscription is earned by the fourth attended session. Three
+   * sessions in, the month is `not_due` on every other screen — so there is
+   * nothing to invoice, and the run says so rather than billing it.
+   */
+  it('never bills a month the academy has not earned yet', async () => {
+    const { admin, squad, players, plan, post } = await subscribedSquad();
+    await post(`/api/v1/fee-plans/${plan.id}/generate`, { period: '2026-01' });
+    await attendMonth(admin, squad.id, [players[0]!.id], '2026-01', 3);
+
+    const refused = await request(`/api/v1/players/${players[0]!.id}/invoices`, json('POST', {}, admin.token));
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toMatchObject({ detail: { code: 'nothing_owed' } });
+
+    // The fourth session earns it, and now there is something to ask for.
+    await attendMonth(admin, squad.id, [players[0]!.id], '2026-01', 4);
+    const invoice = await (await request(`/api/v1/players/${players[0]!.id}/invoices`, json('POST', {}, admin.token))).json<{
+      reference: string; share_token: string;
+      snapshot: { lines: { balance_piastres: number; status: string }[]; totals: { outstanding_piastres: number }; not_due_yet: number };
+    }>();
+    expect(invoice.snapshot.lines).toHaveLength(1);
+    expect(invoice.snapshot.totals.outstanding_piastres).toBe(120000);
+    expect(invoice.reference).toMatch(/^AIMZ-\d{6}-[A-Z2-9]{6}$/u);
+  });
+
+  it('invoices what is owed, behind an address that needs no session', async () => {
+    const { admin, squad, players, plan, post } = await subscribedSquad();
+    await post(`/api/v1/fee-plans/${plan.id}/generate`, { period: '2026-01' });
+    await attendMonth(admin, squad.id, [players[0]!.id], '2026-01', 4);
+    // A part payment, so the invoice has to ask for the balance and not the lot.
+    const charges = await (await request(`/api/v1/fee-charges?player_id=${players[0]!.id}`, json('GET', undefined, admin.token))).json<{ items: { id: string }[] }>();
+    await request(`/api/v1/fee-charges/${charges.items[0]!.id}/payments`, json('POST', { amount_piastres: 20000, method: 'instapay' }, admin.token));
+
+    const invoice = await (await request(`/api/v1/players/${players[0]!.id}/invoices`, json('POST', { payment_instructions: 'InstaPay to aimz@bank' }, admin.token))).json<{
+      share_token: string; snapshot: { lines: { amount_piastres: number; paid_piastres: number; balance_piastres: number; status: string }[]; totals: Record<string, number>; payment_instructions: string; player: { name: string }; squad: { name: string; branch: string } };
+    }>();
+    // Part paid and past its date is overdue, not partial — the same answer
+    // `feeStatus` gives the ledger and the family's own screen.
+    expect(invoice.snapshot.lines[0]).toMatchObject({ amount_piastres: 120000, paid_piastres: 20000, balance_piastres: 100000, status: 'overdue' });
+    expect(invoice.snapshot.totals).toMatchObject({ outstanding_piastres: 100000, paid_piastres: 20000, overdue: 1 });
+    expect(invoice.snapshot.payment_instructions).toBe('InstaPay to aimz@bank');
+    expect(invoice.snapshot.squad).toMatchObject({ branch: 'Maadi' });
+
+    const opened = await request(`/api/v1/invoices/${invoice.share_token}`, json('GET'));
+    expect(opened.status).toBe(200);
+    expect(opened.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    const shared = await opened.json<Record<string, unknown>>();
+    // No ids of any kind, the rule both report links keep.
+    expect(JSON.stringify(shared)).not.toContain(players[0]!.id);
+    expect(JSON.stringify(shared)).not.toContain(squad.id);
+    expect(JSON.stringify(shared)).toContain('Amina Adel');
+
+    // Paying the rest does not rewrite what was already sent.
+    await request(`/api/v1/fee-charges/${charges.items[0]!.id}/payments`, json('POST', { amount_piastres: 100000, method: 'cash' }, admin.token));
+    const stillSent = await (await request(`/api/v1/invoices/${invoice.share_token}`, json('GET'))).json<{ snapshot: { totals: { outstanding_piastres: number } } }>();
+    expect(stillSent.snapshot.totals.outstanding_piastres).toBe(100000);
+
+    // A new address revokes the old one; withdrawing takes it away entirely.
+    const list = await (await request(`/api/v1/players/${players[0]!.id}/invoices`, json('GET', undefined, admin.token))).json<{ items: { id: string }[] }>();
+    const rotated = await (await request(`/api/v1/fee-invoices/${list.items[0]!.id}/new-link`, json('POST', {}, admin.token))).json<{ share_token: string }>();
+    expect((await request(`/api/v1/invoices/${invoice.share_token}`, json('GET'))).status).toBe(404);
+    expect((await request(`/api/v1/invoices/${rotated.share_token}`, json('GET'))).status).toBe(200);
+    await request(`/api/v1/fee-invoices/${list.items[0]!.id}/withdraw`, json('POST', {}, admin.token));
+    expect((await request(`/api/v1/invoices/${rotated.share_token}`, json('GET'))).status).toBe(404);
+  });
+
+  /** The monthly run: everybody who owes, and nobody who does not. */
+  it('invoices a whole squad in one go and skips whoever owes nothing', async () => {
+    const { admin, squad, players, plan, post } = await subscribedSquad();
+    await post(`/api/v1/fee-plans/${plan.id}/generate`, { period: '2026-01' });
+    // Only the first has earned the month, so only she can be invoiced.
+    await attendMonth(admin, squad.id, [players[0]!.id], '2026-01', 4);
+
+    const run = await (await request(`/api/v1/teams/${squad.id}/invoices`, json('POST', { period: '2026-01', payment_instructions: 'Cash at the branch office' }, admin.token))).json<{
+      items: { player_name: string; share_token: string; snapshot: { payment_instructions: string } }[]; skipped: number;
+    }>();
+    expect(run.items).toHaveLength(1);
+    expect(run.items[0]).toMatchObject({ player_name: 'Amina Adel' });
+    expect(run.items[0]?.snapshot.payment_instructions).toBe('Cash at the branch office');
+    expect(run.skipped).toBe(1);
+    // Each one gets its own address rather than sharing the run's.
+    expect(run.items[0]?.share_token).toHaveLength(43);
+  });
+
+  it('keeps invoicing to administrators', async () => {
+    const { admin, squad, players, plan, post } = await subscribedSquad();
+    await post(`/api/v1/fee-plans/${plan.id}/generate`, { period: '2026-01' });
+    await attendMonth(admin, squad.id, [players[0]!.id], '2026-01', 4);
+    const family = await seedUser('player', players[0]!.id);
+
+    expect((await request(`/api/v1/players/${players[0]!.id}/invoices`, json('POST', {}, family.token))).status).toBe(403);
+    expect((await request(`/api/v1/teams/${squad.id}/invoices`, json('POST', { period: '2026-01' }, family.token))).status).toBe(403);
+    expect((await request(`/api/v1/players/${players[0]!.id}/invoices`, json('GET', undefined, family.token))).status).toBe(403);
   });
 });

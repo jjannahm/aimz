@@ -375,6 +375,34 @@ export interface FeeChargeRow {
 }
 
 /** Money received against a charge. Only ever added to. */
+/**
+ * An invoice: the act of asking a family for what the ledger says they owe.
+ *
+ * Stores nothing new about the money — the charges and payments are already
+ * rows of their own. What it freezes is the ask: which charges were on it and
+ * what they said when it was sent, so a parent who pays the next day can still
+ * open what they were given.
+ */
+export interface FeeInvoiceRow {
+  id: string;
+  /** Readable and quotable back: AIMZ-202609-7QK4TP. Not a running series. */
+  reference: string;
+  player_id: string;
+  team_id: string | null;
+  /** The month an invoice run was for, or null for a one-off ask. */
+  period: string | null;
+  /** Typed per invoice, optional: nothing here stores an account number. */
+  payment_instructions: string | null;
+  /** JSON, frozen when the invoice was raised. */
+  snapshot: string;
+  share_token: string | null;
+  issued_at: string;
+  issued_by_name: string;
+  first_opened_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface FeePaymentRow {
   id: string;
   fee_charge_id: string;

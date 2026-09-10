@@ -7,6 +7,7 @@ import { ChoiceField } from '@/src/components/ChoiceField';
 import { CollapsibleCard } from '@/src/components/CollapsibleCard';
 import { CollapsibleSection } from '@/src/components/CollapsibleSection';
 import { FormField } from '@/src/components/FormField';
+import { InvoiceRun, SendInvoiceButton } from '@/src/components/manage/InvoiceRun';
 import { PlayerPickerField } from '@/src/components/PlayerPickerField';
 import { narrowBySearch } from '@/src/components/SearchField';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
@@ -52,7 +53,7 @@ function Standing({ status }: { status: FeeStatus }) {
  * One family's standing for the month, opening into what they were charged and
  * what they have paid.
  */
-function PlayerLedger({ playerId, name, outstanding, status }: { playerId: string; name: string; outstanding: number; status: FeeStatus }) {
+function PlayerLedger({ playerId, name, outstanding, status, paymentInstructions }: { playerId: string; name: string; outstanding: number; status: FeeStatus; paymentInstructions: string }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
   const [open, setOpen] = React.useState(false);
@@ -79,6 +80,9 @@ function PlayerLedger({ playerId, name, outstanding, status }: { playerId: strin
       {charges.isLoading ? <LoadingState /> : charges.isError ? <ErrorState message={(charges.error as ApiError).message} onRetry={() => charges.refetch()} />
         : !charges.data?.items.length ? <Text style={styles.empty}>Nothing has been charged to this player.</Text>
           : charges.data.items.map((charge) => <ChargeRow charge={charge} key={charge.id} />)}
+      {/* Only where there is something to ask for. An invoice for nothing is
+        * not a thing to send anybody, and the API refuses to make one. */}
+      {outstanding > 0 ? <SendInvoiceButton paymentInstructions={paymentInstructions} playerId={playerId} playerName={name} /> : null}
     </View> : null}
   </View>;
 }
@@ -166,6 +170,9 @@ export function FeesManager({ teams }: { teams: Team[] }) {
   const [chargeOpen, setChargeOpen] = React.useState(false);
   const [plan, setPlan] = React.useState({ label: 'Monthly subscription', amount: '', dueDay: '5' });
   const [charge, setCharge] = React.useState({ playerIds: [] as string[], label: '', amount: '', dueOn: '' });
+  // Typed once and used by both the squad run and every single invoice sent
+  // from the ledger below, so a month's invoicing is not a month of retyping.
+  const [paymentInstructions, setPaymentInstructions] = React.useState('');
 
   const squad = teams.find((team) => team.id === teamId) ?? null;
   const plans = useQuery({ queryKey: [...cacheKeys.fees, 'plans', teamId], queryFn: () => api.feePlans(`?team_id=${encodeURIComponent(teamId)}`), enabled: Boolean(teamId) });
@@ -271,6 +278,14 @@ export function FeesManager({ teams }: { teams: Team[] }) {
       <AppButton label="Add charge" loading={addCharge.isPending} onPress={() => addCharge.mutate()} />
     </CollapsibleCard>
 
+    {squad ? <InvoiceRun
+      onPaymentInstructions={setPaymentInstructions}
+      paymentInstructions={paymentInstructions}
+      period={period}
+      teamId={teamId}
+      teamName={squad.name}
+    /> : null}
+
     {summary.isError ? <ErrorState message={(summary.error as ApiError).message} onRetry={() => summary.refetch()} /> : <CollapsibleSection
       count={rows.length}
       defaultOpen
@@ -283,6 +298,7 @@ export function FeesManager({ teams }: { teams: Team[] }) {
             key={row.player?.id ?? row.player?.name}
             name={row.player?.name ?? 'Unknown player'}
             outstanding={row.outstanding_piastres}
+            paymentInstructions={paymentInstructions}
             playerId={row.player?.id ?? ''}
             status={row.status}
           />)}</View>}
