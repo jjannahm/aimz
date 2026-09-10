@@ -75,8 +75,14 @@ function FixtureRow({ match, teamId }: { match: Match; teamId: string }) {
   </View>;
 }
 
-/** The squad, with each player's season totals beside their shirt. */
-function Squad({ teamId }: { teamId: string }) {
+/**
+ * The squad, with each player's season totals beside their shirt.
+ *
+ * Named as well as used here, because a coach's own My Team tab shows exactly
+ * this as its Player Stats half — the same roster, the same totals, opening
+ * the same profile — rather than a coach-shaped copy of it.
+ */
+export function Squad({ teamId }: { teamId: string }) {
   const styles = useThemedStyles(stylesheet);
   const players = useQuery({ queryKey: [...cacheKeys.players, 'team', teamId], queryFn: () => api.players(`?team_id=${encodeURIComponent(teamId)}&limit=100`) });
   const stats = useQuery({ queryKey: ['squad-stats', teamId], queryFn: () => api.squadStats(teamId) });
@@ -189,7 +195,7 @@ function HeadToHeadSection({ team, table }: { team: Team; table: StandingRow[] }
  * close button — there is nothing to close when the screen is the destination
  * rather than something opened over another.
  */
-export function TeamProfile({ id, asTab = false }: { id: string | undefined; asTab?: boolean }) {
+export function TeamProfile({ id, asTab = false, above, title }: { id: string | undefined; asTab?: boolean; above?: React.ReactNode; title?: string }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
   const dismiss = asTab ? undefined : <CloseButton />;
@@ -206,10 +212,11 @@ export function TeamProfile({ id, asTab = false }: { id: string | undefined; asT
   const last5 = played.slice(0, 5);
   const league = matches.data?.items.find((match) => match.competition)?.competition?.name;
 
-  if (teams.isLoading) return <Screen action={dismiss} title="Team"><LoadingState label="Loading team" /></Screen>;
-  if (!team) return <Screen action={dismiss} title="Team"><EmptyState body="This team is no longer on the roster." title="Team not found" /></Screen>;
+  if (teams.isLoading) return <Screen action={dismiss} title={title ?? 'Team'}><LoadingState label="Loading team" /></Screen>;
+  if (!team) return <Screen action={dismiss} title={title ?? 'Team'}>{above}<EmptyState body="This team is no longer on the roster." title="Team not found" /></Screen>;
 
-  return <Screen action={dismiss} title={team.name}>
+  return <Screen action={dismiss} title={title ?? team.name}>
+    {above}
     <View style={styles.hero}>
       <TeamAvatar badgeStyle={team.badge_style} isAimz={team.is_aimz} logoUrl={team.logo_url} name={team.name} size={64} />
       <View style={styles.heroCopy}>

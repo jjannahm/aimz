@@ -7,7 +7,7 @@ export type TabVisibility = { name: string; title: string; onBar: boolean };
 const ROUTES: Record<string, string> = {
   index: 'Matches',
   players: 'My Team',
-  squad: 'Team',
+  squad: 'My Team',
   reports: 'Reports',
   'my-team': 'Hub',
   manage: 'Manage',
@@ -22,7 +22,7 @@ const ROUTES: Record<string, string> = {
  * exceptions in it was harder to read than three short lists.
  *
  *     admin   Matches · Teams · Manage — the academy, left to right
- *     coach   Manage · Team · Matches — the one squad they run
+ *     coach   Matches · My Team · Manage — the one squad they run
  *     family  Matches · My Team · Reports · Hub — read from the thumb end, so
  *             their own week sits nearest the hand
  *
@@ -32,7 +32,7 @@ const ROUTES: Record<string, string> = {
  */
 const DOCK: Record<'admin' | 'coach' | 'family', string[]> = {
   admin: ['index', 'players', 'manage'],
-  coach: ['manage', 'squad', 'index'],
+  coach: ['index', 'squad', 'manage'],
   family: ['index', 'players', 'reports', 'my-team'],
 };
 

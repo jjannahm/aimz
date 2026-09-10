@@ -299,9 +299,9 @@ export const api = {
   createInvite: (payload: { label: string; code?: string; kind: InviteKind; player_ids?: string[]; team_ids?: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
   revokeInvite: (id: string) => request<void>(`/api/v1/admin/registration-invites/${id}`, { method: 'DELETE' }),
   resolveInvite: (code: string) => request<InviteContext>('/api/v1/auth/invitations/resolve', { method: 'POST', authenticated: false, body: { code } }),
-  // The branches applications have come from, which is the academy's own list
-  // of where it operates: there is no branch table to read instead.
-  newcomerBranches: () => request<{ items: string[] }>('/api/v1/admin/newcomers/branches'),
+  // Where the academy trains, with the side of the city each is on, plus any
+  // branch an older application recorded that is no longer offered.
+  newcomerBranches: () => request<{ items: { name: string; area: string | null }[] }>('/api/v1/admin/newcomers/branches'),
   newcomers: (query = '?queue=active') => request<Page<Newcomer>>(`/api/v1/admin/newcomers${query}`),
   newcomer: (id: string) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`),
   updateNewcomer: (id: string, body: Partial<{ stage: NewcomerStage; outcome: NewcomerOutcome; last_contacted_at: string | null; next_follow_up_at: string | null }>) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`, { method: 'PATCH', body }),

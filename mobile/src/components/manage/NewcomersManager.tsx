@@ -21,9 +21,8 @@ export function NewcomersManager({ teams }: { teams: Team[] }) {
   const [queue, setQueue] = useState<'active' | 'history'>('active'); const [search, setSearch] = useState(''); const [branch, setBranch] = useState(''); const [source, setSource] = useState(''); const [stage, setStage] = useState(''); const [selected, setSelected] = useState<string | null>(null);
   const params = new URLSearchParams({ queue }); if (search) params.set('search', search); if (branch) params.set('branch', branch); if (source) params.set('source', source); if (stage) params.set('stage', stage);
   const list = useQuery({ queryKey: ['newcomers', queue, search, branch, source, stage], queryFn: () => api.newcomers(`?${params}`) });
-  // Read back from the applications themselves rather than typed in: a filter
-  // that offers a branch nobody has applied to, or misses one that opened last
-  // month, is worse than no filter.
+  // Read from the branches themselves rather than typed in: a text box could
+  // say which branch was chosen and never which ones there are.
   const branches = useQuery({ queryKey: ['newcomers', 'branches'], queryFn: () => api.newcomerBranches() });
   const detail = useQuery({ queryKey: ['newcomer', selected], queryFn: () => api.newcomer(selected!), enabled: Boolean(selected) });
   if (selected) return <Detail item={detail.data} loading={detail.isLoading} teams={teams} onBack={() => setSelected(null)} onChanged={async () => { await client.invalidateQueries({ queryKey: ['newcomers'] }); await client.invalidateQueries({ queryKey: ['newcomer', selected] }); }} />;
@@ -35,7 +34,10 @@ export function NewcomersManager({ teams }: { teams: Team[] }) {
     <ChoiceField
       label="Branch"
       onChange={setBranch}
-      options={[{ label: 'All branches', value: '' }, ...(branches.data?.items ?? []).map((name) => ({ label: name, value: name }))]}
+      // The side of the city comes along, because two of them share a name
+      // with somewhere else in Cairo and the area is how the academy says
+      // which is which.
+      options={[{ label: 'All branches', value: '' }, ...(branches.data?.items ?? []).map((branch) => ({ label: branch.area ? `${branch.name} (${branch.area})` : branch.name, value: branch.name }))]}
       placeholder="All branches"
       value={branch}
     />

@@ -37,7 +37,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0038_announcement_targeting.sql');
+    expect(applied.results.at(-1)?.name).toBe('0039_branches.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -2365,6 +2365,46 @@ describe('who waits at the door and who walks in', () => {
     expect(one).toMatchObject({ kind: 'player', requires_application: false });
     const two = await (await request('/api/v1/auth/invitations/resolve', json('POST', { code: asNewcomer.code }))).json<{ kind: string; requires_application: boolean }>();
     expect(two).toMatchObject({ kind: 'newcomer', requires_application: true });
+  });
+});
+
+describe('where the academy trains', () => {
+  it('offers the branches themselves, with the side of the city', async () => {
+    const admin = await seedUser('admin');
+    const branches = await (await request('/api/v1/admin/newcomers/branches', json('GET', undefined, admin.token)))
+      .json<{ items: { name: string; area: string | null }[] }>();
+    // The four the academy runs, in the order it lists them.
+    expect(branches.items.slice(0, 4)).toEqual([
+      { name: 'AUC', area: 'East' },
+      { name: 'Gardenia (Agyal Park)', area: 'East' },
+      { name: 'Palm Hills Sporting Club', area: 'West' },
+      { name: "King's School The Crown", area: 'West' },
+    ]);
+  });
+
+  it('keeps a branch an application already names, even once it is not offered', async () => {
+    const admin = await seedUser('admin');
+    // An application from somewhere the academy no longer lists. Its branch is
+    // stored by name, so the record is unharmed by the list changing.
+    await testEnv.DB.prepare(`INSERT INTO newcomer_applications
+      (id, source, stage, branch, full_name, mobile, email, whatsapp_mobile, date_of_birth, nationality, address,
+       previous_academy, school_university, father_name, father_mobile, mother_name, mother_mobile, medical_concerns,
+       medications, consent_version, consented_at, created_at, updated_at)
+      VALUES (?, 'public_link', 'new', 'A Closed Pitch', 'Old Applicant', '01000000000', 'old@aimz.test', '01000000000',
+       '2014-01-01', 'Egyptian', 'Cairo', 'None', 'A school', 'Father', '01000000000', 'Mother', '01000000000',
+       'None', 'None', 'v1', ?, ?, ?)`)
+      .bind(crypto.randomUUID(), now, now, now).run();
+
+    const branches = await (await request('/api/v1/admin/newcomers/branches', json('GET', undefined, admin.token)))
+      .json<{ items: { name: string; area: string | null }[] }>();
+    // Listed after the four, with no area, so the queue can still be filtered
+    // down to it.
+    expect(branches.items).toContainEqual({ name: 'A Closed Pitch', area: null });
+  });
+
+  it('is the academy own business, not a coach one', async () => {
+    const coach = await seedUser('coach');
+    expect((await request('/api/v1/admin/newcomers/branches', json('GET', undefined, coach.token))).status).toBe(403);
   });
 });
 

@@ -63,18 +63,23 @@ const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Sq
 /**
  * The pills a coach does not get.
  *
- * Competitions and invitations are the academy's own business rather than a
- * squad's: entering teams in competitions reaches across the club, and an
- * invitation creates an account.
+ * Most are the academy's own business rather than a squad's. Squads and
+ * Competitions reach across the club — creating one, or entering teams in it,
+ * is not a squad-level act. Players is the academy's roster, and a coach reads
+ * her own squad's under My Team instead. Invitations create accounts, and
+ * Newcomers is people who have not joined yet, which is the academy's intake
+ * rather than any squad's football.
  *
- * Fees are here for a different reason. A coach runs a squad's football —
- * she picks the team, takes the register, marks training — and what a family
- * has paid is not that. The player profile keeps her out of it, and this is
- * the other door into the same information, so it is shut too. The API refuses
- * a coach every one of these, so showing the pill would only be a way to
- * find that out the hard way.
+ * Fees are here for a different reason. A coach runs a squad's football — she
+ * picks the team, takes the register, marks training — and what a family has
+ * paid is not that. The player profile keeps her out of it, and this is the
+ * other door into the same information, so it is shut too.
+ *
+ * The API refuses a coach every one of these, so showing the pill would only
+ * be a way to find that out the hard way. What is left is the squad's own
+ * week: its schedule, its notices, its reports and its kit.
  */
-const ACADEMY_ONLY: Tab[] = ['competitions', 'invites', 'fees'];
+const ACADEMY_ONLY: Tab[] = ['teams', 'competitions', 'players', 'invites', 'fees', 'newcomers'];
 /** Whose squads the Squads pill is showing. */
 const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
 /** Which half of the diary the Schedule pill is showing. */

@@ -129,20 +129,27 @@ export function registerNewcomerRoutes(app: App): void {
   });
 
   /**
-   * The branches applications have actually been made from.
+   * Where the academy trains, for the filter above the intake queue.
    *
-   * There is no branch table: an application records the branch it came from
-   * as text, which is the academy's own list of where it operates. Reading the
-   * distinct values back is therefore the whole truth about which branches
-   * exist, and keeps the filter from offering one nobody has ever applied to
-   * or from hardcoding a list that would go stale the day a branch opened.
+   * The branches themselves, in the order the academy lists them — and beside
+   * them any branch an application already records that is not one of them.
+   * A branch that closes stops being offered for new applications while the
+   * ones made from it stay findable, which a list read only from the table
+   * would lose and a list read only from the applications never had.
    */
   app.get("/api/v1/admin/newcomers/branches", async (c) => {
     await adminUser(c);
-    const rows = await c.env.DB.prepare(
-      "SELECT DISTINCT branch FROM newcomer_applications WHERE branch <> '' ORDER BY branch COLLATE NOCASE",
-    ).all<{ branch: string }>();
-    return c.json({ items: rows.results.map((row) => row.branch) });
+    const [branches, used] = await Promise.all([
+      c.env.DB.prepare("SELECT name, area FROM branches WHERE is_active=1 ORDER BY sort_order, name").all<{ name: string; area: string }>(),
+      c.env.DB.prepare("SELECT DISTINCT branch FROM newcomer_applications WHERE branch <> '' ORDER BY branch COLLATE NOCASE").all<{ branch: string }>(),
+    ]);
+    const known = new Set(branches.results.map((row) => row.name));
+    return c.json({
+      items: [
+        ...branches.results.map((row) => ({ name: row.name, area: row.area })),
+        ...used.results.filter((row) => !known.has(row.branch)).map((row) => ({ name: row.branch, area: null })),
+      ],
+    });
   });
 
   app.get("/api/v1/admin/newcomers/:id", async (c) => {

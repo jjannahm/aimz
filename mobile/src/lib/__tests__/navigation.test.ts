@@ -6,7 +6,7 @@ const dock = (role: Parameters<typeof tabsForRole>[0]) =>
 
 describe('tabsForRole', () => {
   it('gives a coach exactly Matches, Team and Manage, in that order', () => {
-    expect(dock('coach')).toEqual(['Manage', 'Team', 'Matches']);
+    expect(dock('coach')).toEqual(['Matches', 'My Team', 'Manage']);
   });
 
   it('keeps the academy dock for an administrator', () => {
@@ -35,7 +35,9 @@ describe('tabsForRole', () => {
   });
 
   it('never gives a coach the academy-wide tabs', () => {
-    for (const title of ['My Team', 'Teams', 'Hub', 'Reports']) expect(dock('coach')).not.toContain(title);
+    // A coach's own squad is "My Team"; the academy's roster and the family
+    // screens are not hers.
+    for (const title of ['Teams', 'Hub', 'Reports']) expect(dock('coach')).not.toContain(title);
   });
 
   it('registers every route whatever the role', () => {
