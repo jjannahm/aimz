@@ -153,7 +153,7 @@ export function registerAuthRoutes(app: App): void {
     const body = await jsonObject(c);
     const name = stringField(body, "name", { min: 2, max: 120 });
     const email = emailField(body);
-    const password = stringField(body, "password", { min: 10, max: 128 });
+    const password = stringField(body, "password", { min: 8, max: 128 });
     const inviteCode = stringField(body, "invite_code", { min: 4, max: 128 });
     if (!name || !password || !inviteCode) throw new ApiProblem(422, "validation_error", "Complete all required fields.");
 
@@ -284,7 +284,7 @@ export function registerAuthRoutes(app: App): void {
     const user = await currentUser(c);
     const body = await jsonObject(c);
     const current = stringField(body, "current_password", { min: 1, max: 128 });
-    const next = stringField(body, "new_password", { min: 10, max: 128 });
+    const next = stringField(body, "new_password", { min: 8, max: 128 });
     if (!current || !next || !(await verifyPassword(current, user.password_hash))) {
       throw new ApiProblem(422, "incorrect_password", "Current password is incorrect.");
     }
@@ -366,7 +366,7 @@ export function registerAuthRoutes(app: App): void {
     const body = await jsonObject(c);
     const name = stringField(body, "name", { min: 2, max: 120 });
     const email = emailField(body);
-    const password = stringField(body, "password", { min: 10, max: 128 });
+    const password = stringField(body, "password", { min: 8, max: 128 });
     const role: UserRole = body.role === "player" ? "player" : body.role === "parent" ? "parent" : "admin";
     const expiresAt = expiryField(body);
     const now = nowIso();

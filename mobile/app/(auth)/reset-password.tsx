@@ -12,7 +12,7 @@ import { ApiError, api } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
-const schema = z.object({ email: z.email('Enter a valid email.'), code: z.string().regex(/^\s?\d{6}$/, 'Enter the six-digit code.'), password: z.string().min(10, 'Use at least 10 characters.') });
+const schema = z.object({ email: z.email('Enter a valid email.'), code: z.string().regex(/^\s?\d{6}$/, 'Enter the six-digit code.'), password: z.string().min(8, 'Use at least 8 characters.') });
 type Values = z.infer<typeof schema>;
 
 export default function ResetPasswordScreen() {
