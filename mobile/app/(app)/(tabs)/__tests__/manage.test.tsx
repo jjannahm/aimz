@@ -42,6 +42,7 @@ jest.mock('@/src/components/manage/HubManagers', () => {
 });
 jest.mock('@/src/lib/api', () => ({
   api: {
+    adminUsers: jest.fn(),
     branches: jest.fn(),
     competitions: jest.fn(),
     groups: jest.fn(),
@@ -245,14 +246,27 @@ describe('ManageScreen navigation', () => {
     expect(screen.getByText('Legacy squad')).toBeTruthy();
   });
 
-  it('uses the family glyph for a player’s private roster details', async () => {
-    jest.mocked(api.players).mockResolvedValue({ ...emptyPage, items: [{ id: 'player-1', name: 'Amina Adel', position: 'CM', jersey_number: 14 }] } as never);
+  /**
+   * Whether a family has the app at all is read off who has registered against
+   * the player: their own login, or a parent holding them as a child. A row
+   * carries that and nothing else beside Edit and Delete — the family glyph
+   * that used to open the private roster details is gone.
+   */
+  it('says which players are on the app', async () => {
+    jest.mocked(api.players).mockResolvedValue({ ...emptyPage, items: [
+      { id: 'player-1', name: 'Amina Adel', position: 'CM', jersey_number: 14 },
+      { id: 'player-2', name: 'Amina Nabil', position: 'CM', jersey_number: 11 },
+    ] } as never);
+    jest.mocked(api.adminUsers).mockResolvedValue({ ...emptyPage, items: [
+      { id: 'user-1', name: 'Amina Adel', email: 'a@a.test', role: 'player', player: { id: 'player-1' }, team: null, children: [] },
+    ] } as never);
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(await screen.findByRole('tab', { name: 'Players' }));
     await fireEvent.press(await screen.findByRole('button', { name: 'Show current players' }));
 
-    expect(await screen.findByRole('button', { name: 'Private roster details' })).toBeTruthy();
-    expect(screen.getByTestId('family-icon', { includeHiddenElements: true })).toBeTruthy();
+    expect(await screen.findByText('On the app')).toBeTruthy();
+    expect(screen.getByText('No app')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Private roster details' })).toBeNull();
   });
 
   it('searches the current players rather than scrolling them', async () => {
