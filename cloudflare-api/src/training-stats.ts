@@ -1,8 +1,8 @@
 import type { Hono } from "hono";
-import { ApiProblem, currentUser, jsonObject, nowIso, numberField, publicPlayer, stringField } from "./helpers";
-import { assertCanManageTeam, guardPlayer, linkedPlayerIds, managingUser } from "./team-access";
+import { ApiProblem, currentUser, jsonObject, nowIso, numberField, publicPlayer, publicTeam, stringField } from "./helpers";
+import { assertCanManageTeam, guardPlayer, guardTeam, linkedPlayerIds, managingUser } from "./team-access";
 import { requireTrainingAccess, trainingById } from "./training";
-import type { PlayerRow, TrainingMetricRow, TrainingPlayerMetricRow, TrainingRow } from "./types";
+import type { PlayerRow, TeamRow, TrainingMetricRow, TrainingPlayerMetricRow, TrainingRow } from "./types";
 import { attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
@@ -12,6 +12,28 @@ const playerKind = (position: string): PlayerKind => position.trim().toUpperCase
 const appliesTo = (metric: TrainingMetricRow, position: string): boolean =>
   metric.player_kind === "all" || metric.player_kind === playerKind(position);
 
+const MIN_LEADERBOARD_SESSIONS = 3;
+const TRAINING_AWARD_LABELS: Record<string, string> = {
+  overall_rating: "Best Overall Rating",
+  dribbling: "Best Dribbler",
+  shooting: "Best Shooter",
+  passing: "Best Passer",
+  shot_stopping: "Best Shot Stopper",
+  handling: "Best Handling",
+  distribution: "Best Distribution",
+};
+
+interface TrainingRank {
+  rank: number;
+  metric: Record<string, unknown>;
+  label: string;
+  player: Record<string, unknown> | null;
+  team: Record<string, unknown> | null;
+  value: number;
+  unit: string;
+  sessions: number;
+}
+
 /** The metrics on offer, in the order a coach reads them. */
 async function activeMetrics(env: Env, kind?: PlayerKind): Promise<TrainingMetricRow[]> {
   const rows = await env.DB.prepare("SELECT * FROM training_metrics WHERE is_active=1 ORDER BY sort_order, label").all<TrainingMetricRow>();
@@ -20,6 +42,69 @@ async function activeMetrics(env: Env, kind?: PlayerKind): Promise<TrainingMetri
 
 function publicMetric(row: TrainingMetricRow): Record<string, unknown> {
   return { ...row, is_active: Boolean(row.is_active) };
+}
+
+/** All eligible rankings for a squad, keyed by attendance or metric key. */
+async function trainingAwardRankings(env: Env, team: TeamRow): Promise<Map<string, TrainingRank[]>> {
+  const [players, metrics, attendance, readings] = await Promise.all([
+    env.DB.prepare("SELECT * FROM players WHERE team_id=? AND is_active=1 ORDER BY name").bind(team.id).all<PlayerRow>(),
+    activeMetrics(env),
+    env.DB.prepare(`SELECT a.player_id, a.status
+      FROM training_attendance a JOIN training_sessions s ON s.id=a.training_session_id
+      WHERE s.team_id=?`).bind(team.id).all<{ player_id: string; status: string }>(),
+    env.DB.prepare(`SELECT m.player_id, m.metric_id, m.value
+      FROM training_player_metrics m JOIN training_sessions s ON s.id=m.training_session_id
+      WHERE s.team_id=?`).bind(team.id).all<{ player_id: string; metric_id: string; value: number }>(),
+  ]);
+  const playerById = new Map(players.results.map((player) => [player.id, player]));
+  const teamPublic = publicTeam(team);
+  const rankings = new Map<string, TrainingRank[]>();
+  const attendanceByPlayer = new Map<string, { attended: number; sessions: number }>();
+  for (const row of attendance.results) {
+    if (!playerById.has(row.player_id)) continue;
+    const held = attendanceByPlayer.get(row.player_id) ?? { attended: 0, sessions: 0 };
+    held.sessions += 1;
+    if (row.status === "present" || row.status === "late") held.attended += 1;
+    attendanceByPlayer.set(row.player_id, held);
+  }
+  const attendanceMetric = { key: "attendance", label: "Attendance", kind: "rating", min_value: 0, max_value: 100, unit: "%", player_kind: "all" };
+  const attendanceRanks = [...attendanceByPlayer.entries()]
+    .filter(([, total]) => total.sessions >= MIN_LEADERBOARD_SESSIONS)
+    .map(([id, total]) => ({ player: playerById.get(id)!, ...total, raw: total.attended / total.sessions }))
+    .sort((a, b) => b.raw - a.raw || b.attended - a.attended || a.player.name.localeCompare(b.player.name))
+    .map((row, index): TrainingRank => ({
+      rank: index + 1, metric: attendanceMetric, label: "Best Attendance", player: publicPlayer(row.player), team: teamPublic,
+      value: Math.round(row.raw * 100), unit: "%", sessions: row.sessions,
+    }));
+  if (attendanceRanks.length) rankings.set("attendance", attendanceRanks);
+
+  const readingsByMetric = new Map<string, Map<string, number[]>>();
+  for (const row of readings.results) {
+    const player = playerById.get(row.player_id);
+    const metric = metrics.find((item) => item.id === row.metric_id);
+    if (!player || !metric || !appliesTo(metric, player.position)) continue;
+    const byPlayer = readingsByMetric.get(metric.id) ?? new Map<string, number[]>();
+    const values = byPlayer.get(player.id) ?? [];
+    values.push(row.value);
+    byPlayer.set(player.id, values);
+    readingsByMetric.set(metric.id, byPlayer);
+  }
+  for (const metric of metrics) {
+    const eligible = [...(readingsByMetric.get(metric.id) ?? new Map<string, number[]>()).entries()]
+      .filter(([, values]) => values.length >= MIN_LEADERBOARD_SESSIONS)
+      .map(([id, values]) => ({ player: playerById.get(id)!, sessions: values.length, total: values.reduce((sum, value) => sum + value, 0) }));
+    eligible.sort((a, b) => metric.kind === "rating"
+      ? (b.total / b.sessions) - (a.total / a.sessions) || b.sessions - a.sessions || a.player.name.localeCompare(b.player.name)
+      : b.total - a.total || a.sessions - b.sessions || a.player.name.localeCompare(b.player.name));
+    const label = TRAINING_AWARD_LABELS[metric.key] ?? `Best ${metric.label}`;
+    const rows = eligible.map((row, index): TrainingRank => ({
+      rank: index + 1, metric: publicMetric(metric), label, player: publicPlayer(row.player), team: teamPublic,
+      value: metric.kind === "rating" ? Math.round((row.total / row.sessions) * 10) / 10 : row.total,
+      unit: metric.kind === "rating" ? `/${metric.max_value ?? 10}` : metric.unit ?? "points", sessions: row.sessions,
+    }));
+    if (rows.length) rankings.set(metric.key, rows);
+  }
+  return rankings;
 }
 
 /**
@@ -64,6 +149,26 @@ export function registerTrainingStatsRoutes(app: App): void {
   app.get("/api/v1/training-metrics", async (c) => {
     await currentUser(c);
     return c.json({ items: (await activeMetrics(c.env)).map(publicMetric) });
+  });
+
+  /** Headline winners for attendance and every active metric in one squad. */
+  app.get("/api/v1/teams/:id/training-awards", async (c) => {
+    await guardTeam(c, c.req.param("id"));
+    const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id=? AND is_active=1").bind(c.req.param("id")).first<TeamRow>();
+    if (!team) throw new ApiProblem(404, "team_not_found", "Squad not found.");
+    const rankings = await trainingAwardRankings(c.env, team);
+    return c.json({ team: publicTeam(team), player_awards: [...rankings.values()].map((rows) => rows[0]) });
+  });
+
+  /** The full ranking behind one squad training award. */
+  app.get("/api/v1/teams/:id/training-awards/:metric", async (c) => {
+    await guardTeam(c, c.req.param("id"));
+    const team = await c.env.DB.prepare("SELECT * FROM teams WHERE id=? AND is_active=1").bind(c.req.param("id")).first<TeamRow>();
+    if (!team) throw new ApiProblem(404, "team_not_found", "Squad not found.");
+    const limit = Math.min(Math.max(Number.parseInt(new URL(c.req.url).searchParams.get("limit") ?? "25", 10) || 25, 1), 100);
+    const rows = (await trainingAwardRankings(c.env, team)).get(c.req.param("metric"));
+    if (!rows) throw new ApiProblem(404, "award_not_found", "Unknown or unqualified training award.");
+    return c.json(rows.slice(0, limit));
   });
 
   /** The whole squad's readings for one session, which is what the entry screen fills in. */

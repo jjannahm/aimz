@@ -1522,6 +1522,66 @@ describe('training performance', () => {
     expect((await request(`/api/v1/training-sessions/${sessions[0]!.id}/performance`, json('GET', undefined, playerUser.token))).status).toBe(200);
   });
 
+  describe('squad training leaderboards', () => {
+    it('ranks attendance and position-aware ratings after three records', async () => {
+      const { admin, team, squad, sessions } = await setUp();
+      const keeper = await (await request('/api/v1/players', json('POST', { name: 'Alya', team_id: team.id, position: 'GK' }, admin.token))).json<{ id: string; name: string }>();
+      const third = await (await request('/api/v1/training-sessions', json('POST', {
+        team_id: team.id, venue: 'Palm', notes: null, duration_minutes: 90, occurrences: ['2026-09-05T15:00:00.000Z'],
+      }, admin.token))).json<{ id: string }[]>();
+      const allSessions = [...sessions, ...third];
+      const metrics = await metricsOf(admin.token);
+      const overall = metrics.find((metric) => metric.key === 'overall_rating')!;
+      const dribbling = metrics.find((metric) => metric.key === 'dribbling')!;
+      const stopping = metrics.find((metric) => metric.key === 'shot_stopping')!;
+
+      for (const [index, session] of allSessions.entries()) {
+        await record(session.id, admin.token, [
+          { player_id: squad[0]!.id, metric_id: overall.id, value: 8 + index },
+          { player_id: squad[0]!.id, metric_id: dribbling.id, value: 9 },
+          { player_id: squad[1]!.id, metric_id: dribbling.id, value: 8 },
+          { player_id: keeper.id, metric_id: stopping.id, value: 7 + index },
+        ]);
+        await request(`/api/v1/training-sessions/${session.id}/attendance`, json('PUT', { entries: [
+          { player_id: squad[0]!.id, status: index === 1 ? 'late' : index === 2 ? 'absent' : 'present' },
+          { player_id: squad[1]!.id, status: 'present' },
+          { player_id: keeper.id, status: 'present' },
+        ] }, admin.token));
+      }
+
+      const response = await request(`/api/v1/teams/${team.id}/training-awards`, json('GET', undefined, admin.token));
+      expect(response.status).toBe(200);
+      const body = await response.json<{ player_awards: { label: string; player: { id: string }; metric: { key: string }; value: number; sessions: number }[] }>();
+      expect(body.player_awards.find((award) => award.metric.key === 'attendance')).toMatchObject({ label: 'Best Attendance', player: { id: keeper.id }, value: 100, sessions: 3 });
+      expect(body.player_awards.find((award) => award.metric.key === 'overall_rating')).toMatchObject({ label: 'Best Overall Rating', player: { id: squad[0]!.id }, value: 9, sessions: 3 });
+      expect(body.player_awards.find((award) => award.metric.key === 'dribbling')).toMatchObject({ label: 'Best Dribbler', player: { id: squad[0]!.id }, value: 9, sessions: 3 });
+      expect(body.player_awards.find((award) => award.metric.key === 'shot_stopping')).toMatchObject({ label: 'Best Shot Stopper', player: { id: keeper.id }, value: 8, sessions: 3 });
+      expect(body.player_awards.find((award) => award.metric.key === 'handling')).toBeUndefined();
+      expect(body.player_awards.find((award) => award.metric.key === 'minutes_trained')).toBeUndefined();
+
+      const ranking = await (await request(`/api/v1/teams/${team.id}/training-awards/dribbling`, json('GET', undefined, admin.token)))
+        .json<{ rank: number; player: { id: string }; value: number; sessions: number }[]>();
+      expect(ranking.map((row) => row.player.id)).toEqual([squad[0]!.id, squad[1]!.id]);
+      expect(ranking[0]).toMatchObject({ rank: 1, value: 9, sessions: 3 });
+      expect(ranking.some((row) => row.player.id === keeper.id)).toBe(false);
+    });
+
+    it('omits boards until somebody has three records and enforces squad visibility', async () => {
+      const { admin, team, squad } = await setUp();
+      const empty = await (await request(`/api/v1/teams/${team.id}/training-awards`, json('GET', undefined, admin.token)))
+        .json<{ player_awards: unknown[] }>();
+      expect(empty.player_awards).toEqual([]);
+
+      const parent = await seedUser('parent');
+      await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, squad[0]!.id, now).run();
+      expect((await request(`/api/v1/teams/${team.id}/training-awards`, json('GET', undefined, parent.token))).status).toBe(200);
+      const elsewhere = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U17', is_aimz: true }, admin.token))).json<{ id: string }>();
+      // Visibility guards conceal squads outside the family's scope.
+      expect((await request(`/api/v1/teams/${elsewhere.id}/training-awards`, json('GET', undefined, parent.token))).status).toBe(404);
+      expect((await request(`/api/v1/teams/${team.id}/training-awards`, json('GET'))).status).toBe(401);
+    });
+  });
+
   describe('one player\'s training record', () => {
     it('averages each position-appropriate rating', async () => {
       const { admin, squad, sessions } = await setUp();

@@ -662,6 +662,30 @@ export type SeasonAwards = {
   team_awards: TeamAward[];
 };
 
+export type TrainingAwardMetric = {
+  key: string;
+  label: string;
+  kind: 'rating' | 'count';
+  min_value: number | null;
+  max_value: number | null;
+  unit: string | null;
+  player_kind: 'all' | 'outfield' | 'goalkeeper';
+};
+
+/** One eligible row on a squad-scoped training leaderboard. */
+export type TrainingAwardRank = {
+  rank: number;
+  metric: TrainingAwardMetric;
+  label: string;
+  player: Player;
+  team: Team;
+  value: number;
+  unit: string;
+  sessions: number;
+};
+
+export type TrainingAwards = { team: Team; player_awards: TrainingAwardRank[] };
+
 export type AuditEntry = {
   id: string;
   actor_id: string | null;

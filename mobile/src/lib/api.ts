@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, CoachAccount, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceRequestContext, AttendanceStatus, FeeCharge, FeeGeneration, FeeInvoice, FeePlan, FeeSummary, InvoiceRun, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, MatchReport, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SharedInvoice, SharedMatchReport, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, CoachAccount, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceRequestContext, AttendanceStatus, FeeCharge, FeeGeneration, FeeInvoice, FeePlan, FeeSummary, InvoiceRun, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, TrainingAwardRank, TrainingAwards, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, MatchReport, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SharedInvoice, SharedMatchReport, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -292,6 +292,9 @@ export const api = {
   awards: (competitionId: string) => request<SeasonAwards>(`/api/v1/competitions/${competitionId}/awards`),
   awardRanking: (competitionId: string, metric: AwardMetric, limit = 25) =>
     request<AwardRank[]>(`/api/v1/competitions/${competitionId}/awards/${metric}?limit=${limit}`),
+  trainingAwards: (teamId: string) => request<TrainingAwards>(`/api/v1/teams/${teamId}/training-awards`),
+  trainingAwardRanking: (teamId: string, metric: string, limit = 25) =>
+    request<TrainingAwardRank[]>(`/api/v1/teams/${teamId}/training-awards/${encodeURIComponent(metric)}?limit=${limit}`),
   auditLog: (matchId?: string) => request<Page<AuditEntry>>(`/api/v1/admin/audit-log${matchId ? `?match_id=${encodeURIComponent(matchId)}` : ''}`),
   playerStats: (playerId: string, season?: string) => request<PlayerSeasonSummary>(`/api/v1/players/${playerId}/stats${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   playerHonours: (playerId: string) => request<PlayerHonours>(`/api/v1/players/${playerId}/honours`),

@@ -37,6 +37,7 @@ export const cacheKeys = {
   personalDetails: ['personal-details'] as const,
   financials: ['financials'] as const,
   awards: ['awards'] as const,
+  trainingAwards: ['training-awards'] as const,
   auditLog: ['audit-log'] as const,
   liveMatch: (id: string) => ['live-match', id] as const,
   allLiveMatches: ['live-match'] as const,
@@ -54,8 +55,8 @@ type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' |
  * matches, timelines and leaderboards.
  */
 const affects: Record<Entity, (readonly string[])[]> = {
-  team: [cacheKeys.teams, cacheKeys.players, cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.allLiveMatches, cacheKeys.groups, cacheKeys.bracket, cacheKeys.training, cacheKeys.announcements],
-  player: [cacheKeys.players, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.allLiveMatches, cacheKeys.accounts, cacheKeys.availability],
+  team: [cacheKeys.teams, cacheKeys.players, cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.trainingAwards, cacheKeys.allLiveMatches, cacheKeys.groups, cacheKeys.bracket, cacheKeys.training, cacheKeys.announcements],
+  player: [cacheKeys.players, cacheKeys.leaders, cacheKeys.trainingAwards, cacheKeys.playerStats, cacheKeys.allLiveMatches, cacheKeys.accounts, cacheKeys.availability],
   competition: [cacheKeys.competitions, cacheKeys.matches, cacheKeys.standings, cacheKeys.awards, cacheKeys.groups, cacheKeys.bracket],
   match: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.allLiveMatches, cacheKeys.bracket, cacheKeys.allMatchReports],
   event: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.auditLog, cacheKeys.allLiveMatches, cacheKeys.bracket, cacheKeys.allMatchReports],
@@ -69,18 +70,18 @@ const affects: Record<Entity, (readonly string[])[]> = {
   // A player's training attendance percentage is worked out from the register,
   // so marking somebody has to clear the stats built on it or a profile keeps
   // answering with the figure from before the mark.
-  attendance: [cacheKeys.attendance, cacheKeys.playerStats, cacheKeys.trainingStats, cacheKeys.attendanceRequests],
+  attendance: [cacheKeys.attendance, cacheKeys.playerStats, cacheKeys.trainingStats, cacheKeys.trainingAwards, cacheKeys.attendanceRequests],
   // Approving a correction writes the register, so it clears everything a mark
   // clears — and the requests themselves, one of which has just been answered.
-  'attendance-request': [cacheKeys.attendanceRequests, cacheKeys.attendance, cacheKeys.playerStats, cacheKeys.trainingStats],
+  'attendance-request': [cacheKeys.attendanceRequests, cacheKeys.attendance, cacheKeys.playerStats, cacheKeys.trainingStats, cacheKeys.trainingAwards],
   // Plans, charges, payments and the squad ledger are all read back from the
   // same rows, so any one of them changing clears the lot.
   fee: [cacheKeys.fees, cacheKeys.financials, cacheKeys.invoices],
   report: [cacheKeys.reports],
   'match-report': [cacheKeys.allMatchReports],
   // A reading changes the session's sheet and every total built on it.
-  'training-stat': [cacheKeys.trainingStats, cacheKeys.playerStats],
-  roster: [cacheKeys.rosterDetails, cacheKeys.players, cacheKeys.personalDetails],
+  'training-stat': [cacheKeys.trainingStats, cacheKeys.trainingAwards, cacheKeys.playerStats],
+  roster: [cacheKeys.rosterDetails, cacheKeys.players, cacheKeys.personalDetails, cacheKeys.trainingAwards],
   // Naming a man of the match changes the match, not the table or the scorers.
   award: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches, cacheKeys.allMatchReports],
 };

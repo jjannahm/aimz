@@ -32,7 +32,17 @@ describe('invalidateAfterWrite', () => {
     // The Teams list counts players, so it reads from the players key.
     expect(keys()).toContain('players');
     expect(keys()).toContain('leaders');
+    expect(keys()).toContain('training-awards');
   });
+
+  it.each(['attendance', 'attendance-request', 'training-stat', 'roster'] as const)(
+    'recalculates training awards after a %s write',
+    async (entity) => {
+      const { client, keys } = trackInvalidations();
+      await invalidateAfterWrite(client, entity);
+      expect(keys()).toContain('training-awards');
+    },
+  );
 
   it('reaches matches and standings when a team changes, since it is named there', async () => {
     const { client, keys } = trackInvalidations();
