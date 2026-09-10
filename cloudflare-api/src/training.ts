@@ -1,7 +1,9 @@
 import type { Context, Hono } from "hono";
 import { ApiProblem, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
-import { canOpenTeam, requireTeamOperator, scopedTeams } from "./team-access";
+import { canOpenTeam, requireAimzTeam, scopedTeams } from "./team-access";
 import type { AttendanceRow, AvailabilityRow, PlayerRow, TeamRow, TrainingRow, UserRow } from "./types";
+import { assertCanManageTeam, managingUser } from "./team-access";
+import { ATTENDANCE_STATUSES } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -55,6 +57,7 @@ async function attendanceFor(env: Env, session: TrainingRow): Promise<Record<str
   return {
     items,
     present: items.filter((row) => row.status === "present").length,
+    late: items.filter((row) => row.status === "late").length,
     absent: items.filter((row) => row.status === "absent").length,
     unmarked: items.filter((row) => row.status === null).length,
   };
@@ -92,9 +95,11 @@ export function registerTrainingRoutes(app: App): void {
   });
 
   app.post("/api/v1/training-sessions", async (c) => {
+    const { scope } = await managingUser(c);
     const body = await jsonObject(c);
     const teamId = stringField(body, "team_id", { min: 1, max: 36 })!;
-    await requireTeamOperator(c, teamId);
+    assertCanManageTeam(scope, teamId);
+    await requireAimzTeam(c.env, teamId);
     const venue = stringField(body, "venue", { min: 2, max: 200 })!;
     const notes = stringField(body, "notes", { optional: true, nullable: true, max: 2000 }) ?? null;
     const duration = numberField(body, "duration_minutes", { min: 15, max: 300, integer: true })!;
@@ -109,8 +114,9 @@ export function registerTrainingRoutes(app: App): void {
   });
 
   app.patch("/api/v1/training-sessions/:id", async (c) => {
+    const { scope } = await managingUser(c);
     const current = await trainingById(c.env, c.req.param("id"));
-    await requireTeamOperator(c, current.team_id);
+    assertCanManageTeam(scope, current.team_id);
     const body = await jsonObject(c);
     const row: TrainingRow = {
       ...current,
@@ -125,8 +131,9 @@ export function registerTrainingRoutes(app: App): void {
   });
 
   app.delete("/api/v1/training-sessions/:id", async (c) => {
+    const { scope: managed } = await managingUser(c);
     const row = await trainingById(c.env, c.req.param("id"));
-    await requireTeamOperator(c, row.team_id);
+    assertCanManageTeam(managed, row.team_id);
     const scope = new URL(c.req.url).searchParams.get("scope") ?? "one";
     if (scope !== "one" && scope !== "series") throw new ApiProblem(422, "validation_error", "Delete one session or its whole series.");
     if (scope === "series" && row.series_id) await c.env.DB.prepare("DELETE FROM training_sessions WHERE series_id=?").bind(row.series_id).run();
@@ -164,14 +171,15 @@ export function registerTrainingRoutes(app: App): void {
    * null for somebody takes their mark away rather than guessing at it.
    */
   app.put("/api/v1/training-sessions/:id/attendance", async (c) => {
+    const { scope } = await managingUser(c);
     const session = await trainingById(c.env, c.req.param("id"));
-    await requireTeamOperator(c, session.team_id);
+    assertCanManageTeam(scope, session.team_id);
     const body = await jsonObject(c);
     if (!Array.isArray(body.entries) || body.entries.length > 200) throw new ApiProblem(422, "validation_error", "Send between 1 and 200 attendance marks.", [{ field: "entries", message: "Send up to 200 marks." }]);
     const entries = body.entries.map((raw) => {
       const entry = (raw ?? {}) as Record<string, unknown>;
       const playerId = stringField(entry, "player_id", { min: 1, max: 36 })!;
-      const status = entry.status === null || entry.status === undefined ? null : enumField(entry, "status", ["present", "absent"] as const);
+      const status = entry.status === null || entry.status === undefined ? null : enumField(entry, "status", ATTENDANCE_STATUSES);
       return { playerId, status };
     });
     // Every name has to be on this squad, so a register cannot quietly collect

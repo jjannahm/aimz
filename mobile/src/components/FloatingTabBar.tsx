@@ -35,6 +35,7 @@ const icons: Record<string, TabIconName> = {
   players: 'players',
   reports: 'reports',
   'my-team': 'myTeam',
+  squad: 'squad',
   manage: 'manage',
 };
 

@@ -2,8 +2,8 @@ import type { Context, Hono } from "hono";
 import { getJoinedMatch } from "./domain";
 import { ApiProblem, currentUser, jsonObject, nowIso, publicPlayer, stringField } from "./helpers";
 import { requireTrainingAccess, trainingById } from "./training";
-import { linkedTeamIds, requireTeamOperator } from "./team-access";
 import type { AssignmentRow, PlayerRow, UserRow } from "./types";
+import { guardMatch, manageMatch, manageTrainingSession } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -35,30 +35,16 @@ async function eligiblePlayer(c: Context<{ Bindings: Env }>, assignment: Pick<As
 }
 
 async function accessAssignment(c: Context<{ Bindings: Env }>, row: AssignmentRow, user: UserRow): Promise<void> {
-  if (user.role === "admin") return;
-  if (row.training_session_id) {
-    await requireTrainingAccess(c, await trainingById(c.env, row.training_session_id), user);
-    return;
-  }
-  if (row.match_id && user.role === "coach") {
-    const match = await getJoinedMatch(c.env, row.match_id);
-    const teams = await linkedTeamIds(c.env, user);
-    if (teams.some((id) => id === match.home_team_id || id === match.away_team_id)) return;
-  }
-  if (row.match_id && user.role !== "coach") return;
-  throw new ApiProblem(403, "team_access_denied", "You can only operate your assigned squad.");
+  if (user.role === "admin" || !row.training_session_id) return;
+  await requireTrainingAccess(c, await trainingById(c.env, row.training_session_id), user);
 }
 
 async function createAssignment(c: Context<{ Bindings: Env }>, refs: Pick<AssignmentRow, "match_id" | "training_session_id">): Promise<Response> {
-  const actor = await currentUser(c);
-  if (refs.match_id) {
-    const match = await getJoinedMatch(c.env, refs.match_id);
-    if (actor.role !== "admin") {
-      const teams = await linkedTeamIds(c.env, actor);
-      if (actor.role !== "coach" || !teams.some((id) => id === match.home_team_id || id === match.away_team_id)) throw new ApiProblem(403, "team_access_denied", "You can only operate your assigned squad.");
-    }
-  }
-  if (refs.training_session_id) await requireTeamOperator(c, (await trainingById(c.env, refs.training_session_id)).team_id);
+  // Whichever it hangs off, the thing itself decides who may set it.
+  if (refs.match_id) await manageMatch(c, refs.match_id);
+  if (refs.training_session_id) await manageTrainingSession(c, refs.training_session_id);
+  if (refs.match_id) await getJoinedMatch(c.env, refs.match_id);
+  if (refs.training_session_id) await trainingById(c.env, refs.training_session_id);
   const body = await jsonObject(c);
   const assignedPlayerId = stringField(body, "assigned_player_id", { optional: true, nullable: true, max: 36 }) ?? null;
   if (assignedPlayerId) await eligiblePlayer(c, refs, assignedPlayerId);
@@ -70,19 +56,14 @@ async function createAssignment(c: Context<{ Bindings: Env }>, refs: Pick<Assign
 
 export function registerAssignmentRoutes(app: App): void {
   app.get("/api/v1/matches/:id/assignments", async (c) => {
-    await currentUser(c);
+    await guardMatch(c, c.req.param("id"));
     await getJoinedMatch(c.env, c.req.param("id"));
     const rows = await c.env.DB.prepare("SELECT * FROM event_assignments WHERE match_id=? ORDER BY created_at").bind(c.req.param("id")).all<AssignmentRow>();
     return c.json(await publicAssignments(c.env, rows.results));
   });
   app.post("/api/v1/matches/:id/assignments", (c) => createAssignment(c, { match_id: c.req.param("id"), training_session_id: null }));
   app.delete("/api/v1/matches/:id/assignments/:assignmentId", async (c) => {
-    const actor = await currentUser(c);
-    const match = await getJoinedMatch(c.env, c.req.param("id"));
-    if (actor.role !== "admin") {
-      const teams = await linkedTeamIds(c.env, actor);
-      if (actor.role !== "coach" || !teams.some((id) => id === match.home_team_id || id === match.away_team_id)) throw new ApiProblem(403, "team_access_denied", "You can only operate your assigned squad.");
-    }
+    await manageMatch(c, c.req.param("id"));
     const result = await c.env.DB.prepare("DELETE FROM event_assignments WHERE id=? AND match_id=?").bind(c.req.param("assignmentId"), c.req.param("id")).run();
     if (!result.meta.changes) throw new ApiProblem(404, "assignment_not_found", "Assignment not found.");
     return c.body(null, 204);
@@ -97,7 +78,7 @@ export function registerAssignmentRoutes(app: App): void {
   });
   app.post("/api/v1/training-sessions/:id/assignments", (c) => createAssignment(c, { match_id: null, training_session_id: c.req.param("id") }));
   app.delete("/api/v1/training-sessions/:id/assignments/:assignmentId", async (c) => {
-    await requireTeamOperator(c, (await trainingById(c.env, c.req.param("id"))).team_id);
+    await manageTrainingSession(c, c.req.param("id"));
     const result = await c.env.DB.prepare("DELETE FROM event_assignments WHERE id=? AND training_session_id=?").bind(c.req.param("assignmentId"), c.req.param("id")).run();
     if (!result.meta.changes) throw new ApiProblem(404, "assignment_not_found", "Assignment not found.");
     return c.body(null, 204);
@@ -109,7 +90,7 @@ export function registerAssignmentRoutes(app: App): void {
     await accessAssignment(c, row, user);
     const body = await jsonObject(c);
     const requested = stringField(body, "assigned_player_id", { nullable: true, max: 36 }) ?? null;
-    if (user.role === "admin" || user.role === "coach") {
+    if (user.role === "admin") {
       if (requested) await eligiblePlayer(c, row, requested);
     } else {
       if (requested !== null && requested !== user.player_id) throw new ApiProblem(403, "assignment_self_only", "You can only sign up yourself.");
@@ -119,7 +100,7 @@ export function registerAssignmentRoutes(app: App): void {
       if (requested === null && row.assigned_player_id !== user.player_id) throw new ApiProblem(403, "assignment_release_denied", "You can only release an assignment you hold.");
     }
     const updated = nowIso();
-    if (user.role === "admin" || user.role === "coach") {
+    if (user.role === "admin") {
       await c.env.DB.prepare("UPDATE event_assignments SET assigned_player_id=?, updated_at=? WHERE id=?").bind(requested, updated, row.id).run();
     } else if (requested) {
       const claimed = await c.env.DB.prepare("UPDATE event_assignments SET assigned_player_id=?, updated_at=? WHERE id=? AND (assigned_player_id IS NULL OR assigned_player_id=?)").bind(requested, updated, row.id, user.player_id).run();

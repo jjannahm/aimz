@@ -4,6 +4,8 @@ import { ApiProblem, publicCompetition, publicPlayer, publicStat, publicTeam } f
 import { summariseMilestones } from "./milestones";
 import { applyStanding, AWARDS, FORM_LENGTH, outcome, type AwardDefinition } from "./scoring-rules";
 import type { AwardTotals, CompetitionGroupRow, CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
+import { guardCompetition, guardPlayer, guardTeam } from "./team-access";
+import { attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -43,6 +45,7 @@ async function teamsByIds(env: Env, ids: string[]): Promise<Map<string, TeamRow>
 
 export function registerStatsRoutes(app: App): void {
   app.get("/api/v1/competitions/:id/standings", async (c) => {
+    await guardCompetition(c, c.req.param("id"));
     const competition = await c.env.DB.prepare("SELECT * FROM competitions WHERE id=?").bind(c.req.param("id")).first<CompetitionRow>();
     if (!competition) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
     if (competition.type === "friendly") return c.json([]);
@@ -174,6 +177,7 @@ export function registerStatsRoutes(app: App): void {
    */
   app.get("/api/v1/teams/:id/squad-stats", async (c) => {
     const teamId = c.req.param("id");
+    await guardTeam(c, teamId);
     const team = await c.env.DB.prepare("SELECT id FROM teams WHERE id=?").bind(teamId).first();
     if (!team) throw new ApiProblem(404, "team_not_found", "Team not found.");
     const result = await c.env.DB.prepare(`
@@ -194,6 +198,7 @@ export function registerStatsRoutes(app: App): void {
   });
 
   app.get("/api/v1/players/:id/stats", async (c) => {
+    await guardPlayer(c, c.req.param("id"));
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>(); if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
     const season = new URL(c.req.url).searchParams.get("season"); const values: unknown[] = [player.id]; const where = season ? " AND cp.season=?" : ""; if (season) values.push(season);
     // The match is joined in rather than left to the client. It used to fetch
@@ -208,12 +213,15 @@ export function registerStatsRoutes(app: App): void {
       // actually took a register for: a session nobody marked counts against
       // nobody, and a player marked at none has no percentage rather than a
       // zero that reads as never turning up.
-      c.env.DB.prepare("SELECT SUM(CASE WHEN status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected FROM training_attendance WHERE player_id=?").bind(player.id).first<{ attended: number | null; expected: number }>(),
+      c.env.DB.prepare(`SELECT ${attendedSql()} attended, ${lateSql()} late, COUNT(*) expected FROM training_attendance WHERE player_id=?`).bind(player.id).first<{ attended: number | null; late: number | null; expected: number }>(),
     ]);
     const expected = attendance?.expected ?? 0;
     const attended = attendance?.attended ?? 0;
     const training = {
       trainings_attended: attended,
+      // Counted again on its own: the percentage says she turned up, this says
+      // how often she was not there for the start of it.
+      trainings_late: attendance?.late ?? 0,
       trainings_expected: expected,
       training_attendance_pct: expected ? Math.round((attended / expected) * 100) : null,
     };
@@ -256,6 +264,7 @@ export function registerStatsRoutes(app: App): void {
    * honour that could still change hands.
    */
   app.get("/api/v1/players/:id/honours", async (c) => {
+    await guardPlayer(c, c.req.param("id"));
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>();
     if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
     const competitions = await c.env.DB.prepare("SELECT DISTINCT cp.* FROM competitions cp JOIN matches m ON m.competition_id=cp.id JOIN player_match_stats s ON s.match_id=m.id WHERE s.player_id=? ORDER BY cp.season DESC, cp.name").bind(player.id).all<CompetitionRow>();
@@ -284,6 +293,7 @@ export function registerStatsRoutes(app: App): void {
   });
 
   app.get("/api/v1/competitions/:id/awards", async (c) => {
+    await guardCompetition(c, c.req.param("id"));
     const competition = await c.env.DB.prepare("SELECT * FROM competitions WHERE id=?").bind(c.req.param("id")).first<CompetitionRow>();
     if (!competition) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
     const rank = await awardRankings(c.env, competition.id);
@@ -301,6 +311,7 @@ export function registerStatsRoutes(app: App): void {
   app.get("/api/v1/competitions/:id/awards/:metric", async (c) => {
     const definition = AWARDS.find((award) => award.metric === c.req.param("metric"));
     if (!definition) throw new ApiProblem(404, "award_not_found", "Unknown award.");
+    await guardCompetition(c, c.req.param("id"));
     const competition = await c.env.DB.prepare("SELECT * FROM competitions WHERE id=?").bind(c.req.param("id")).first<CompetitionRow>();
     if (!competition) throw new ApiProblem(404, "competition_not_found", "Competition not found.");
     const limit = Math.min(Math.max(Number.parseInt(new URL(c.req.url).searchParams.get("limit") ?? "25", 10) || 25, 1), 100);

@@ -3,8 +3,11 @@ import { recordAudit } from "./audit";
 import { feeStatus } from "./fees";
 import { ApiProblem, currentUser, jsonObject, nowIso, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
 import { newToken } from "./security";
-import { linkedPlayerIds, linkedTeamIds, requireTeamOperator } from "./team-access";
+import { linkedPlayerIds } from "./team-access";
 import type { FeeChargeRow, PlayerReportRow, PlayerRow, TeamRow, UserRow } from "./types";
+import { managePlayer } from "./team-access";
+import { managedTeamIds } from "./team-access";
+import { attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -15,9 +18,14 @@ interface ReportSnapshot {
    * the training marks; a report published before them has no `training` and
    * is read as having none, which is what it recorded.
    */
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   player: { name: string; team_name: string | null; position: string | null; jersey_number: number | null };
-  attendance: { attended: number; expected: number; pct: number | null };
+  /**
+   * `late` arrives at version 3. A report published before it has none and is
+   * read as having none, which is what it recorded: the register could not
+   * hold the answer at the time.
+   */
+  attendance: { attended: number; expected: number; pct: number | null; late?: number };
   /** How the player was marked at training over the period. */
   training?: { key: string; label: string; kind: "rating" | "count"; max_value: number | null; value: number; sessions: number }[];
   /**
@@ -48,10 +56,6 @@ async function reportById(env: Env, id: string): Promise<PlayerReportRow> {
   return row;
 }
 
-async function requireReportOperator(c: Parameters<typeof requireTeamOperator>[0], report: PlayerReportRow) {
-  return requireTeamOperator(c, report.team_id);
-}
-
 /**
  * Everything the report says about the period, worked out now.
  *
@@ -64,11 +68,11 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
   const [attendance, marks, outside, matches, charges] = await Promise.all([
     // Only sessions inside the period, and only those somebody took a register
     // for: a session nobody marked counts against nobody.
-    env.DB.prepare(`SELECT SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected
+    env.DB.prepare(`SELECT ${attendedSql("a")} attended, ${lateSql("a")} late, COUNT(*) expected
       FROM training_attendance a JOIN training_sessions s ON s.id = a.training_session_id
       WHERE a.player_id = ? AND s.starts_at >= ? AND s.starts_at < ?`)
       .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`)
-      .first<{ attended: number | null; expected: number }>(),
+      .first<{ attended: number | null; late: number | null; expected: number }>(),
     // The marks given inside the period, with the metric they belong to. A
     // rating averages and a count adds up, which is why the kind comes along.
     env.DB.prepare(`SELECT t.key, t.label, t.kind, t.max_value, t.sort_order,
@@ -128,14 +132,14 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
     sessions: row.sessions,
   }));
   return {
-    version: 2,
+    version: 3,
     player: {
       name: player?.name ?? "Unknown player",
       team_name: team?.name ?? null,
       position: player?.position ?? null,
       jersey_number: player?.jersey_number ?? null,
     },
-    attendance: { attended, expected, pct: expected ? Math.round((attended / expected) * 100) : null },
+    attendance: { attended, expected, pct: expected ? Math.round((attended / expected) * 100) : null, late: attendance?.late ?? 0 },
     training,
     marks_outside: outside && outside.sessions > 0 && outside.first && outside.last
       ? { sessions: outside.sessions, first: outside.first, last: outside.last }
@@ -191,9 +195,13 @@ function sharedReport(row: PlayerReportRow): Record<string, unknown> {
 /** An administrator, or the family of the player the report is about. */
 async function requireReportAccess(env: Env, actor: UserRow, report: PlayerReportRow): Promise<void> {
   if (actor.role === "admin") return;
-  if (actor.role === "coach") {
-    if ((await linkedTeamIds(env, actor)).includes(report.team_id)) return;
-    throw new ApiProblem(403, "team_access_denied", "You can only read reports for your assigned squad.");
+  // A manager reads the reports of the squads they run, drafts included: they
+  // are the ones writing them.
+  if (actor.role === "manager") {
+    if (!(await managedTeamIds(env, actor)).includes(report.team_id)) {
+      throw new ApiProblem(403, "team_access_denied", "You can only read your own squad's reports.");
+    }
+    return;
   }
   // Scoped by player rather than by squad: team scope would hand a parent every
   // child on it, which is the whole thing a report must not do.
@@ -227,15 +235,18 @@ export function registerReportRoutes(app: App): void {
     const { limit, offset } = parsePagination(url);
     const conditions: string[] = [];
     const values: unknown[] = [];
-    if (actor.role === "admin") {
+    if (actor.role === "admin" || actor.role === "manager") {
+      // A manager filters the same way an administrator does, inside their own
+      // squads rather than across the academy.
+      if (actor.role === "manager") {
+        const mine = await managedTeamIds(c.env, actor);
+        conditions.push(`team_id IN (${mine.map(() => "?").join(",")})`);
+        values.push(...mine);
+      }
       for (const [parameter, column] of [["player_id", "player_id"], ["team_id", "team_id"], ["status", "status"]] as const) {
         const value = url.searchParams.get(parameter);
         if (value) { conditions.push(`${column} = ?`); values.push(value); }
       }
-    } else if (actor.role === "coach") {
-      const teams = await linkedTeamIds(c.env, actor);
-      conditions.push(`team_id IN (${teams.map(() => "?").join(",")})`);
-      values.push(...teams);
     } else {
       const mine = await linkedPlayerIds(c.env, actor);
       conditions.push(`player_id IN (${mine.map(() => "?").join(",")})`);
@@ -260,12 +271,11 @@ export function registerReportRoutes(app: App): void {
   });
 
   app.post("/api/v1/player-reports", async (c) => {
-    const actor = await currentUser(c);
     const body = await jsonObject(c);
     const playerId = stringField(body, "player_id", { min: 1, max: 36 })!;
+    const actor = await managePlayer(c, playerId);
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(playerId).first<PlayerRow>();
     if (!player) throw new ApiProblem(422, "player_not_found", "Choose a player from the roster.");
-    await requireTeamOperator(c, player.team_id);
     const periodStart = dateField(body, "period_start");
     const periodEnd = dateField(body, "period_end");
     if (periodEnd < periodStart) throw new ApiProblem(422, "validation_error", "The period ends before it starts.", [{ field: "period_end", message: "Choose a date after the start." }]);
@@ -297,7 +307,7 @@ export function registerReportRoutes(app: App): void {
 
   app.patch("/api/v1/player-reports/:id", async (c) => {
     const current = await reportById(c.env, c.req.param("id"));
-    await requireReportOperator(c, current);
+    await managePlayer(c, current.player_id);
     // A published report is a statement already made. Changing it would change
     // what a parent has read, so it is withdrawn and published again instead.
     if (current.status === "published") throw new ApiProblem(409, "report_published", "Withdraw this report before changing it.");
@@ -318,7 +328,7 @@ export function registerReportRoutes(app: App): void {
   /** Freezes the figures and mints the address the family will be given. */
   app.post("/api/v1/player-reports/:id/publish", async (c) => {
     const report = await reportById(c.env, c.req.param("id"));
-    const actor = await requireReportOperator(c, report);
+    const actor = await managePlayer(c, report.player_id);
     const snapshot = JSON.stringify(await measure(c.env, report));
     const now = nowIso();
     const token = report.share_token ?? newToken();
@@ -333,7 +343,7 @@ export function registerReportRoutes(app: App): void {
   /** Takes the link away without losing the report or what it said. */
   app.post("/api/v1/player-reports/:id/withdraw", async (c) => {
     const report = await reportById(c.env, c.req.param("id"));
-    const actor = await requireReportOperator(c, report);
+    const actor = await managePlayer(c, report.player_id);
     const now = nowIso();
     await c.env.DB.batch([
       c.env.DB.prepare("UPDATE player_reports SET status='draft', share_token=NULL, first_opened_at=NULL, updated_at=? WHERE id=?").bind(now, report.id),
@@ -345,7 +355,7 @@ export function registerReportRoutes(app: App): void {
   /** A new address for the same report, which is how the old one is revoked. */
   app.post("/api/v1/player-reports/:id/new-link", async (c) => {
     const report = await reportById(c.env, c.req.param("id"));
-    const actor = await requireReportOperator(c, report);
+    const actor = await managePlayer(c, report.player_id);
     if (report.status !== "published") throw new ApiProblem(409, "report_not_published", "Publish this report before sharing it.");
     const token = newToken();
     const now = nowIso();
@@ -358,7 +368,7 @@ export function registerReportRoutes(app: App): void {
 
   app.delete("/api/v1/player-reports/:id", async (c) => {
     const report = await reportById(c.env, c.req.param("id"));
-    const actor = await requireReportOperator(c, report);
+    const actor = await managePlayer(c, report.player_id);
     if (report.status === "published") throw new ApiProblem(409, "report_published", "Withdraw this report before deleting it.");
     await c.env.DB.batch([
       c.env.DB.prepare("DELETE FROM player_reports WHERE id=?").bind(report.id),

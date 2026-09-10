@@ -1,6 +1,7 @@
 import type { Hono } from "hono";
-import { ApiProblem, adminUser, enumField, jsonObject } from "./helpers";
+import { ApiProblem, enumField, jsonObject } from "./helpers";
 import { createUploadToken, verifyUploadToken } from "./security";
+import { assertCanManageTeam, managingUser } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -23,7 +24,7 @@ function maxBytes(env: Env): number {
 
 export function registerMediaRoutes(app: App): void {
   app.post("/api/v1/media/uploads/presign", async (c) => {
-    await adminUser(c);
+    const { scope } = await managingUser(c);
     const body = await jsonObject(c);
     const entity = enumField(body, "entity", ["team", "player"] as const);
     const contentType = enumField(body, "content_type", MEDIA_TYPES);
@@ -31,6 +32,13 @@ export function registerMediaRoutes(app: App): void {
     const table = entity === "team" ? "teams" : "players";
     const target = await c.env.DB.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(entityId).first<{ id: string }>();
     if (!target) throw new ApiProblem(404, "entity_not_found", "Upload target not found.");
+    // A crest belongs to a squad and a photo to a player's squad, so both
+    // uploads are held to the squads the caller runs.
+    if (entity === "team") assertCanManageTeam(scope, entityId);
+    else {
+      const player = await c.env.DB.prepare("SELECT team_id FROM players WHERE id = ?").bind(entityId).first<{ team_id: string }>();
+      assertCanManageTeam(scope, player!.team_id);
+    }
 
     const objectKey = `${entity}s/${entityId}/${crypto.randomUUID()}.${ALLOWED_MEDIA_TYPES[contentType]}`;
     const token = await createUploadToken(objectKey, contentType, c.env.JWT_SECRET, UPLOAD_TOKEN_SECONDS);

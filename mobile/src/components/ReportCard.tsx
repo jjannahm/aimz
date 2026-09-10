@@ -68,6 +68,9 @@ export function ReportCard({ report, size = 'page', brand = false }: { report: S
     ...(snapshot.attendance.expected > 0 ? [
       { key: 'attended', label: 'Attended', value: `${snapshot.attendance.attended} of ${snapshot.attendance.expected}` },
       { key: 'attendance', label: 'Attendance', value: `${snapshot.attendance.pct}%`, tone: colors.accentSoft },
+      // Only on a report published since the register learned the answer, and
+      // only when there were any.
+      ...(snapshot.attendance.late ? [{ key: 'late', label: 'Late', value: snapshot.attendance.late, tone: colors.warning }] : []),
     ] : []),
     // A report published before the marks existed carries none, and simply
     // shows the register.

@@ -48,6 +48,18 @@ async function planById(env: Env, id: string): Promise<FeePlanRow> {
   return row;
 }
 
+/**
+ * The squad a charge belongs to, by way of the player it was raised against.
+ *
+ * Every fee route past the plan reaches a team through this, so a manager's
+ * reach over money is exactly their reach over the roster.
+ */
+async function chargeTeamId(env: Env, charge: FeeChargeRow): Promise<string> {
+  const player = await env.DB.prepare("SELECT team_id FROM players WHERE id=?").bind(charge.player_id).first<{ team_id: string }>();
+  if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
+  return player.team_id;
+}
+
 async function chargeById(env: Env, id: string): Promise<FeeChargeRow> {
   const row = await env.DB.prepare("SELECT * FROM fee_charges WHERE id=?").bind(id).first<FeeChargeRow>();
   if (!row) throw new ApiProblem(404, "fee_charge_not_found", "Charge not found.");

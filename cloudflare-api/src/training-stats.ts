@@ -1,8 +1,9 @@
 import type { Hono } from "hono";
-import { ApiProblem, adminUser, currentUser, jsonObject, nowIso, numberField, publicPlayer, stringField } from "./helpers";
-import { linkedPlayerIds } from "./team-access";
+import { ApiProblem, currentUser, jsonObject, nowIso, numberField, publicPlayer, stringField } from "./helpers";
+import { assertCanManageTeam, guardPlayer, linkedPlayerIds, managingUser } from "./team-access";
 import { requireTrainingAccess, trainingById } from "./training";
 import type { PlayerRow, TrainingMetricRow, TrainingPlayerMetricRow, TrainingRow } from "./types";
+import { attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -73,8 +74,9 @@ export function registerTrainingStatsRoutes(app: App): void {
    * rather than storing a zero — which for a rating would be a mark, not a gap.
    */
   app.put("/api/v1/training-sessions/:id/performance", async (c) => {
-    await adminUser(c);
+    const { scope } = await managingUser(c);
     const session = await trainingById(c.env, c.req.param("id"));
+    assertCanManageTeam(scope, session.team_id);
     const body = await jsonObject(c);
     if (!Array.isArray(body.entries) || body.entries.length > 500) {
       throw new ApiProblem(422, "validation_error", "Send up to 500 readings.", [{ field: "entries", message: "Send up to 500 readings." }]);
@@ -115,7 +117,7 @@ export function registerTrainingStatsRoutes(app: App): void {
    * there is one truth about whether somebody turned up and it already exists.
    */
   app.get("/api/v1/players/:id/training-stats", async (c) => {
-    const actor = await currentUser(c);
+    const actor = await guardPlayer(c, c.req.param("id"));
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>();
     if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
     // A family reads their own children; anybody else signed in reads the
@@ -126,7 +128,7 @@ export function registerTrainingStatsRoutes(app: App): void {
 
     const [metrics, attendance, squad, readings, sessions] = await Promise.all([
       activeMetrics(c.env),
-      c.env.DB.prepare("SELECT SUM(CASE WHEN status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected FROM training_attendance WHERE player_id=?").bind(player.id).first<{ attended: number | null; expected: number }>(),
+      c.env.DB.prepare(`SELECT ${attendedSql()} attended, ${lateSql()} late, COUNT(*) expected FROM training_attendance WHERE player_id=?`).bind(player.id).first<{ attended: number | null; late: number | null; expected: number }>(),
       // What the rest of her squad manages, so her own figure has something to
       // be read against: 80% means one thing in a squad averaging 95 and
       // another in one averaging 60.
@@ -136,7 +138,7 @@ export function registerTrainingStatsRoutes(app: App): void {
       // single session swing the whole figure; a ratio weights everybody by how
       // many sessions they were actually marked for. She is counted in it —
       // leaving her out would make two players' figures incomparable.
-      c.env.DB.prepare(`SELECT SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected
+      c.env.DB.prepare(`SELECT ${attendedSql("a")} attended, COUNT(*) expected
         FROM training_attendance a JOIN players p ON p.id = a.player_id
         WHERE p.team_id = ?`).bind(player.team_id).first<{ attended: number | null; expected: number }>(),
       c.env.DB.prepare(`SELECT m.*, s.starts_at, s.venue, s.id session_id
@@ -181,6 +183,9 @@ export function registerTrainingStatsRoutes(app: App): void {
       metrics: metrics.map(publicMetric),
       attendance: {
         attended,
+        // Late is inside `attended` and reported again here: the percentage
+        // says she turned up, this says how often she missed the start.
+        late: attendance?.late ?? 0,
         expected,
         pct: expected ? Math.round((attended / expected) * 100) : null,
         team_pct: squadExpected ? Math.round((squadAttended / squadExpected) * 100) : null,

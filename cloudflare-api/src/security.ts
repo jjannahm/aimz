@@ -79,6 +79,13 @@ async function importHmacKey(secret: string, usages: KeyUsage[]): Promise<Crypto
   );
 }
 
+/**
+ * The roles a token may carry, as a set rather than a chain of comparisons:
+ * a role added to the schema and forgotten here signs in and is then refused
+ * on every request, which reads as a broken account rather than a missing case.
+ */
+const ROLES = new Set<string>(["admin", "player", "parent", "manager"]);
+
 export async function createAccessToken(
   userId: string,
   role: UserRole,
@@ -113,7 +120,7 @@ export async function verifyAccessToken(token: string, secret: string): Promise<
     const payload = value as Partial<AccessPayload>;
     if (
       typeof payload.sub !== "string" ||
-      (payload.role !== "admin" && payload.role !== "player" && payload.role !== "parent") ||
+      !ROLES.has(payload.role as string) ||
       payload.type !== "access" ||
       typeof payload.exp !== "number" ||
       payload.exp <= Math.floor(Date.now() / 1000)

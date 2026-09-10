@@ -60,6 +60,21 @@ type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'announcements' |
 /** `short`, where it is given, is the wording the navigation pill uses: a
  * quarter of a phone's width does not hold every label at the pill's type size. */
 const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }, { label: 'Fees', value: 'fees' }, { label: 'Reports', value: 'reports' }, { label: 'Newcomers', value: 'newcomers' }, { label: 'Kit', value: 'kit' }];
+/**
+ * The pills a manager does not get.
+ *
+ * Competitions and invitations are the academy's own business rather than a
+ * squad's: entering teams in competitions reaches across the club, and an
+ * invitation creates an account.
+ *
+ * Fees are here for a different reason. A manager runs a squad's football —
+ * she picks the team, takes the register, marks training — and what a family
+ * has paid is not that. The player profile keeps her out of it, and this is
+ * the other door into the same information, so it is shut too. The API refuses
+ * a manager every one of these, so showing the pill would only be a way to
+ * find that out the hard way.
+ */
+const ACADEMY_ONLY: Tab[] = ['competitions', 'invites', 'fees'];
 /** Whose squads the Squads pill is showing. */
 const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
 /** Which half of the diary the Schedule pill is showing. */
@@ -75,11 +90,11 @@ const formSummary: Record<LegacyResource, string> = {
   opponents: 'An opposing club, and the competition it is entered in.',
   players: 'A player’s squad, position and shirt number.',
   matches: 'Two teams, a kickoff and how long the match runs.',
-  invites: 'A one-time code that becomes a player or parent account.',
+  invites: 'A one-time code that becomes a player, parent or manager account.',
 };
-const schema = z.object({ name: z.string(), code: z.string(), ageGroup: z.string(), season: z.string(), type: z.string(), teamId: z.string(), position: z.string(), jersey: z.string(), competitionId: z.string(), homeTeamId: z.string(), awayTeamId: z.string(), kickoff: z.string(), venue: z.string(), status: z.string(), halfLength: z.string(), numHalves: z.string(), halfTimeBreak: z.string(), coach: z.string(), assistantCoach: z.string(), teamCompetitionId: z.string(), hasExtraTime: z.string(), extraTimeLength: z.string(), label: z.string(), teamCount: z.string(), teamGroupId: z.string(), groupCount: z.string(), groupSize: z.string(), inviteKind: z.string(), invitePlayerIds: z.string(), badgeStyle: z.string() });
+const schema = z.object({ name: z.string(), code: z.string(), ageGroup: z.string(), season: z.string(), type: z.string(), teamId: z.string(), position: z.string(), jersey: z.string(), competitionId: z.string(), homeTeamId: z.string(), awayTeamId: z.string(), kickoff: z.string(), venue: z.string(), status: z.string(), halfLength: z.string(), numHalves: z.string(), halfTimeBreak: z.string(), coach: z.string(), assistantCoach: z.string(), teamCompetitionId: z.string(), hasExtraTime: z.string(), extraTimeLength: z.string(), label: z.string(), teamCount: z.string(), teamGroupId: z.string(), groupCount: z.string(), groupSize: z.string(), inviteKind: z.string(), invitePlayerIds: z.string(), inviteTeamIds: z.string(), badgeStyle: z.string() });
 type Values = z.infer<typeof schema>;
-const defaults: Values = { name: '', code: '', ageGroup: '', season: '', type: 'league', teamId: '', position: '', jersey: '', competitionId: '', homeTeamId: '', awayTeamId: '', kickoff: new Date().toISOString(), venue: '', status: 'scheduled', halfLength: '45', numHalves: '2', halfTimeBreak: '15', coach: '', assistantCoach: '', teamCompetitionId: '', hasExtraTime: 'false', extraTimeLength: '15', label: '', teamCount: '', teamGroupId: '', groupCount: '4', groupSize: '4', inviteKind: 'player', invitePlayerIds: '', badgeStyle: '' };
+const defaults: Values = { name: '', code: '', ageGroup: '', season: '', type: 'league', teamId: '', position: '', jersey: '', competitionId: '', homeTeamId: '', awayTeamId: '', kickoff: new Date().toISOString(), venue: '', status: 'scheduled', halfLength: '45', numHalves: '2', halfTimeBreak: '15', coach: '', assistantCoach: '', teamCompetitionId: '', hasExtraTime: 'false', extraTimeLength: '15', label: '', teamCount: '', teamGroupId: '', groupCount: '4', groupSize: '4', inviteKind: 'player', invitePlayerIds: '', inviteTeamIds: '', badgeStyle: '' };
 
 /** Parses the three period inputs, or null when any is not a whole number in range. */
 function readTimeStructure(values: Pick<Values, 'halfLength' | 'numHalves' | 'halfTimeBreak' | 'hasExtraTime' | 'extraTimeLength'>): MatchTimeStructure | null {
@@ -271,7 +286,20 @@ export default function ManageScreen() {
   const matches = useQuery({ queryKey: ['matches', 'admin'], queryFn: () => api.matches('?limit=100') });
   const invites = useQuery({ queryKey: ['invites'], queryFn: api.invites, enabled: user?.role === 'admin' });
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: defaults });
-  if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
+  const isManager = user?.role === 'manager';
+  if (user?.role !== 'admin' && !isManager) return <Redirect href="/(app)/(tabs)" />;
+  // A manager's Manage screen is this one with the academy-wide pills taken
+  // off. Everything left is already scoped by the API, which is what makes
+  // reusing the sections wholesale safe rather than merely convenient.
+  const visibleResources = isManager ? resources.filter((item) => !ACADEMY_ONLY.includes(item.value)) : resources;
+  // The pill actually open. A pill left selected from another role, or named by
+  // hand, falls back to the first one this account has rather than rendering a
+  // section it may not open.
+  //
+  // Declared here, above everything that reads it: the chips below are built
+  // eagerly rather than in a callback, so a `const` declared after them is
+  // read inside its own dead zone and the whole screen throws.
+  const openTab: Tab = visibleResources.some((item) => item.value === tab) ? tab : 'teams';
 
   // Anything half-typed belongs to the section it was typed in, so leaving one
   // clears it — and moving between the two halves of a shared pill is leaving
@@ -286,18 +314,18 @@ export default function ManageScreen() {
   const switchReportKind = (next: ReportKind) => { setReportKind(next); leaveSection(); };
   // Every cell keeps its quarter of the width whatever it holds, so the rows
   // line up and the cells stretch their pills to an even row height.
-  const resourceChips = <View style={styles.chips}>{resources.map((item) => <View key={item.value} style={styles.chipCell}>
-    <AnimatedTabPill accessibilityLabel={item.label} compact label={item.short ?? item.label} onPress={() => switchResource(item.value)} selected={tab === item.value} style={styles.chip} testID={`manage-tab-${item.value}`} />
+  const resourceChips = <View style={styles.chips}>{visibleResources.map((item) => <View key={item.value} style={styles.chipCell}>
+    <AnimatedTabPill accessibilityLabel={item.label} compact label={item.short ?? item.label} onPress={() => switchResource(item.value)} selected={openTab === item.value} style={styles.chip} testID={`manage-tab-${item.value}`} />
   </View>)}</View>;
   // The section actually being managed, which for two of the pills depends on
   // which half of it is showing. Everything below reads this rather than the
   // pill, so the sections themselves did not have to change.
-  const resource: Resource = tab === 'teams' ? squadKind : tab === 'schedule' ? scheduleKind : tab === 'reports' ? reportKind : tab;
-  const subTabs = tab === 'teams'
-    ? <SegmentedControl label="Squad kind" onChange={switchSquadKind} options={squadKinds} value={squadKind} />
-    : tab === 'schedule'
+  const resource: Resource = openTab === 'teams' ? squadKind : openTab === 'schedule' ? scheduleKind : openTab === 'reports' ? reportKind : openTab;
+  const subTabs = openTab === 'teams'
+    ? (isManager ? null : <SegmentedControl label="Squad kind" onChange={switchSquadKind} options={squadKinds} value={squadKind} />)
+    : openTab === 'schedule'
       ? <SegmentedControl label="Schedule kind" onChange={switchScheduleKind} options={scheduleKinds} value={scheduleKind} />
-      : tab === 'reports'
+      : openTab === 'reports'
         ? <SegmentedControl label="Report kind" onChange={switchReportKind} options={reportKinds} value={reportKind} />
         : null;
   // The academy's own age squads, which is what a session or a notice is for.
@@ -306,7 +334,7 @@ export default function ManageScreen() {
   const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
   // The sections that manage themselves rather than through the shared form
   // scaffold below: each is a screen of its own shape.
-  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats' || resource === 'newcomers' || resource === 'kit') return <Screen scrollRef={pageRef} title="Manage Academy">
+  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats' || resource === 'newcomers' || resource === 'kit') return <Screen scrollRef={pageRef} title={isManager ? "Manage Squad" : "Manage Academy"}>
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
@@ -324,7 +352,7 @@ export default function ManageScreen() {
   const items: Entity[] = resource === 'teams' ? allTeams.filter((team) => team.is_aimz) : resource === 'opponents' ? allTeams.filter((team) => !team.is_aimz) : resource === 'competitions' ? competitions.data?.items ?? [] : resource === 'players' ? players.data?.items ?? [] : resource === 'matches' ? matches.data?.items ?? [] : invites.data ?? [];
   // Named after the section rather than the pill: under Squads the pill says
   // "Squads" for both halves, and "Add squads" is wrong above a list of clubs.
-  const listLabel = resource === 'opponents' ? 'opponents' : resource === 'matches' ? 'matches' : resources.find((item) => item.value === tab)?.label.toLowerCase() ?? 'items';
+  const listLabel = resource === 'opponents' ? 'opponents' : resource === 'matches' ? 'matches' : resources.find((item) => item.value === openTab)?.label.toLowerCase() ?? 'items';
   // A hundred players is quicker to search than to scroll. A row is matched on
   // the two lines it actually shows, so a position or a shirt number finds one.
   const shown = narrowBySearch(items, search, (item) => `${entityTitle(item)} ${entityMeta(item)}`);
@@ -381,10 +409,20 @@ export default function ManageScreen() {
         editing ? await api.updateMatch(editing.id, payload) : await api.createMatch(payload);
       } else {
         if (!values.label.trim()) throw new Error('Enter an invite label.');
-        const invitePlayerIds = values.invitePlayerIds.split(',').filter(Boolean);
-        if (values.inviteKind === 'parent' && !invitePlayerIds.length) throw new Error('Choose at least one child.');
-        if (values.inviteKind === 'coach' && !values.teamId) throw new Error('Choose a squad for the coach.');
-        const created = await api.createInvite({ label: values.label.trim(), kind: values.inviteKind as InviteKind, player_ids: invitePlayerIds, team_id: values.teamId || null });
+        // A manager is invited to squads rather than to a roster player, so it
+        // takes the other half of this form and the other half of the payload.
+        // The code is generated rather than typed either way.
+        let created;
+        if (values.inviteKind === 'manager') {
+          const inviteTeamIds = values.inviteTeamIds.split(',').filter(Boolean);
+          if (!inviteTeamIds.length) throw new Error('Choose at least one squad for this manager.');
+          created = await api.createInvite({ label: values.label.trim(), kind: 'manager', team_ids: inviteTeamIds });
+        } else {
+          const invitePlayerIds = values.invitePlayerIds.split(',').filter(Boolean);
+          // Every invitation names who it is for; there is no unlinked code.
+          if (!invitePlayerIds.length) throw new Error(values.inviteKind === 'parent' ? 'Choose at least one child.' : 'Choose a player.');
+          created = await api.createInvite({ label: values.label.trim(), kind: values.inviteKind as InviteKind, player_ids: invitePlayerIds });
+        }
         if (created?.code) setCreatedInvite(created);
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -461,7 +499,7 @@ export default function ManageScreen() {
     } catch (error) { showMessage('Upload failed', (error as Error).message); }
   };
 
-  return <><Screen scrollRef={pageRef} title="Manage Academy">
+  return <><Screen scrollRef={pageRef} title={isManager ? "Manage Squad" : "Manage Academy"}>
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
@@ -482,7 +520,7 @@ export default function ManageScreen() {
 
 function InviteSuccess({ invitation, onClose }: { invitation: RegistrationInvite; onClose: () => void }) {
   const styles = useThemedStyles(stylesheet);
-  const role = invitation.kind === 'parent' ? 'parent' : invitation.kind === 'coach' ? 'coach' : 'player';
+  const role = invitation.kind === 'parent' ? 'parent' : invitation.kind === 'manager' ? 'manager' : 'player';
   const message = `You’re invited to join AIMZ as a ${role}. Use code ${invitation.code} or open ${invitation.share_url}`;
   return <Modal animationType="fade" onRequestClose={onClose} transparent visible><View style={styles.modalBackdrop}><Pressable accessibilityLabel="Close invitation" accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} /><View accessibilityRole="alert" style={styles.inviteModal}><Text style={styles.modalTitle}>Invitation created</Text><Text selectable style={styles.inviteCode}>{invitation.code}</Text><Text selectable style={styles.inviteLink}>{invitation.share_url}</Text><Text style={styles.pickerNote}>Copy this now. AIMZ stores only its secure hash, so the readable code cannot be recovered later.</Text><AppButton label="Copy code" onPress={async () => { await Clipboard.setStringAsync(invitation.code!); showToast('Invitation code copied'); }} /><AppButton label="Share on WhatsApp" onPress={() => void Linking.openURL(`https://wa.me/?text=${encodeURIComponent(message)}`)} variant="secondary" /><AppButton label="Done" onPress={onClose} variant="ghost" /></View></View></Modal>;
 }
@@ -493,13 +531,45 @@ function InviteSuccess({ invitation, onClose }: { invitation: RegistrationInvite
  * invitation is for one person; a parent may have several children here.
  * Both use the same searchable control, in single- and multi-select modes.
  */
+function InviteSubject({ control, players, setValue, teams }: { control: any; players: Player[]; setValue: any; teams: Team[] }) {
+  const kind = useWatch({ control, name: 'inviteKind' }) as InviteKind;
+  if (kind === 'manager') return <InviteSquads control={control} setValue={setValue} teams={teams} />;
+  return <InvitePlayers control={control} players={players} setValue={setValue} />;
+}
+
+/**
+ * The squads a manager invitation hands over.
+ *
+ * Several, because a coach at a small academy takes two age groups as often as
+ * one, and because the account is the same either way — the API stores a row
+ * per squad and scopes every request to the set.
+ */
+function InviteSquads({ control, setValue, teams }: { control: any; setValue: any; teams: Team[] }) {
+  const styles = useThemedStyles(stylesheet);
+  const raw = (useWatch({ control, name: 'inviteTeamIds' }) as string) || '';
+  const chosen = raw.split(',').filter(Boolean);
+  // The academy's own age squads. An opposing club is not a squad anybody here
+  // manages, and has no age group to name it by.
+  const squads = teams.filter((team) => team.is_aimz && team.is_active && team.age_group);
+  const toggle = (teamId: string) => {
+    const next = chosen.includes(teamId) ? chosen.filter((id) => id !== teamId) : [...chosen, teamId];
+    setValue('inviteTeamIds', next.join(','));
+  };
+  return <>
+    <Text style={styles.pickerNote}>{squads.length ? 'The squads this manager will run.' : 'Add an AIMZ squad first — a manager account is an account for a squad.'}</Text>
+    <View style={styles.chips}>{squads.map((squad) => <View key={squad.id} style={styles.chipCell}>
+      <AnimatedTabPill accessibilityLabel={squad.name} compact label={squad.name} onPress={() => toggle(squad.id)} selected={chosen.includes(squad.id)} style={styles.chip} />
+    </View>)}</View>
+  </>;
+}
+
 function InvitePlayers({ control, players, setValue }: { control: any; players: Player[]; setValue: any }) {
   const kind = useWatch({ control, name: 'inviteKind' }) as InviteKind;
   const raw = (useWatch({ control, name: 'invitePlayerIds' }) as string) || '';
   const styles = useThemedStyles(stylesheet);
   const chosen = raw.split(',').filter(Boolean);
   const parent = kind === 'parent';
-  if (kind === 'coach') return null;
+  if (kind === 'manager') return null;
   return <>
     <PlayerPickerField
       label={parent ? 'Children' : 'Player'}
@@ -538,7 +608,7 @@ function ResourceFields({ control, resource, setValue, teams, competitions, edit
   if (resource === 'competitions') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Competition name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="season" render={({ field }) => <FormField label="Season" onChangeText={field.onChange} placeholder="2026/27" value={field.value} />} /><Controller control={control} name="type" render={({ field }) => <ChoiceField label="Format" onChange={field.onChange} options={[{ label: 'League', value: 'league' }, { label: 'Knockout (groups and a bracket)', value: 'tournament' }, { label: 'Friendly', value: 'friendly' }]} value={field.value} />} /><KnockoutSize competitionId={editingId} control={control} teams={teams} /></>;
   if (resource === 'players') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Player name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="teamId" render={({ field }) => <ChoiceField label="Squad" onChange={field.onChange} options={teams.filter((item) => item.is_aimz && item.is_active).map((item) => ({ label: item.name, value: item.id }))} value={field.value} />} /><Controller control={control} name="position" render={({ field }) => <PositionField hint="Type the first letters — “l” finds LB, LWB, LM and LW" onChange={field.onChange} value={field.value} />} /><Controller control={control} name="jersey" render={({ field }) => <FormField keyboardType="number-pad" label="Number" onChangeText={field.onChange} value={field.value} />} /></>;
   if (resource === 'matches') return <><Controller control={control} name="competitionId" render={({ field }) => <ChoiceField label="Competition" onChange={field.onChange} options={competitions.map((item) => ({ label: `${item.name} · ${item.season}`, value: item.id }))} value={field.value} />} />{!selectedCompetition ? <Text style={styles.pickerNote}>Choose a competition to pick its teams.</Text> : entered.length < 2 ? <Text style={styles.pickerNote}>{entered.length === 0 ? 'No teams assigned to this competition yet' : 'Only one team is assigned to this competition'} — assign them under Squads or Opponents.</Text> : null}<Controller control={control} name="homeTeamId" render={({ field }) => <ChoiceField label="Home team" onChange={field.onChange} options={teamOptions} value={field.value} />} /><Controller control={control} name="awayTeamId" render={({ field }) => <ChoiceField label="Away team" onChange={field.onChange} options={teamOptions} value={field.value} />} /><Controller control={control} name="kickoff" render={({ field }) => <DateTimeField label="Kickoff (Egypt time)" onChange={field.onChange} value={field.value} />} />{opponentOnly ? <Text style={styles.pickerNote}>Opponent-only fixture: enter the final score after the match. Live clock, events, lineup and player stats are disabled.</Text> : <><Controller control={control} name="halfLength" render={({ field }) => <FormField hint="Minutes per half" inputMode="numeric" keyboardType="number-pad" label="Half length (minutes)" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="numHalves" render={({ field }) => <FormField hint="Two for standard football" inputMode="numeric" keyboardType="number-pad" label="Number of halves" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="halfTimeBreak" render={({ field }) => <FormField inputMode="numeric" keyboardType="number-pad" label="Half-time break (minutes)" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="hasExtraTime" render={({ field }) => <ChoiceField label="Extra time" onChange={field.onChange} options={[{ label: 'No extra time', value: 'false' }, { label: `Yes, ${EXTRA_TIME_PERIODS} periods`, value: 'true' }]} value={field.value} />} /><ExtraTimeLength control={control} /><MatchLengthSummary control={control} /></>}<Controller control={control} name="venue" render={({ field }) => <FormField label="Venue" onChangeText={field.onChange} value={field.value} />} /></>;
-  return <><Controller control={control} name="label" render={({ field }) => <FormField label="Invite label" onChangeText={field.onChange} placeholder="Autumn intake" value={field.value} />} /><Pressable accessibilityHint="Creates the invitation after the required details are filled" accessibilityLabel="Generate secure invite code" accessibilityRole="button" onPress={onGenerateInvite}><View pointerEvents="none"><FormField editable={false} hint="Press to generate securely" label="Invite code" onChangeText={() => undefined} placeholder="XXXX-XXXX-XX" value="" /></View></Pressable><Controller control={control} name="inviteKind" render={({ field }) => <ChoiceField label="Invite type" onChange={(kind) => { field.onChange(kind); setValue('invitePlayerIds', ''); setValue('teamId', ''); }} options={[{ label: 'Player', value: 'player' }, { label: 'Parent', value: 'parent' }, { label: 'Coach', value: 'coach' }]} value={field.value} />} />{selectedInviteKind === 'coach' ? <Controller control={control} name="teamId" render={({ field }) => <ChoiceField label="Coach squad" onChange={field.onChange} options={teams.filter((team) => team.is_aimz && team.is_active).map((team) => ({ label: team.name, value: team.id }))} value={field.value} />} /> : <InvitePlayers control={control} players={players} setValue={setValue} />}</>;
+  return <><Controller control={control} name="label" render={({ field }) => <FormField label="Invite label" onChangeText={field.onChange} placeholder="Autumn intake" value={field.value} />} /><Pressable accessibilityHint="Creates the invitation after the required details are filled" accessibilityLabel="Generate secure invite code" accessibilityRole="button" onPress={onGenerateInvite}><View pointerEvents="none"><FormField editable={false} hint="Press to generate securely" label="Invite code" onChangeText={() => undefined} placeholder="XXXX-XXXX-XX" value="" /></View></Pressable><Controller control={control} name="inviteKind" render={({ field }) => <ChoiceField label="Invite type" onChange={(kind) => { field.onChange(kind); setValue('invitePlayerIds', ''); setValue('inviteTeamIds', ''); }} options={[{ label: 'Player', value: 'player' }, { label: 'Parent', value: 'parent' }, { label: 'Manager', value: 'manager' }]} value={field.value} />} /><InviteSubject control={control} players={players} setValue={setValue} teams={teams} /></>;
 }
 
 function entityTitle(item: Entity) { if ('home_team_id' in item) return `${item.home_team?.name ?? 'Home'} vs ${item.away_team?.name ?? 'Away'}`; if ('position' in item) return item.name; if ('use_count' in item) return item.label; return item.name; }

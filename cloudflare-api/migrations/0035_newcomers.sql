@@ -1,14 +1,15 @@
--- Newcomer intake, and the squad-scoped staff table coach accounts hang off.
+-- Newcomer intake: an application, the notes taken against it, and the state an
+-- account sits in while somebody reads it.
 --
--- Everything here is additive: one column appended, tables created. The single
--- change SQLite will not make in place — widening the users.role CHECK to admit
--- a coach — is 0033's, on its own, because it has to drop and rebuild users and
--- that is not a thing to do halfway through creating five other tables. Split
--- this way, a failure there leaves everything below already committed and the
--- rebuild retryable by itself.
+-- Everything here is additive — one column appended, tables created — so it
+-- commits before anything destructive is attempted and can be retried on its
+-- own. Squad-scoped staff are not here: 0032_manager_role already brought a
+-- manager account and user_teams, which is the same idea, so this leans on it
+-- rather than building a second one.
 --
--- onboarding_status carries no CHECK yet for the same reason: a constraint
--- cannot be added to a live column. 0033's rebuild is where it gains one.
+-- onboarding_status carries no CHECK: SQLite cannot add a constraint to a live
+-- column, and rebuilding users a second time to gain one is not worth the risk
+-- to every row that points at it.
 ALTER TABLE users ADD COLUMN onboarding_status TEXT NOT NULL DEFAULT 'approved';
 CREATE INDEX ix_users_onboarding_status ON users(onboarding_status);
 
@@ -69,13 +70,5 @@ CREATE TABLE newcomer_rate_limits (
   window_started_at TEXT NOT NULL,
   attempts INTEGER NOT NULL DEFAULT 1
 );
-
-CREATE TABLE team_staff (
-  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
-  created_at TEXT NOT NULL,
-  PRIMARY KEY (user_id, team_id)
-);
-CREATE INDEX ix_team_staff_team ON team_staff(team_id);
 
 CREATE INDEX ix_registration_invites_application_id ON registration_invites(application_id);

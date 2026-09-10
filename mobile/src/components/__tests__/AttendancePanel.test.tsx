@@ -22,6 +22,7 @@ const mark = (id: string, name: string, status: AttendanceMark['status']): Atten
 const register = (items: AttendanceMark[]): TrainingRegister => ({
   items,
   present: items.filter((row) => row.status === 'present').length,
+  late: items.filter((row) => row.status === 'late').length,
   absent: items.filter((row) => row.status === 'absent').length,
   unmarked: items.filter((row) => row.status === null).length,
 });
@@ -53,7 +54,7 @@ describe('AttendancePanel', () => {
       mark('p-1', 'Amina Adel', 'present'), mark('p-2', 'Nour Hassan', 'present'), mark('p-3', 'Salma Rashad', 'absent'),
     ]));
     const screen = await render(<AttendancePanel session={session} />, { wrapper });
-    await waitFor(() => expect(screen.getByLabelText('Present 2, absent 1')).toBeTruthy());
+    await waitFor(() => expect(screen.getByLabelText('Present 2, late 0, absent 1')).toBeTruthy());
   });
 
   it('saves a mark as it is made, without a save button', async () => {

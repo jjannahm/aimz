@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, KitOrder, KitOrderPayload, KitStatus, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteContext, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -296,7 +296,7 @@ export const api = {
   playerStats: (playerId: string, season?: string) => request<PlayerSeasonSummary>(`/api/v1/players/${playerId}/stats${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   playerHonours: (playerId: string) => request<PlayerHonours>(`/api/v1/players/${playerId}/honours`),
   invites: () => request<RegistrationInvite[]>('/api/v1/admin/registration-invites'),
-  createInvite: (payload: { label: string; code?: string; kind: InviteKind; player_ids: string[]; team_id?: string | null; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
+  createInvite: (payload: { label: string; code?: string; kind: InviteKind; player_ids?: string[]; team_ids?: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
   revokeInvite: (id: string) => request<void>(`/api/v1/admin/registration-invites/${id}`, { method: 'DELETE' }),
   resolveInvite: (code: string) => request<InviteContext>('/api/v1/auth/invitations/resolve', { method: 'POST', authenticated: false, body: { code } }),
   newcomers: (query = '?queue=active') => request<Page<Newcomer>>(`/api/v1/admin/newcomers${query}`),
@@ -361,6 +361,14 @@ export const api = {
     request<TrainingPerformance>(`/api/v1/training-sessions/${id}/performance`, { method: 'PUT', body: { entries } }),
   playerTrainingStats: (id: string) => request<PlayerTrainingStats>(`/api/v1/players/${id}/training-stats`),
   trainingAttendance: (id: string) => request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`),
+  // Asking for a register to be corrected, and answering the ask. The official
+  // record is only ever written by an approval, never by the request itself.
+  attendanceRequests: (query = '') => request<Page<AttendanceRequest>>(`/api/v1/attendance-requests${query}`),
+  requestAttendanceChange: (sessionId: string, body: { player_id?: string; requested_status: AttendanceStatus; reason?: string | null }) =>
+    request<AttendanceRequest>(`/api/v1/training-sessions/${sessionId}/attendance-requests`, { method: 'POST', body }),
+  approveAttendanceRequest: (id: string) => request<AttendanceRequest>(`/api/v1/attendance-requests/${id}/approve`, { method: 'POST', body: {} }),
+  rejectAttendanceRequest: (id: string, reason: string | null) =>
+    request<AttendanceRequest>(`/api/v1/attendance-requests/${id}/reject`, { method: 'POST', body: { reason } }),
   setTrainingAttendance: (id: string, entries: { player_id: string; status: AttendanceStatus | null }[]) =>
     request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`, { method: 'PUT', body: { entries } }),
   trainingAvailability: (id: string) => request<TrainingAvailability[]>(`/api/v1/training-sessions/${id}/availability`),
@@ -373,6 +381,10 @@ export const api = {
   deleteMatchAssignment: (matchId: string, id: string) => request<void>(`/api/v1/matches/${matchId}/assignments/${id}`, { method: 'DELETE' }),
   deleteTrainingAssignment: (trainingId: string, id: string) => request<void>(`/api/v1/training-sessions/${trainingId}/assignments/${id}`, { method: 'DELETE' }),
   playerRosterDetails: (id: string) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`),
+  // The sensitive pair, on routes of their own: an administrator, the player
+  // herself, or her parent. A manager is refused both.
+  playerPersonalDetails: (id: string) => request<PlayerPersonalDetails>(`/api/v1/players/${id}/personal-details`),
+  playerFinancials: (id: string) => request<PlayerFinancials>(`/api/v1/players/${id}/financials`),
   savePlayerRosterDetails: (id: string, payload: { date_of_birth: string | null; contacts: { name: string; relationship: string | null; email: string | null; phone: string | null }[] }) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`, { method: 'PUT', body: payload }),
   presign: (entity: 'team' | 'player', entity_id: string, content_type: 'image/jpeg' | 'image/png' | 'image/webp') => request<PresignResponse>('/api/v1/media/uploads/presign', { method: 'POST', body: { entity, entity_id, content_type } }),
 };

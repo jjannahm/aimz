@@ -1,6 +1,7 @@
-export type UserRole = "player" | "admin" | "parent" | "coach";
+import type { AttendanceStatus } from "./attendance";
+export type UserRole = "player" | "admin" | "parent" | "manager";
 /** What an invitation creates when it is redeemed. */
-export type InviteKind = "player" | "parent" | "coach";
+export type InviteKind = "player" | "parent" | "manager";
 export type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
 export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";
@@ -362,7 +363,25 @@ export interface FeePaymentRow {
 export interface AttendanceRow {
   training_session_id: string;
   player_id: string;
-  status: "present" | "absent";
+  status: AttendanceStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A request to correct one player's mark at one session. */
+export interface AttendanceRequestRow {
+  id: string;
+  training_session_id: string;
+  player_id: string;
+  requested_by_id: string | null;
+  /** What the register said when it was raised; null means unmarked. */
+  current_status: string | null;
+  requested_status: AttendanceStatus;
+  reason: string | null;
+  status: "pending" | "approved" | "rejected";
+  decided_by_id: string | null;
+  decided_at: string | null;
+  decision_reason: string | null;
   created_at: string;
   updated_at: string;
 }
