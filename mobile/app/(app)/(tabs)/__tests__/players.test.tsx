@@ -11,7 +11,7 @@ jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, usePathname: () => '/players' }));
 
 jest.mock('@/src/lib/api', () => ({
-  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), playerTrainingStats: jest.fn(), matches: jest.fn(), myChildren: jest.fn() },
+  api: { teams: jest.fn(), players: jest.fn(), awardRanking: jest.fn(), competitions: jest.fn(), awards: jest.fn(), playerStats: jest.fn(), playerTrainingStats: jest.fn(), matches: jest.fn(), myChildren: jest.fn(), adminUsers: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -365,5 +365,52 @@ describe('PlayersScreen', () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     await fireEvent.press(await screen.findByRole('tab', { name: 'My Stats' }));
     await waitFor(() => expect(screen.queryByRole('tab', { name: 'Match Stats' })).toBeNull());
+  });
+  /**
+   * The same answer Manage · Players gives, under the name in the squad too.
+   *
+   * "On the app" is not an install — nothing records one. It is whether
+   * anybody has registered against the player: her own login, or a parent
+   * holding her as a child. Salma has neither; Mariam's mother has an account
+   * with Mariam as her child, so Mariam counts.
+   */
+  it('says which players in a squad are on the app', async () => {
+    mockUser = { role: 'admin', player_id: null };
+    jest.mocked(api.adminUsers).mockResolvedValue({ items: [
+      { id: 'u-1', name: 'Hala Adel', email: 'hala@a.test', role: 'parent', player: null, team: null, children: [{ id: 'p-2', name: 'Mariam Adel' }] },
+    ], total: 1, limit: 100, offset: 0 } as never);
+    const screen = await render(<PlayersScreen />, { wrapper });
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'AIMZ U13, 1 player' }));
+    expect(await screen.findByText('On the app')).toBeTruthy();
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Back to all teams' }));
+    await fireEvent.press(await screen.findByRole('button', { name: 'AIMZ U9, 1 player' }));
+    expect(await screen.findByText('No app')).toBeTruthy();
+  });
+
+  // Colour is never the only indicator, so the row says it out loud as well.
+  it('speaks the app status as part of the row', async () => {
+    mockUser = { role: 'admin', player_id: null };
+    jest.mocked(api.adminUsers).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 } as never);
+    const screen = await render(<PlayersScreen />, { wrapper });
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'AIMZ U9, 1 player' }));
+    expect(await screen.findByRole('button', { name: 'Salma Nabil, Striker, number 7, no app' })).toBeTruthy();
+  });
+
+  /**
+   * A family opens this same screen as My Team. Who else has an account is an
+   * administrator's business, and the route that answers it is theirs alone,
+   * so the row is asked for nothing and shows nothing.
+   */
+  it('keeps the app status away from a family reading the same screen', async () => {
+    const screen = await render(<PlayersScreen />, { wrapper });
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'AIMZ U9, 1 player' }));
+    expect(await screen.findByText('Salma Nabil')).toBeTruthy();
+    expect(screen.queryByText('On the app')).toBeNull();
+    expect(screen.queryByText('No app')).toBeNull();
+    expect(api.adminUsers).not.toHaveBeenCalled();
   });
 });

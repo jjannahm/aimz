@@ -12,6 +12,7 @@ import { z } from 'zod';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AppButton } from '@/src/components/AppButton';
+import { AppStatus, useOnTheApp } from '@/src/components/AppStatus';
 import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { SeasonControls } from '@/src/components/manage/SeasonControls';
 import { ChoiceField } from '@/src/components/ChoiceField';
@@ -529,34 +530,6 @@ export default function ManageScreen() {
 }
 
 /**
- * Whether a player is on the app yet.
- *
- * Nothing records an install, so the nearest true thing is asked instead: has
- * anybody registered against this player — their own login, or a parent who
- * has them as a child. Either way somebody in that family has the app open.
- */
-function useOnTheApp(enabled: boolean) {
-  const accounts = useQuery({ queryKey: cacheKeys.accounts, queryFn: () => api.adminUsers(), enabled });
-  return React.useMemo(() => {
-    const ids = new Set<string>();
-    for (const account of accounts.data?.items ?? []) {
-      if (account.player) ids.add(account.player.id);
-      for (const child of account.children ?? []) ids.add(child.id);
-    }
-    return { ids, known: !accounts.isLoading && !accounts.isError };
-  }, [accounts.data, accounts.isError, accounts.isLoading]);
-}
-
-/** Green once somebody has registered against the player, red until then. */
-function AppStatus({ on }: { on: boolean }) {
-  const styles = useThemedStyles(stylesheet);
-  return <View accessibilityLabel={on ? 'Has the app' : 'Has not downloaded the app'} accessibilityRole="text" style={styles.appStatus}>
-    <View style={[styles.appDot, on ? styles.appDotOn : styles.appDotOff]} />
-    <Text style={[styles.appStatusText, on ? styles.appStatusOn : styles.appStatusOff]}>{on ? 'On the app' : 'No app'}</Text>
-  </View>;
-}
-
-/**
  * The audit log, where an administrator now finds it.
  *
  * The same feed that used to sit folded inside Settings: the latest twenty
@@ -726,4 +699,4 @@ function entityMeta(item: Entity) { if ('home_team_id' in item) return `${item.s
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   inviteNote: { color: colors.textMuted, lineHeight: 21 }, content: { gap: theme.spacing.lg }, branchList: { gap: theme.spacing.xl }, branchGroup: { gap: theme.spacing.sm }, branchHeader: { alignItems: 'baseline', borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingBottom: theme.spacing.sm }, branchTitle: { color: colors.accentSoft, flex: 1, fontFamily: theme.font.bold, fontSize: theme.type.body }, branchCount: { color: colors.textMuted, fontSize: theme.type.label, fontWeight: '700' }, modalBackdrop: { alignItems: 'center', backgroundColor: 'rgba(8, 8, 12, 0.72)', flex: 1, justifyContent: 'center', padding: theme.spacing.lg }, inviteModal: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, maxWidth: 440, padding: theme.size.cardPadding, width: '100%' }, modalTitle: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, inviteCode: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.heading, letterSpacing: 2, textAlign: 'center' }, inviteLink: { color: colors.textSecondary, fontSize: theme.type.label, textAlign: 'center' }, groupList: { gap: theme.spacing.md }, groupsHeading: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' }, groupCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md }, groupHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, groupTitle: { color: colors.textPrimary, fontWeight: '900' }, groupCount: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800' }, groupCountFull: { color: colors.accentSoft }, groupTeam: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.sm, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 44, paddingLeft: theme.spacing.md, paddingRight: theme.spacing.xs }, groupTeamName: { color: colors.textPrimary, flex: 1, fontWeight: '700' }, lockedField: { gap: theme.spacing.xs }, lockedLabel: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' }, lockedValue: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: colors.textMuted, minHeight: 52, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md }, pickerNote: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, color: colors.textSecondary, fontSize: theme.type.label, lineHeight: 20, padding: theme.spacing.md }, editingBanner: { alignItems: 'center', backgroundColor: colors.highlightedSurface, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs }, editingText: { color: colors.textPrimary, flex: 1, fontWeight: '800' }, summary: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, /* The grid reaches past the page's own padding, for the width it buys the
      longest of the labels. */
-  chips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -theme.spacing.md }, chipCell: { flexBasis: '25%', flexShrink: 1, minWidth: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.xs }, chip: { flex: 1, paddingVertical: theme.spacing.xs }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, /* The card gaps its fields by `md`; the extra `sm` sets the submit row apart from the last field. Kept in step with `formActions` on the hub coaches. */ actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs }, activity: { gap: theme.spacing.md }, appStatus: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs, marginTop: 4 }, appDot: { borderRadius: 4, height: 8, width: 8 }, appDotOn: { backgroundColor: colors.live }, appDotOff: { backgroundColor: colors.error }, appStatusText: { fontSize: theme.type.caption }, appStatusOn: { color: colors.liveText }, appStatusOff: { color: colors.errorText } });
+  chips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -theme.spacing.md }, chipCell: { flexBasis: '25%', flexShrink: 1, minWidth: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.xs }, chip: { flex: 1, paddingVertical: theme.spacing.xs }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, /* The card gaps its fields by `md`; the extra `sm` sets the submit row apart from the last field. Kept in step with `formActions` on the hub coaches. */ actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs }, activity: { gap: theme.spacing.md } });
