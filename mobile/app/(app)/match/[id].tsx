@@ -10,6 +10,7 @@ import { ScoreLine } from '@/src/components/ScoreLine';
 import { FormationPitch } from '@/src/components/FormationPitch';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { MatchProgressRail, MatchStatusIndicator } from '@/src/components/MatchStatusIndicator';
+import { MatchReportSection } from '@/src/components/MatchReportSection';
 import { MatchTimeline } from '@/src/components/MatchTimeline';
 import { Screen } from '@/src/components/Screen';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
@@ -123,6 +124,9 @@ export default function MatchDetailScreen() {
           </>;
         })()}
       </View> : null}
+      {/* Only once there is something to report on. A scheduled match has no
+        * summary to make, and the API refuses to share one either way. */}
+      {query.data.match.status === 'finished' ? <MatchReportSection matchId={id} /> : null}
     </>}
   </Screen>;
 }

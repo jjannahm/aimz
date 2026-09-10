@@ -468,6 +468,47 @@ export type TrainingAvailability = {
   updated_at: string;
 };
 
+/**
+ * A match report, as it stood when it was worked out.
+ *
+ * Every figure is already recorded on the match — the score, the event thread,
+ * the team sheet — so a report simply exists for a finished match rather than
+ * being written. Neutral about the two sides: it names both teams' scorers the
+ * way a real match report does.
+ */
+export type MatchReportSnapshot = {
+  /** Bumped when the shape changes, so an address already sent keeps rendering. */
+  version: 1;
+  match: {
+    competition: string | null; kickoff: string; venue: string;
+    home: string; away: string; home_score: number; away_score: number;
+    formation: string | null; man_of_the_match: string | null;
+  };
+  goals: { minute: number | null; team: string; scorer: string | null; assist: string | null; penalty: boolean; own_goal: boolean }[];
+  cards: { minute: number | null; team: string; player: string | null; colour: 'yellow' | 'red' }[];
+  substitutions: { minute: number | null; team: string; on: string | null; off: string | null; reason: string | null }[];
+  penalties_missed: { minute: number | null; team: string; player: string | null; outcome: string | null }[];
+  squads: { team: string; players: { name: string; jersey_number: number | null; position: string | null; started: boolean; captain: boolean; minutes: number; goals: number; assists: number; yellow_cards: number; red_cards: number }[] }[];
+  generated_at: string;
+};
+
+/** The report in the app, with where its link stands. */
+export type MatchReport = {
+  match_id: string;
+  snapshot: MatchReportSnapshot;
+  share_token: string | null;
+  published_at: string | null;
+  published_by_name: string | null;
+  first_opened_at: string | null;
+};
+
+/** What the address hands whoever opens it. Carries no identifiers at all. */
+export type SharedMatchReport = {
+  published_at: string;
+  published_by_name: string;
+  snapshot: MatchReportSnapshot;
+};
+
 export type PlayerContact = {
   id: string;
   player_id: string;

@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import MatchDetailScreen from '@/app/(app)/match/[id]';
 import { api } from '@/src/lib/api';
-import type { LineupEntry, LiveMatchSnapshot, Match, MatchEvent } from '@/src/types/api';
+import type { LineupEntry, LiveMatchSnapshot, Match, MatchEvent, MatchReport } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({
@@ -13,10 +13,16 @@ jest.mock('expo-router', () => ({
   useLocalSearchParams: () => ({ id: 'match-1' }),
   Redirect: 'Redirect',
 }));
-jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn() }));
-jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
+jest.mock('@/src/lib/platformAlert', () => ({ confirmAction: jest.fn(), showMessage: jest.fn(), showToast: jest.fn() }));
+const mockShareMatchReport = jest.fn();
+jest.mock('@/src/lib/matchReportLink', () => ({
+  ...jest.requireActual('@/src/lib/matchReportLink'),
+  shareMatchReport: (...args: unknown[]) => mockShareMatchReport(...args),
+}));
+let mockRole = 'admin';
+jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: mockRole } }) }));
 jest.mock('@/src/lib/api', () => ({
-  api: { live: jest.fn(), players: jest.fn() },
+  api: { live: jest.fn(), players: jest.fn(), matchReport: jest.fn(), publishMatchReport: jest.fn(), newMatchReportLink: jest.fn(), withdrawMatchReport: jest.fn() },
   ApiError: class extends Error {},
 }));
 
@@ -42,6 +48,21 @@ const entry = (id: string, is_starter: boolean): LineupEntry => ({
 const snapshot = (over: Partial<Match> = {}, lineup: LineupEntry[] = []): LiveMatchSnapshot =>
   ({ match: match(over), events: [], lineup, revision: 1 }) as LiveMatchSnapshot;
 
+const report = (over: Partial<MatchReport> = {}): MatchReport => ({
+  match_id: 'match-1', share_token: null, published_at: null, published_by_name: null, first_opened_at: null,
+  snapshot: {
+    version: 1,
+    match: {
+      competition: 'Women Academy League', kickoff: '2026-08-20T18:30:00.000Z', venue: 'AIMZ Arena',
+      home: 'AIMZ U18', away: 'Giza Lions', home_score: 2, away_score: 1, formation: '4-3-3', man_of_the_match: 'Layla Hassan',
+    },
+    goals: [{ minute: 22, team: 'AIMZ U18', scorer: 'Layla Hassan', assist: null, penalty: false, own_goal: false }],
+    cards: [], substitutions: [], penalties_missed: [], squads: [],
+    generated_at: '2026-08-20T20:30:00.000Z',
+  },
+  ...over,
+});
+
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
@@ -52,8 +73,9 @@ jest.setTimeout(30_000);
 describe('MatchDetailScreen — End match moved to live scoring', () => {
   beforeEach(() => {
     jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+    jest.mocked(api.matchReport).mockResolvedValue(report());
   });
-  afterEach(() => jest.clearAllMocks());
+  afterEach(() => { jest.clearAllMocks(); mockRole = 'admin'; });
 
   it('no longer offers End match while the match is live', async () => {
     jest.mocked(api.live).mockResolvedValue(snapshot());
@@ -221,5 +243,73 @@ describe('MatchDetailScreen — changing a lineup before kickoff', () => {
 
     await screen.findByText('Team sheet');
     expect(screen.queryByText('Edit lineup')).toBeNull();
+  });
+});
+
+describe('the match report on the game centre', () => {
+  beforeEach(() => {
+    jest.mocked(api.players).mockResolvedValue({ items: [], total: 0, limit: 100, offset: 0 });
+    jest.mocked(api.matchReport).mockResolvedValue(report());
+  });
+  afterEach(() => { jest.clearAllMocks(); mockRole = 'admin'; });
+
+  // Nothing is written to make one: it is what the match already recorded.
+  it('is simply there once the match has finished', async () => {
+    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'finished', phase: 'finished' }));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+
+    expect(await screen.findByText('Match report')).toBeTruthy();
+    // Named as the scorer and again as player of the match.
+    expect((await screen.findAllByText('Layla Hassan')).length).toBe(2);
+    expect(screen.getByText('Player of the match')).toBeTruthy();
+    expect(screen.getByText("22'")).toBeTruthy();
+    expect(screen.getByText('Share match report')).toBeTruthy();
+  });
+
+  it('stays away while the match is still to be played', async () => {
+    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'scheduled', phase: 'not_started' }));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+
+    await screen.findByText('Open match management');
+    expect(screen.queryByText('Match report')).toBeNull();
+    expect(api.matchReport).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A parent reads the report; sending it to a group is the academy's call.
+   * The API refuses the write either way, but offering a button that will be
+   * refused is its own kind of wrong.
+   */
+  it('shows a family the report without the means to send it anywhere', async () => {
+    mockRole = 'parent';
+    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'finished', phase: 'finished' }));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+
+    expect(await screen.findByText('Match report')).toBeTruthy();
+    expect(screen.queryByText('Share match report')).toBeNull();
+  });
+
+  // One tap: freeze the figures, mint the address, hand it to the share sheet.
+  it('shares in one go rather than making an admin publish and then send', async () => {
+    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'finished', phase: 'finished' }));
+    jest.mocked(api.publishMatchReport).mockResolvedValue(report({ share_token: 'a-private-address', published_at: '2026-08-20T21:00:00.000Z', published_by_name: 'Coach Nour' }));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+
+    await fireEvent.press(await screen.findByText('Share match report'));
+
+    expect(api.publishMatchReport).toHaveBeenCalledWith('match-1');
+    expect(mockShareMatchReport).toHaveBeenCalledWith('a-private-address', 'AIMZ U18 2\u20131 Giza Lions');
+  });
+
+  // The address is what an admin needs to see once it exists.
+  it('shows the address, and whether anybody has opened it', async () => {
+    jest.mocked(api.live).mockResolvedValue(snapshot({ status: 'finished', phase: 'finished' }));
+    jest.mocked(api.matchReport).mockResolvedValue(report({ share_token: 'a-private-address', published_at: '2026-08-20T21:00:00.000Z', published_by_name: 'Coach Nour' }));
+    const screen = await render(<MatchDetailScreen />, { wrapper });
+
+    expect(await screen.findByText(/\/m\/a-private-address$/)).toBeTruthy();
+    expect(screen.getByText(/Not opened yet/)).toBeTruthy();
+    expect(screen.getByText('Share again')).toBeTruthy();
+    expect(screen.getByText('Stop sharing')).toBeTruthy();
   });
 });

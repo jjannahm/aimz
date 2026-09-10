@@ -325,6 +325,26 @@ export interface PlayerReportRow {
   updated_at: string;
 }
 
+/**
+ * A published match report: the figures as they stood when it was sent.
+ *
+ * One row per match, and only once it has been shared — the summary in the
+ * app is worked out fresh and needs no row at all. Withdrawing deletes this;
+ * the report itself is never lost, only the address.
+ */
+export interface MatchReportRow {
+  id: string;
+  match_id: string;
+  /** JSON, frozen at publish. Never null: a row exists only once published. */
+  snapshot: string;
+  share_token: string | null;
+  published_at: string;
+  published_by_name: string;
+  first_opened_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 /** A recurring monthly subscription for one squad. Money is whole piastres. */
 export interface FeePlanRow {
   id: string;
