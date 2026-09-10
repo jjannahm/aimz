@@ -28,6 +28,7 @@ import { BulkPlayerImport } from '@/src/components/manage/BulkPlayerImport';
 import { FeesManager } from '@/src/components/manage/FeesManager';
 import { ReportsManager } from '@/src/components/manage/ReportsManager';
 import { TrainingStatsManager } from '@/src/components/manage/TrainingStatsManager';
+import { KitOrdersManager } from '@/src/components/manage/KitOrdersManager';
 import { NewcomersManager } from '@/src/components/manage/NewcomersManager';
 import { AnnouncementsManager, ScheduleManager } from '@/src/components/manage/HubManagers';
 import { Screen } from '@/src/components/Screen';
@@ -45,7 +46,7 @@ import { ADVANCE_PER_GROUP, describeCustomDraw, EXTRA_TIME_PERIODS, GROUP_SIZE, 
 import type { BadgeStyle, Competition, InviteKind, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
 
 type LegacyResource = 'teams' | 'competitions' | 'opponents' | 'players' | 'matches' | 'invites';
-type HubResource = 'schedule' | 'announcements' | 'fees' | 'reports' | 'training-stats' | 'newcomers';
+type HubResource = 'schedule' | 'announcements' | 'fees' | 'reports' | 'training-stats' | 'newcomers' | 'kit';
 type Resource = LegacyResource | HubResource;
 type Entity = Team | Competition | Player | Match | RegistrationInvite;
 
@@ -55,10 +56,10 @@ type Entity = Team | Competition | Player | Match | RegistrationInvite;
  * both something in the diary, so each pair shares a pill and separates
  * underneath it.
  */
-type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'announcements' | 'invites' | 'fees' | 'reports' | 'newcomers';
+type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'announcements' | 'invites' | 'fees' | 'reports' | 'newcomers' | 'kit';
 /** `short`, where it is given, is the wording the navigation pill uses: a
  * quarter of a phone's width does not hold every label at the pill's type size. */
-const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }, { label: 'Fees', value: 'fees' }, { label: 'Reports', value: 'reports' }, { label: 'Newcomers', value: 'newcomers' }];
+const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }, { label: 'Fees', value: 'fees' }, { label: 'Reports', value: 'reports' }, { label: 'Newcomers', value: 'newcomers' }, { label: 'Kit', value: 'kit' }];
 /** Whose squads the Squads pill is showing. */
 const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
 /** Which half of the diary the Schedule pill is showing. */
@@ -305,13 +306,14 @@ export default function ManageScreen() {
   const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
   // The sections that manage themselves rather than through the shared form
   // scaffold below: each is a screen of its own shape.
-  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats' || resource === 'newcomers') return <Screen scrollRef={pageRef} title="Manage Academy">
+  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats' || resource === 'newcomers' || resource === 'kit') return <Screen scrollRef={pageRef} title="Manage Academy">
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
       {resource === 'schedule' ? <ScheduleManager teams={aimzTeams} />
         : resource === 'announcements' ? <AnnouncementsManager teams={aimzTeams} />
           : resource === 'fees' ? <FeesManager teams={aimzTeams} />
+            : resource === 'kit' ? <KitOrdersManager />
             : resource === 'newcomers' ? <NewcomersManager teams={aimzTeams} />
             : resource === 'reports' ? <ReportsManager teams={aimzTeams} />
               : <TrainingStatsManager teams={aimzTeams} />}

@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteContext, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, KitOrder, KitOrderPayload, KitStatus, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteContext, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -304,6 +304,9 @@ export const api = {
   updateNewcomer: (id: string, body: Partial<{ stage: NewcomerStage; outcome: NewcomerOutcome; last_contacted_at: string | null; next_follow_up_at: string | null }>) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`, { method: 'PATCH', body }),
   addNewcomerNote: (id: string, body: string) => request(`/api/v1/admin/newcomers/${id}/notes`, { method: 'POST', body: { body } }),
   assignNewcomer: (id: string, body: { team_id: string; position: string; jersey_number: number | null }) => request<{ application: Newcomer; player_id: string; invitation: RegistrationInvite | null }>(`/api/v1/admin/newcomers/${id}/assign-and-confirm`, { method: 'POST', body }),
+  kitOrders: (query = '') => request<Page<KitOrder>>(`/api/v1/kit-orders${query}`),
+  orderKit: (body: KitOrderPayload) => request<KitOrder>('/api/v1/kit-orders', { method: 'POST', body }),
+  setKitStatus: (id: string, status: KitStatus) => request<KitOrder>(`/api/v1/admin/kit-orders/${id}`, { method: 'PATCH', body: { status } }),
   deleteMe: () => request<void>('/api/v1/users/me', { method: 'DELETE' }),
   myChildren: () => request<{ items: LinkedChild[] }>('/api/v1/users/me/children'),
   adminUsers: (query = '?limit=100') => request<Page<AdminAccount>>(`/api/v1/admin/users${query}`),

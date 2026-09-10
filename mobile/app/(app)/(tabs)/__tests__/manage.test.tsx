@@ -115,6 +115,7 @@ describe('ManageScreen navigation', () => {
       'Fees',
       'Reports',
       'Newcomers',
+      'Kit',
     ]);
     // The two that were merged away are reachable, but underneath their pill.
     expect(screen.queryByTestId('manage-tab-opponents')).toBeNull();

@@ -30,7 +30,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0033_coach_role.sql');
+    expect(applied.results.at(-1)?.name).toBe('0034_kit_orders.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -1658,5 +1658,84 @@ describe('the newcomer pipeline', () => {
     const edited = await (await request(`/api/v1/admin/newcomers/${id}`, json('PATCH', { last_contacted_at: now }, admin.token)))
       .json<{ stage: string; outcome: string | null }>();
     expect(edited).toMatchObject({ stage: 'closed', outcome: 'not_interested' });
+  });
+});
+
+describe('kit orders', () => {
+  async function squad(admin: { token: string }) {
+    const team = await (await request('/api/v1/teams', json('POST', { name: `Kit ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+    const mine = await (await request('/api/v1/players', json('POST', { name: 'Jana Sherif', team_id: team.id, position: 'ST' }, admin.token))).json<{ id: string }>();
+    const theirs = await (await request('/api/v1/players', json('POST', { name: 'Somebody Else', team_id: team.id, position: 'GK' }, admin.token))).json<{ id: string }>();
+    return { team, mine, theirs };
+  }
+
+  const order = (playerId: string, over: Record<string, unknown> = {}) => ({
+    player_id: playerId, team_label: 'Senzo 2013', kind: 'player', shirt_name: 'JANA',
+    shirt_number: 10, kit_size: '12', hoodie_size: 'S', outwear_size: 'S', delivery: 'branch', ...over,
+  });
+
+  /**
+   * The whole reason this moved off the old form: an order names a roster
+   * player, so the child's name comes back from the roster rather than being
+   * typed into the order by whoever filled it in.
+   */
+  it('takes an order from a parent for their own child, and names the player from the roster', async () => {
+    const admin = await seedUser('admin');
+    const { mine } = await squad(admin);
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, mine.id, now).run();
+
+    const created = await request('/api/v1/kit-orders', json('POST', order(mine.id), parent.token));
+    expect(created.status, await created.clone().text()).toBe(201);
+    expect(await created.json()).toMatchObject({ player_name: 'Jana Sherif', team_label: 'Senzo 2013', status: 'ordered', shirt_number: 10 });
+  });
+
+  it('refuses an order for a child who is not theirs', async () => {
+    const admin = await seedUser('admin');
+    const { mine, theirs } = await squad(admin);
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, mine.id, now).run();
+
+    const refused = await request('/api/v1/kit-orders', json('POST', order(theirs.id), parent.token));
+    expect(refused.status).toBe(403);
+  });
+
+  it('shows a family their own orders and nobody else’s, and the academy all of them', async () => {
+    const admin = await seedUser('admin');
+    const { mine, theirs } = await squad(admin);
+    const player = await seedUser('player', mine.id);
+    await request('/api/v1/kit-orders', json('POST', order(mine.id), player.token));
+    await request('/api/v1/kit-orders', json('POST', order(theirs.id, { shirt_name: 'OTHER' }), admin.token));
+
+    const hers = await (await request('/api/v1/kit-orders', json('GET', undefined, player.token))).json<{ items: { player_id: string }[] }>();
+    expect(hers.items.map((row) => row.player_id)).toEqual([mine.id]);
+    const book = await (await request('/api/v1/kit-orders', json('GET', undefined, admin.token))).json<{ items: { player_id: string }[] }>();
+    expect(book.items.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('lets the academy mark an order filled, and refuses a status nobody defined', async () => {
+    const admin = await seedUser('admin');
+    const { mine } = await squad(admin);
+    const created = await (await request('/api/v1/kit-orders', json('POST', order(mine.id), admin.token))).json<{ id: string }>();
+
+    const filled = await (await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'fulfilled' }, admin.token))).json<{ status: string }>();
+    expect(filled.status).toBe('fulfilled');
+    const nonsense = await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'posted' }, admin.token));
+    expect(nonsense.status).toBe(422);
+  });
+
+  // The sizes are the supplier's, not free text: an order it cannot fill is
+  // worse than one that was never placed.
+  it('refuses a size the supplier does not make', async () => {
+    const admin = await seedUser('admin');
+    const { mine } = await squad(admin);
+    const refused = await request('/api/v1/kit-orders', json('POST', order(mine.id, { kit_size: 'XXXL' }), admin.token));
+    expect(refused.status).toBe(422);
+  });
+
+  it('turns away an account with no player behind it', async () => {
+    const stranger = await seedUser('player');
+    const refused = await request('/api/v1/kit-orders', json('GET', undefined, stranger.token));
+    expect(refused.status).toBe(403);
   });
 });

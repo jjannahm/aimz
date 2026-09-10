@@ -47,6 +47,32 @@ export type Newcomer = Omit<NewcomerApplicationPayload, 'consent'> & {
   closed_at: string | null; redacted_at: string | null; created_at: string; updated_at: string;
   duplicate_likely: boolean; notes: NewcomerNote[];
 };
+/** The sizes the kit supplier makes: children's by age, then adult letters. */
+export const KIT_SIZES = ['4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL'] as const;
+export type KitSize = (typeof KIT_SIZES)[number];
+export type KitStatus = 'ordered' | 'fulfilled' | 'cancelled';
+
+/**
+ * One kit order. The player's name comes back from the roster rather than
+ * being carried on the order, which is what keeps a child's details in one
+ * place. `team_label` is the supplier's own team name, not an AIMZ squad.
+ */
+export type KitOrder = {
+  id: string; player_id: string; player_name: string; team_id: string | null; squad_name: string | null;
+  ordered_by_id: string | null; team_label: string; kind: 'player' | 'goalkeeper';
+  shirt_name: string; shirt_number: number | null;
+  kit_size: KitSize; hoodie_size: KitSize; outwear_size: KitSize;
+  delivery: 'branch' | 'home'; status: KitStatus; notes: string | null;
+  created_at: string; updated_at: string;
+};
+
+export type KitOrderPayload = {
+  player_id: string; team_label: string; kind: 'player' | 'goalkeeper';
+  shirt_name: string; shirt_number: number | null;
+  kit_size: KitSize; hoodie_size: KitSize; outwear_size: KitSize;
+  delivery: 'branch' | 'home'; notes?: string;
+};
+
 export type PresignResponse = Schema['PresignResponse'];
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 /** 8, 16 or 32 for a knockout; null for a competition that is only a table. */

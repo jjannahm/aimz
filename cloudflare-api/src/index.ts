@@ -8,6 +8,7 @@ import { registerCalendarRoutes } from "./calendar";
 import { registerDomainRoutes } from "./domain";
 import { registerFeeRoutes } from "./fees";
 import { ApiProblem, currentUser, errorResponse } from "./helpers";
+import { registerKitRoutes } from "./kit";
 import { registerKnockoutRoutes } from "./knockout";
 import { registerMatchRoutes } from "./matches";
 import { registerMediaRoutes } from "./media";
@@ -83,6 +84,7 @@ app.get("/api/v1/health/ready", async (c) => {
 
 registerAuthRoutes(app);
 registerNewcomerRoutes(app);
+registerKitRoutes(app);
 registerDomainRoutes(app);
 registerMatchRoutes(app);
 registerStatsRoutes(app);
