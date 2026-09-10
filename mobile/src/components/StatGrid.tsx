@@ -11,6 +11,8 @@ export interface Stat {
   value: string | number;
   /** A colour for the figure, where one carries meaning. */
   tone?: string;
+  /** Smaller supporting value inside the same equal-sized cell. */
+  secondary?: string;
   /** A word under the label, where the figure means little on its own. */
   note?: string;
   noteTone?: string;
@@ -34,14 +36,16 @@ export function StatGrid({ stats }: { stats: Stat[] }) {
     <View style={styles.row}>{stats.map((stat, index) => <View
       key={stat.key}
       style={[styles.cell, index % 3 !== 0 && styles.dividerLeft, index >= 3 && styles.dividerTop]}
+      testID="stat-cell"
     >
       {/* Held to one line whatever the figure is: a scale is the metric's to
         * change, and "10/10" should not break in half when it does. */}
       <Text numberOfLines={1} style={[styles.value, stat.tone ? { color: stat.tone } : null]}>{stat.value}</Text>
       <Text numberOfLines={2} style={styles.label}>{stat.label}</Text>
+      {stat.secondary ? <Text numberOfLines={1} style={styles.secondary}>{stat.secondary}</Text> : null}
       {/* Only where a figure needs saying something about; a tile without one
         * is the two lines it has always been. */}
-      {stat.note ? <Text numberOfLines={1} style={[styles.note, stat.noteTone ? { color: stat.noteTone } : null]}>{stat.note}</Text> : null}
+      {stat.note ? <Text numberOfLines={2} style={[styles.note, stat.noteTone ? { color: stat.noteTone } : null]}>{stat.note}</Text> : null}
     </View>)}</View>
   </FlatCard>;
 }
@@ -55,5 +59,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   dividerTop: { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth },
   value: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.heading, fontVariant: ['tabular-nums'] },
   label: { color: colors.textMuted, fontSize: theme.type.caption, textAlign: 'center' },
+  secondary: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.caption, textAlign: 'center' },
   note: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.caption, textAlign: 'center' },
 });

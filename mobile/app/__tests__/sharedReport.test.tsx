@@ -62,8 +62,8 @@ describe('the page a shared report link opens', () => {
     expect(screen.getByText('700 EGP')).toBeTruthy();
     expect(screen.getByText('Outstanding, overdue')).toBeTruthy();
     // The marks sit beside the register: how she trained, not only that she came.
-    expect(screen.getByText('840')).toBeTruthy();
-    expect(screen.getByText('Minutes trained')).toBeTruthy();
+    expect(screen.queryByText('840')).toBeNull();
+    expect(screen.queryByText('Minutes trained')).toBeNull();
     expect(screen.getByText('7.5/10')).toBeTruthy();
     expect(screen.getByText('Dribbling avg')).toBeTruthy();
     expect(screen.getByText('Reads the game well and is first to every second ball.')).toBeTruthy();

@@ -1,4 +1,4 @@
--- Kit orders, brought onto this API from the Firebase form they used to live in.
+-- Kit orders, brought onto this API from the legacy form they used to live in.
 --
 -- The old form asked a parent to type a child's name and date of birth into an
 -- open database. Here an order names a roster player instead: the identity is

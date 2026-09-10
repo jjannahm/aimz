@@ -6,11 +6,16 @@ import type { PlayerRow, TrainingMetricRow, TrainingPlayerMetricRow, TrainingRow
 import { attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
+type PlayerKind = "outfield" | "goalkeeper";
+
+const playerKind = (position: string): PlayerKind => position.trim().toUpperCase() === "GK" ? "goalkeeper" : "outfield";
+const appliesTo = (metric: TrainingMetricRow, position: string): boolean =>
+  metric.player_kind === "all" || metric.player_kind === playerKind(position);
 
 /** The metrics on offer, in the order a coach reads them. */
-async function activeMetrics(env: Env): Promise<TrainingMetricRow[]> {
+async function activeMetrics(env: Env, kind?: PlayerKind): Promise<TrainingMetricRow[]> {
   const rows = await env.DB.prepare("SELECT * FROM training_metrics WHERE is_active=1 ORDER BY sort_order, label").all<TrainingMetricRow>();
-  return rows.results;
+  return kind ? rows.results.filter((metric) => metric.player_kind === "all" || metric.player_kind === kind) : rows.results;
 }
 
 function publicMetric(row: TrainingMetricRow): Record<string, unknown> {
@@ -82,8 +87,8 @@ export function registerTrainingStatsRoutes(app: App): void {
       throw new ApiProblem(422, "validation_error", "Send up to 500 readings.", [{ field: "entries", message: "Send up to 500 readings." }]);
     }
     const metrics = new Map((await activeMetrics(c.env)).map((metric) => [metric.id, metric]));
-    const squad = await c.env.DB.prepare("SELECT id FROM players WHERE team_id=?").bind(session.team_id).all<{ id: string }>();
-    const onSquad = new Set(squad.results.map((row) => row.id));
+    const squad = await c.env.DB.prepare("SELECT id, position FROM players WHERE team_id=?").bind(session.team_id).all<{ id: string; position: string }>();
+    const onSquad = new Map(squad.results.map((row) => [row.id, row]));
 
     const entries = body.entries.map((raw) => {
       const entry = (raw ?? {}) as Record<string, unknown>;
@@ -91,7 +96,11 @@ export function registerTrainingStatsRoutes(app: App): void {
       const metricId = stringField(entry, "metric_id", { min: 1, max: 36 })!;
       const metric = metrics.get(metricId);
       if (!metric) throw new ApiProblem(422, "metric_not_found", "That is not a training metric.");
-      if (!onSquad.has(playerId)) throw new ApiProblem(422, "player_not_found", "Record only players from this squad.");
+      const player = onSquad.get(playerId);
+      if (!player) throw new ApiProblem(422, "player_not_found", "Record only players from this squad.");
+      if (!appliesTo(metric, player.position)) {
+        throw new ApiProblem(422, "metric_not_applicable", `${metric.label} does not apply to this player's position.`);
+      }
       if (entry.value === null || entry.value === undefined) return { playerId, metricId, value: null };
       const value = numberField(entry, "value", { min: -1_000_000, max: 1_000_000 })!;
       checkValue(metric, value);
@@ -127,7 +136,7 @@ export function registerTrainingStatsRoutes(app: App): void {
     }
 
     const [metrics, attendance, squad, readings, sessions] = await Promise.all([
-      activeMetrics(c.env),
+      activeMetrics(c.env, playerKind(player.position)),
       c.env.DB.prepare(`SELECT ${attendedSql()} attended, ${lateSql()} late, COUNT(*) expected FROM training_attendance WHERE player_id=?`).bind(player.id).first<{ attended: number | null; late: number | null; expected: number }>(),
       // What the rest of her squad manages, so her own figure has something to
       // be read against: 80% means one thing in a squad averaging 95 and
@@ -167,7 +176,11 @@ export function registerTrainingStatsRoutes(app: App): void {
     // that is a mark, a register entry, or both.
     const bySession = new Map<string, { id: string; starts_at: string; venue: string; status: string | null; values: Record<string, number> }>();
     for (const row of sessions.results) bySession.set(row.id, { id: row.id, starts_at: row.starts_at, venue: row.venue, status: row.status, values: {} });
+    const metricIds = new Set(metrics.map((metric) => metric.id));
     for (const row of readings.results) {
+      // Retired and position-inapplicable readings stay stored for history but
+      // never leak back into the current profile or session breakdown.
+      if (!metricIds.has(row.metric_id)) continue;
       const held = bySession.get(row.session_id) ?? { id: row.session_id, starts_at: row.starts_at, venue: row.venue, status: null, values: {} };
       held.values[row.metric_id] = row.value;
       bySession.set(row.session_id, held);

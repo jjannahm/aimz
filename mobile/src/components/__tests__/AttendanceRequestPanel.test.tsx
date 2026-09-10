@@ -11,6 +11,7 @@ jest.mock('@/src/lib/api', () => ({
   ApiError: class extends Error {},
   api: {
     attendanceRequests: jest.fn(),
+    attendanceRequestContext: jest.fn(),
     requestAttendanceChange: jest.fn(),
     approveAttendanceRequest: jest.fn(),
     rejectAttendanceRequest: jest.fn(),
@@ -49,6 +50,9 @@ function wrapper({ children }: { children: ReactNode }) {
 describe('AttendanceRequestPanel', () => {
   beforeEach(() => {
     mockUser.role = 'player';
+    jest.mocked(api.attendanceRequestContext).mockResolvedValue({
+      items: [{ player: { id: 'p-1', name: 'Layla Hassan', position: 'CM' } as Player, current_status: 'absent' }],
+    });
     jest.mocked(api.attendanceRequests).mockResolvedValue(page([]));
     jest.mocked(api.requestAttendanceChange).mockResolvedValue(req());
     jest.mocked(api.approveAttendanceRequest).mockResolvedValue(req({ status: 'approved' }));
@@ -65,6 +69,7 @@ describe('AttendanceRequestPanel', () => {
     await fireEvent.press(screen.getByText('Ask for a correction'));
 
     await waitFor(() => expect(api.requestAttendanceChange).toHaveBeenCalledWith('t-1', {
+      player_id: 'p-1',
       reason: 'I was there, twenty minutes in',
       requested_status: 'late',
     }));

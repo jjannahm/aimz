@@ -48,6 +48,22 @@ function publicRequest(row: AttendanceRequestRow, player: PlayerRow | null, sess
 }
 
 export function registerAttendanceRequestRoutes(app: App): void {
+  /** The signed-in player, or a parent's linked children, and their official marks. */
+  app.get("/api/v1/training-sessions/:id/attendance-request-context", async (c) => {
+    const session = await sessionById(c.env, c.req.param("id"));
+    const user = await currentUser(c);
+    const mine = await linkedPlayerIds(c.env, user);
+    if (!mine.length) return c.json({ items: [] });
+    const rows = await c.env.DB.prepare(`SELECT p.*, a.status current_status
+      FROM players p
+      LEFT JOIN training_attendance a ON a.player_id=p.id AND a.training_session_id=?
+      WHERE p.team_id=? AND p.id IN (${mine.map(() => "?").join(",")})
+      ORDER BY p.name`)
+      .bind(session.id, session.team_id, ...mine)
+      .all<PlayerRow & { current_status: string | null }>();
+    return c.json({ items: rows.results.map((row) => ({ player: publicPlayer(row), current_status: row.current_status })) });
+  });
+
   /**
    * Ask for a correction.
    *

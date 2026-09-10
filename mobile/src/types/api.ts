@@ -293,6 +293,10 @@ export type AttendanceRequest = {
   session: { id: string; starts_at: string; venue: string; team_id: string } | null;
 };
 
+export type AttendanceRequestContext = {
+  items: { player: Player; current_status: AttendanceStatus | null }[];
+};
+
 /** One thing a coach records about how a player trained. */
 export type TrainingMetric = {
   id: string;
@@ -303,6 +307,8 @@ export type TrainingMetric = {
   min_value: number | null;
   max_value: number | null;
   unit: string | null;
+  /** Which existing player position this metric belongs to. */
+  player_kind: 'all' | 'outfield' | 'goalkeeper';
   sort_order: number;
   is_active: boolean;
 };
@@ -320,7 +326,7 @@ export type PlayerTrainingStats = {
   /** `team_pct` is the whole squad's ratio, for this player to be read against. */
   attendance: { attended: number; late: number; expected: number; pct: number | null; team_pct: number | null };
   totals: { metric: TrainingMetric; value: number | null; sessions: number }[];
-  sessions: { id: string; starts_at: string; venue: string; status: 'present' | 'absent' | null; values: Record<string, number> }[];
+  sessions: { id: string; starts_at: string; venue: string; status: AttendanceStatus | null; values: Record<string, number> }[];
 };
 
 /** What a report says, as it stood when it was published. */

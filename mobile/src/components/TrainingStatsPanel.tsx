@@ -7,6 +7,7 @@ import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
+import { metricsForPlayer } from '@/src/lib/trainingMetrics';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AttendanceStatus, TrainingMetric } from '@/src/types/api';
@@ -59,8 +60,8 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
 
   if (query.isLoading) return <LoadingState label="Loading training stats" />;
   if (query.isError || !query.data) return <ErrorState message={(query.error as ApiError)?.message ?? 'Training stats not found.'} onRetry={() => query.refetch()} />;
-  const { attendance, totals, sessions, metrics } = query.data;
-  const byId = new Map(metrics.map((metric) => [metric.id, metric]));
+  const { attendance, totals, sessions, metrics, player } = query.data;
+  const playerMetrics = metricsForPlayer(metrics, player);
   const sits = standing(attendance.pct, attendance.team_pct);
   const verdict = { above: 'Above average', average: 'Average', below: 'Below average' } as const;
   // Above in the same green a present mark carries. Below in amber rather than
@@ -70,34 +71,31 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
 
   // A metric nobody has recorded is left out rather than shown as a zero: a
   // nought here would read as a mark given, not as one never given.
+  const totalByMetric = new Map(totals.map((total) => [total.metric.id, total]));
+  // Exactly six equal cells: attendance carries its percentage in the same
+  // cell, then late, then the four ratings for this player's position. The
+  // squad comparison stays attached to attendance instead of becoming a
+  // seventh, uneven cell.
   const tiles: Stat[] = [
-    ...(attendance.expected > 0 ? [
-      { key: 'attended', label: 'Attended', value: `${attendance.attended} of ${attendance.expected}` },
-      { key: 'attendance', label: 'Attendance', value: `${attendance.pct}%`, tone: colors.accentSoft },
-      // Inside the attendance figure, and shown again on its own: she turned
-      // up, and this is how often she missed the start. Left out when there
-      // are none rather than shown as a nought nobody needs to read.
-      ...(attendance.late > 0 ? [{ key: 'late', label: 'Late', value: String(attendance.late), tone: colors.warning }] : []),
-      // Her own percentage says nothing on its own — 80% in a squad averaging
-      // 95 is not 80% in one averaging 60 — so the squad's figure sits beside
-      // it with where she falls against it underneath. Inside this block on
-      // purpose: a squad average with no personal figure next to it is a number
-      // with nothing to compare.
-      ...(attendance.team_pct === null ? [] : [{
-        key: 'team-attendance',
-        label: 'Team average',
-        value: `${attendance.team_pct}%`,
-        ...(sits ? { note: verdict[sits], noteTone: verdictTone[sits] } : {}),
-      }]),
-    ] : []),
-    // Ratings only. A season's worth of minutes is a total rather than a mark
-    // against a scale, and it is still on every session row below.
-    ...totals.filter((total) => total.value !== null && total.metric.kind === 'rating').map((total) => ({
-      key: total.metric.id,
-      label: shortLabel(total.metric),
-      value: readTotal(total.metric, total.value!),
-      tone: undefined,
-    })),
+    {
+      key: 'attendance',
+      label: 'Attended · Attendance',
+      value: `${attendance.attended} of ${attendance.expected}`,
+      secondary: attendance.pct == null ? '—' : `${attendance.pct}%`,
+      ...(attendance.team_pct == null ? {} : {
+        note: `Team avg ${attendance.team_pct}%${sits ? ` · ${verdict[sits]}` : ''}`,
+        ...(sits ? { noteTone: verdictTone[sits] } : {}),
+      }),
+    },
+    { key: 'late', label: 'Late', value: String(attendance.late ?? 0), tone: (attendance.late ?? 0) > 0 ? colors.warning : undefined },
+    ...playerMetrics.map((metric) => {
+      const total = totalByMetric.get(metric.id);
+      return {
+        key: metric.id,
+        label: shortLabel(metric),
+        value: total?.value === null || total?.value === undefined ? '—' : readTotal(metric, total.value),
+      };
+    }),
   ];
 
   if (!tiles.length && !sessions.length) {
@@ -110,9 +108,9 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
     <Text accessibilityRole="header" style={styles.heading}>Session breakdown</Text>
     {!sessions.length ? <Text style={styles.empty}>No sessions recorded yet.</Text>
       : sessions.map((session) => {
-        const marks = Object.entries(session.values)
-          .map(([metricId, value]) => { const metric = byId.get(metricId); return metric ? `${metric.label} ${readTotal(metric, value)}` : null; })
-          .filter((line): line is string => line !== null);
+        const marks = playerMetrics
+          .filter((metric) => session.values[metric.id] !== undefined)
+          .map((metric) => `${metric.key === 'overall_rating' ? 'Overall' : metric.label} ${readTotal(metric, session.values[metric.id]!)}`);
         return <FlatCard key={session.id} radius={theme.radius.md} style={styles.session}>
           <View style={styles.sessionHead}>
             <Text style={styles.sessionTitle}>{session.venue}</Text>

@@ -1260,10 +1260,10 @@ describe('player reports', () => {
     }, admin.token))).json<{ id: string }[]>();
     const metrics = await (await request('/api/v1/training-metrics', json('GET', undefined, admin.token))).json<{ items: { id: string; key: string }[] }>();
     const dribbling = metrics.items.find((metric) => metric.key === 'dribbling')!;
-    const minutes = metrics.items.find((metric) => metric.key === 'minutes_trained')!;
+    const overall = metrics.items.find((metric) => metric.key === 'overall_rating')!;
     for (const [index, mark] of [6, 9].entries()) {
       await request(`/api/v1/training-sessions/${sessions[index]!.id}/performance`, json('PUT', {
-        entries: [{ player_id: mine.id, metric_id: dribbling.id, value: mark }, { player_id: mine.id, metric_id: minutes.id, value: 90 }],
+        entries: [{ player_id: mine.id, metric_id: dribbling.id, value: mark }, { player_id: mine.id, metric_id: overall.id, value: mark + 1 }],
       }, admin.token));
     }
 
@@ -1272,9 +1272,9 @@ describe('player reports', () => {
     const body = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<{ snapshot: { version: number; training: { key: string; value: number; sessions: number }[] } }>();
 
     expect(body.snapshot.version).toBe(3);
-    // A rating averages, a count adds up.
     expect(body.snapshot.training.find((row) => row.key === 'dribbling')).toMatchObject({ value: 7.5, sessions: 2 });
-    expect(body.snapshot.training.find((row) => row.key === 'minutes_trained')).toMatchObject({ value: 180, sessions: 2 });
+    expect(body.snapshot.training.find((row) => row.key === 'overall_rating')).toMatchObject({ value: 8.5, sessions: 2 });
+    expect(body.snapshot.training.find((row) => row.key === 'minutes_trained')).toBeUndefined();
   });
 
   it('leaves the marks out of a period they were not given in', async () => {
@@ -1436,18 +1436,20 @@ describe('training performance', () => {
   it('offers the metrics the academy starts with, in reading order', async () => {
     const admin = await seedUser('admin');
     const metrics = await metricsOf(admin.token);
-    expect(metrics.map((metric) => metric.key)).toEqual(['minutes_trained', 'dribbling', 'shooting', 'passing']);
+    expect(metrics.map((metric) => metric.key)).toEqual([
+      'overall_rating', 'dribbling', 'shot_stopping', 'handling', 'shooting', 'distribution', 'passing',
+    ]);
     const dribbling = metrics.find((metric) => metric.key === 'dribbling')!;
     // The scale lives on the metric, so changing it later is a row not a release.
     expect(dribbling).toMatchObject({ kind: 'rating', min_value: 1, max_value: 10 });
-    expect(metrics.find((metric) => metric.key === 'minutes_trained')).toMatchObject({ kind: 'count', min_value: null });
+    expect(metrics.find((metric) => metric.key === 'minutes_trained')).toBeUndefined();
   });
 
   it('hands back the whole squad to mark, before anybody is marked', async () => {
     const { admin, squad, sessions } = await setUp();
     const body = await (await request(`/api/v1/training-sessions/${sessions[0]!.id}/performance`, json('GET', undefined, admin.token))).json<{ items: { player: { id: string }; values: Record<string, number> }[]; metrics: unknown[] }>();
     expect(body.items).toHaveLength(squad.length);
-    expect(body.metrics).toHaveLength(4);
+    expect(body.metrics).toHaveLength(7);
     expect(body.items[0]?.values).toEqual({});
   });
 
@@ -1455,32 +1457,33 @@ describe('training performance', () => {
     const { admin, squad, sessions } = await setUp();
     const metrics = await metricsOf(admin.token);
     const dribbling = metrics.find((metric) => metric.key === 'dribbling')!;
-    const minutes = metrics.find((metric) => metric.key === 'minutes_trained')!;
+    const overall = metrics.find((metric) => metric.key === 'overall_rating')!;
 
     const response = await record(sessions[0]!.id, admin.token, [
       { player_id: squad[0]!.id, metric_id: dribbling.id, value: 7 },
-      { player_id: squad[0]!.id, metric_id: minutes.id, value: 75 },
+      { player_id: squad[0]!.id, metric_id: overall.id, value: 8 },
     ]);
     expect(response.status).toBe(200);
     const body = await response.json<{ items: { player: { id: string }; values: Record<string, number> }[] }>();
     const mine = body.items.find((item) => item.player.id === squad[0]!.id)!;
     expect(mine.values[dribbling.id]).toBe(7);
-    expect(mine.values[minutes.id]).toBe(75);
+    expect(mine.values[overall.id]).toBe(8);
   });
 
   it('changes one reading without disturbing the rest', async () => {
     const { admin, squad, sessions } = await setUp();
     const metrics = await metricsOf(admin.token);
-    const [minutes, dribbling] = [metrics[0]!, metrics[1]!];
+    const overall = metrics.find((metric) => metric.key === 'overall_rating')!;
+    const dribbling = metrics.find((metric) => metric.key === 'dribbling')!;
     await record(sessions[0]!.id, admin.token, [
-      { player_id: squad[0]!.id, metric_id: minutes.id, value: 90 },
+      { player_id: squad[0]!.id, metric_id: overall.id, value: 8 },
       { player_id: squad[0]!.id, metric_id: dribbling.id, value: 6 },
     ]);
     const after = await (await record(sessions[0]!.id, admin.token, [{ player_id: squad[0]!.id, metric_id: dribbling.id, value: 9 }]))
       .json<{ items: { player: { id: string }; values: Record<string, number> }[] }>();
     const mine = after.items.find((item) => item.player.id === squad[0]!.id)!;
     expect(mine.values[dribbling.id]).toBe(9);
-    expect(mine.values[minutes.id]).toBe(90);
+    expect(mine.values[overall.id]).toBe(8);
   });
 
   // A zero is a mark out of ten, not an absence of one.
@@ -1520,26 +1523,26 @@ describe('training performance', () => {
   });
 
   describe('one player\'s training record', () => {
-    it('averages a rating and adds up a count', async () => {
+    it('averages each position-appropriate rating', async () => {
       const { admin, squad, sessions } = await setUp();
       const metrics = await metricsOf(admin.token);
       const dribbling = metrics.find((metric) => metric.key === 'dribbling')!;
-      const minutes = metrics.find((metric) => metric.key === 'minutes_trained')!;
+      const overall = metrics.find((metric) => metric.key === 'overall_rating')!;
       await record(sessions[0]!.id, admin.token, [
         { player_id: squad[0]!.id, metric_id: dribbling.id, value: 6 },
-        { player_id: squad[0]!.id, metric_id: minutes.id, value: 90 },
+        { player_id: squad[0]!.id, metric_id: overall.id, value: 8 },
       ]);
       await record(sessions[1]!.id, admin.token, [
         { player_id: squad[0]!.id, metric_id: dribbling.id, value: 9 },
-        { player_id: squad[0]!.id, metric_id: minutes.id, value: 60 },
+        { player_id: squad[0]!.id, metric_id: overall.id, value: 10 },
       ]);
 
       const stats = await statsOf(squad[0]!.id, admin.token);
       const drib = stats.totals.find((total) => total.metric.key === 'dribbling')!;
-      const mins = stats.totals.find((total) => total.metric.key === 'minutes_trained')!;
-      // Averaging minutes, or adding up marks out of ten, would each mean nothing.
+      const overallAverage = stats.totals.find((total) => total.metric.key === 'overall_rating')!;
       expect(drib).toMatchObject({ value: 7.5, sessions: 2 });
-      expect(mins).toMatchObject({ value: 150, sessions: 2 });
+      expect(overallAverage).toMatchObject({ value: 9, sessions: 2 });
+      expect(stats.totals.find((total) => total.metric.key === 'minutes_trained')).toBeUndefined();
     });
 
     it('counts attendance from the register rather than as a metric of its own', async () => {
