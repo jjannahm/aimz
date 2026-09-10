@@ -21,6 +21,10 @@ export function NewcomersManager({ teams }: { teams: Team[] }) {
   const [queue, setQueue] = useState<'active' | 'history'>('active'); const [search, setSearch] = useState(''); const [branch, setBranch] = useState(''); const [source, setSource] = useState(''); const [stage, setStage] = useState(''); const [selected, setSelected] = useState<string | null>(null);
   const params = new URLSearchParams({ queue }); if (search) params.set('search', search); if (branch) params.set('branch', branch); if (source) params.set('source', source); if (stage) params.set('stage', stage);
   const list = useQuery({ queryKey: ['newcomers', queue, search, branch, source, stage], queryFn: () => api.newcomers(`?${params}`) });
+  // Read back from the applications themselves rather than typed in: a filter
+  // that offers a branch nobody has applied to, or misses one that opened last
+  // month, is worse than no filter.
+  const branches = useQuery({ queryKey: ['newcomers', 'branches'], queryFn: () => api.newcomerBranches() });
   const detail = useQuery({ queryKey: ['newcomer', selected], queryFn: () => api.newcomer(selected!), enabled: Boolean(selected) });
   if (selected) return <Detail item={detail.data} loading={detail.isLoading} teams={teams} onBack={() => setSelected(null)} onChanged={async () => { await client.invalidateQueries({ queryKey: ['newcomers'] }); await client.invalidateQueries({ queryKey: ['newcomer', selected] }); }} />;
   const due = list.data?.items.filter((item) => item.next_follow_up_at && new Date(item.next_follow_up_at) <= new Date()).length ?? 0;
@@ -28,7 +32,13 @@ export function NewcomersManager({ teams }: { teams: Team[] }) {
     <SegmentedControl label="Newcomer queue" onChange={(value) => setQueue(value as typeof queue)} options={[{ label: 'Active', value: 'active' }, { label: 'History', value: 'history' }]} value={queue} />
     <Text style={styles.counter}>{list.data?.total ?? 0} records · {due} due or overdue</Text>
     <FormField label="Search" placeholder="Name, email or phone" onChangeText={setSearch} value={search} />
-    <FormField label="Branch" placeholder="Filter by branch" onChangeText={setBranch} value={branch} />
+    <ChoiceField
+      label="Branch"
+      onChange={setBranch}
+      options={[{ label: 'All branches', value: '' }, ...(branches.data?.items ?? []).map((name) => ({ label: name, value: name }))]}
+      placeholder="All branches"
+      value={branch}
+    />
     <View style={styles.filters}><View style={styles.flex}><ChoiceField label="Source" onChange={setSource} options={[{ label: 'All', value: '' }, { label: 'Public link', value: 'public_link' }, { label: 'Account signup', value: 'account_registration' }]} value={source} /></View><View style={styles.flex}><ChoiceField label="Status" onChange={setStage} options={[{ label: 'All', value: '' }, ...['new', 'contacted', 'follow_up', 'trial_booked', 'closed'].map((value) => ({ label: value.replaceAll('_', ' '), value }))]} value={stage} /></View></View>
     {list.isLoading ? <LoadingState label="Loading newcomers" /> : list.error ? <ErrorState message={(list.error as ApiError).message} onRetry={() => void list.refetch()} /> : null}
     {list.data?.items.map((item) => <View key={item.id} style={styles.card}><Text style={styles.name}>{item.full_name}</Text><Text style={styles.meta}>{item.branch} · {item.email}</Text><View style={styles.badges}><Text style={styles.badge}>{item.source === 'public_link' ? 'Public' : 'Signup'}</Text><Text style={styles.badge}>{item.stage.replaceAll('_', ' ')}</Text>{item.duplicate_likely ? <Text style={styles.warning}>Possible duplicate</Text> : null}</View>{item.next_follow_up_at ? <Text style={new Date(item.next_follow_up_at) < new Date() ? styles.overdue : styles.meta}>Follow up {formatEgyptDateTime(item.next_follow_up_at)}</Text> : null}<AppButton compact label="Open application" onPress={() => setSelected(item.id)} variant="secondary" /></View>)}

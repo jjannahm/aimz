@@ -37,7 +37,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0037_coach_role_name.sql');
+    expect(applied.results.at(-1)?.name).toBe('0038_announcement_targeting.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -2365,5 +2365,121 @@ describe('who waits at the door and who walks in', () => {
     expect(one).toMatchObject({ kind: 'player', requires_application: false });
     const two = await (await request('/api/v1/auth/invitations/resolve', json('POST', { code: asNewcomer.code }))).json<{ kind: string; requires_application: boolean }>();
     expect(two).toMatchObject({ kind: 'newcomer', requires_application: true });
+  });
+});
+
+describe('who a notice is for', () => {
+  /** Two squads, a player on each, a parent of the first, and a coach. */
+  async function academy() {
+    const admin = await seedUser('admin');
+    const unique = crypto.randomUUID().slice(0, 8);
+    const post = async <T>(path: string, body: unknown): Promise<T> => (await request(path, json('POST', body, admin.token))).json<T>();
+    const squad = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ Notice ${unique}`, is_aimz: true });
+    const other = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ Elsewhere ${unique}`, is_aimz: true });
+    const player = await post<{ id: string }>('/api/v1/players', { name: 'Layla Hassan', team_id: squad.id, position: 'CM' });
+    const mate = await post<{ id: string }>('/api/v1/players', { name: 'Nour Adel', team_id: squad.id, position: 'ST' });
+    const outsider = await post<{ id: string }>('/api/v1/players', { name: 'Far Away', team_id: other.id, position: 'GK' });
+    const coach = await seedUser('coach');
+    await assignSquad(coach.id, squad.id);
+    return { admin, unique, squad, other, player, mate, outsider, coach };
+  }
+
+  const feed = async (token: string) =>
+    (await request('/api/v1/announcements?limit=50', json('GET', undefined, token)))
+      .json<{ items: { id: string; title: string; priority: string; pinned: boolean }[] }>();
+
+  it('sends a squad notice to the squad, and a named one only to the family named', async () => {
+    const it = await academy();
+    const everyone = await (await request('/api/v1/announcements', json('POST', {
+      audience: 'team', team_id: it.squad.id, title: 'Kit collection', body: 'Saturday',
+    }, it.admin.token))).json<{ id: string }>();
+    const justHers = await request('/api/v1/announcements', json('POST', {
+      audience: 'team', team_id: it.squad.id, player_ids: [it.player.id], title: 'A word about fees', body: 'Please call',
+    }, it.admin.token));
+    expect(justHers.status).toBe(201);
+    const named = await justHers.json<{ id: string; players: { id: string }[] }>();
+    expect(named.players.map((row) => row.id)).toEqual([it.player.id]);
+
+    // The player it names sees both; her squad-mate sees only the squad one.
+    // Asked of these two notices rather than of the whole feed: this database
+    // is not reset between tests, so everything else in it is noise.
+    const mine = (ids: string[]) => [everyone.id, named.id].filter((id) => ids.includes(id)).sort();
+    const hers = await seedUser('player', it.player.id);
+    const theirs = await seedUser('player', it.mate.id);
+    expect(mine((await feed(hers.token)).items.map((row) => row.id))).toEqual([everyone.id, named.id].sort());
+    expect(mine((await feed(theirs.token)).items.map((row) => row.id))).toEqual([everyone.id]);
+
+    // A parent of the named player reads it the same way she does.
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, it.player.id, now).run();
+    expect(mine((await feed(parent.token)).items.map((row) => row.id))).toEqual([everyone.id, named.id].sort());
+
+    // And nobody on another squad sees either.
+    const elsewhere = await seedUser('player', it.outsider.id);
+    expect(mine((await feed(elsewhere.token)).items.map((row) => row.id))).toEqual([]);
+  });
+
+  it('refuses to send a squad notice to somebody on another squad', async () => {
+    const it = await academy();
+    const refused = await request('/api/v1/announcements', json('POST', {
+      audience: 'team', team_id: it.squad.id, player_ids: [it.outsider.id], title: 'Wrong squad', body: 'No',
+    }, it.admin.token));
+    expect(refused.status).toBe(422);
+    expect(await refused.json()).toMatchObject({ detail: { code: 'player_not_found' } });
+  });
+
+  it('addresses the coaches, and keeps it away from the families', async () => {
+    const it = await academy();
+    const toAll = await (await request('/api/v1/announcements', json('POST', {
+      audience: 'coaches', title: 'Coaches meeting', body: 'Thursday',
+    }, it.admin.token))).json<{ id: string }>();
+
+    // The coach sees it; a family never does, whatever squad they are on.
+    expect((await feed(it.coach.token)).items.map((row) => row.id)).toContain(toAll.id);
+    const family = await seedUser('player', it.player.id);
+    expect((await feed(family.token)).items.map((row) => row.id)).not.toContain(toAll.id);
+
+    // Named coaches: only the ones named.
+    const another = await seedUser('coach');
+    await assignSquad(another.id, it.other.id);
+    const named = await (await request('/api/v1/announcements', json('POST', {
+      audience: 'coaches', coach_ids: [it.coach.id], title: 'Just you', body: 'A word',
+    }, it.admin.token))).json<{ id: string }>();
+    expect((await feed(it.coach.token)).items.map((row) => row.id)).toContain(named.id);
+    expect((await feed(another.token)).items.map((row) => row.id)).not.toContain(named.id);
+
+    // And a coach cannot address the coaches, or the academy.
+    for (const audience of ['coaches', 'academy']) {
+      expect((await request('/api/v1/announcements', json('POST', { audience, title: 'Not mine', body: 'No' }, it.coach.token))).status).toBe(403);
+    }
+  });
+
+  it('makes urgent mean pinned, and puts it at the top', async () => {
+    const it = await academy();
+    const post = (title: string, priority: string) => request('/api/v1/announcements', json('POST', {
+      audience: 'academy', title, body: 'Something', priority,
+    }, it.admin.token));
+    await post('Ordinary', 'standard');
+    await post('Kept at the top', 'pinned');
+    const urgent = await post('Training cancelled tonight', 'urgent');
+    expect(urgent.status).toBe(201);
+    // Urgent is pinned without anybody having to say so twice.
+    expect(await urgent.json()).toMatchObject({ priority: 'urgent', pinned: true });
+
+    // Their order relative to each other, which is what the words promise.
+    const titles = ['Training cancelled tonight', 'Kept at the top', 'Ordinary'];
+    const read = await feed(it.admin.token);
+    expect(read.items.map((row) => row.title).filter((title) => titles.includes(title))).toEqual(titles);
+  });
+
+  it('still understands the way it was addressed before today', async () => {
+    const it = await academy();
+    // No audience and no priority: a squad id and `pinned`, which is how every
+    // caller wrote one until now and how every stored row was written.
+    const legacy = await request('/api/v1/announcements', json('POST', {
+      team_id: it.squad.id, title: 'The old way', body: 'Still works', pinned: true,
+    }, it.admin.token));
+    expect(legacy.status).toBe(201);
+    expect(await legacy.json()).toMatchObject({ audience: 'team', priority: 'pinned', pinned: true });
   });
 });

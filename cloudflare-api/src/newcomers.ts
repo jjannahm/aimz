@@ -128,6 +128,23 @@ export function registerNewcomerRoutes(app: App): void {
     return c.json({ items: rows.results.map((row) => ({ ...row, duplicate_likely: Boolean(row.duplicate_likely), notes: [] })), total: count?.total ?? 0, limit, offset });
   });
 
+  /**
+   * The branches applications have actually been made from.
+   *
+   * There is no branch table: an application records the branch it came from
+   * as text, which is the academy's own list of where it operates. Reading the
+   * distinct values back is therefore the whole truth about which branches
+   * exist, and keeps the filter from offering one nobody has ever applied to
+   * or from hardcoding a list that would go stale the day a branch opened.
+   */
+  app.get("/api/v1/admin/newcomers/branches", async (c) => {
+    await adminUser(c);
+    const rows = await c.env.DB.prepare(
+      "SELECT DISTINCT branch FROM newcomer_applications WHERE branch <> '' ORDER BY branch COLLATE NOCASE",
+    ).all<{ branch: string }>();
+    return c.json({ items: rows.results.map((row) => row.branch) });
+  });
+
   app.get("/api/v1/admin/newcomers/:id", async (c) => {
     await adminUser(c);
     const item = await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE id=?").bind(c.req.param("id")).first<Record<string, string>>();

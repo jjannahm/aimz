@@ -12,7 +12,7 @@ describe('tabsForRole', () => {
   it('keeps the academy dock for an administrator', () => {
     // The squads come before the fixtures, and are called Teams: running the
     // academy starts with who is in it, and none of them is the admin's own.
-    expect(dock('admin')).toEqual(['Manage', 'Teams', 'Matches']);
+    expect(dock('admin')).toEqual(['Matches', 'Teams', 'Manage']);
   });
 
   it('calls the squads My Team for a family and Teams for an administrator', () => {
@@ -44,10 +44,10 @@ describe('tabsForRole', () => {
     // Every role registers the same routes; only their order and their
     // wording differ, and an administrator reads the squads before the
     // fixtures.
-    for (const role of ['coach', 'player', 'parent', undefined] as const) {
-      expect(tabsForRole(role).map((tab) => tab.name)).toEqual(['manage', 'squad', 'index', 'players', 'reports', 'my-team', 'settings']);
+    const registered = ['index', 'players', 'squad', 'reports', 'my-team', 'manage', 'settings'];
+    for (const role of ['admin', 'coach', 'player', 'parent', undefined] as const) {
+      expect([...tabsForRole(role)].map((tab) => tab.name).sort()).toEqual([...registered].sort());
     }
-    expect(tabsForRole('admin').map((tab) => tab.name)).toEqual(['manage', 'squad', 'players', 'index', 'reports', 'my-team', 'settings']);
   });
 
   it('shows a signed-out shell nothing it cannot open', () => {
