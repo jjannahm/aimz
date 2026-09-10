@@ -2,18 +2,43 @@ import { useQuery } from '@tanstack/react-query';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { FlatCard } from '@/src/components/FlatCard';
-import { StatGrid, type Stat } from '@/src/components/StatGrid';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
 import { FEE_STANDING, FEE_TONE } from '@/src/lib/feeStatus';
-import { formatEgp, formatEgpRound } from '@/src/lib/money';
+import { amountOnly, formatEgp, monthName } from '@/src/lib/money';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { FeeStatus } from '@/src/types/api';
 
 /** `2026-09-01` reads as `1 Sep 2026`. */
 const shortDate = (date: string) => new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+
+/**
+ * The three totals across the top.
+ *
+ * Its own row rather than the shared `StatGrid`: money needs more room than a
+ * count of goals, and the currency is said once underneath instead of three
+ * times beside figures that then have nowhere to go. A figure is never
+ * truncated — it wraps to a second line before it is cut, because half an
+ * amount is worse than a taller card.
+ */
+function Totals({ due, paid, outstanding, overdue }: { due: number; paid: number; outstanding: number; overdue: boolean }) {
+  const styles = useThemedStyles(stylesheet);
+  const colors = useColors();
+  const figures = [
+    { key: 'due', label: 'Total due', tone: colors.textPrimary, value: due },
+    { key: 'paid', label: 'Total paid', tone: colors.live, value: paid },
+    { key: 'outstanding', label: overdue ? 'Outstanding' : 'Outstanding', tone: outstanding > 0 ? colors.error : colors.textPrimary, value: outstanding },
+  ];
+  return <FlatCard radius={theme.radius.md} style={styles.totals}>
+    <View style={styles.totalsRow}>{figures.map((figure, index) => <View key={figure.key} style={[styles.total, index > 0 && styles.totalDivided]}>
+      <Text adjustsFontSizeToFit minimumFontScale={0.8} numberOfLines={1} style={[styles.totalValue, { color: figure.tone }]}>{amountOnly(figure.value)}</Text>
+      <Text numberOfLines={2} style={styles.totalLabel}>{figure.label}</Text>
+    </View>)}</View>
+    <Text style={styles.currency}>All amounts in EGP</Text>
+  </FlatCard>;
+}
 
 function Standing({ status }: { status: FeeStatus }) {
   const styles = useThemedStyles(stylesheet);
@@ -48,22 +73,14 @@ export function FinancialsPanel({ playerId }: { playerId: string }) {
   if (query.isError || !query.data) return <ErrorState message={(query.error as ApiError)?.message ?? 'Fees not found.'} onRetry={() => query.refetch()} />;
 
   const { summary, items } = query.data;
-  // Rounded on the summary, exact on each charge: the three figures at the top
-  // are for taking in at a glance, and the pounds are what matter there. A
-  // single charge is a specific amount somebody has to pay.
-  const totals: Stat[] = [
-    { key: 'charged', label: 'Total due', value: formatEgpRound(summary.charged_piastres) },
-    { key: 'paid', label: 'Total paid', value: formatEgpRound(summary.paid_piastres), tone: colors.live },
-    {
-      key: 'outstanding',
-      label: summary.overdue > 0 ? 'Outstanding, overdue' : 'Outstanding',
-      value: formatEgpRound(summary.outstanding_piastres),
-      tone: summary.outstanding_piastres > 0 ? colors.error : undefined,
-    },
-  ];
 
   return <View style={styles.stack}>
-    {items.length ? <StatGrid stats={totals} /> : null}
+    {items.length ? <Totals
+      due={summary.charged_piastres}
+      outstanding={summary.outstanding_piastres}
+      overdue={summary.overdue > 0}
+      paid={summary.paid_piastres}
+    /> : null}
 
     <Text accessibilityRole="header" style={styles.heading}>Payment history</Text>
     {!items.length
@@ -72,10 +89,23 @@ export function FinancialsPanel({ playerId }: { playerId: string }) {
       </FlatCard>
       : items.map((charge) => <FlatCard key={charge.id} radius={theme.radius.md} style={styles.charge}>
         <View style={styles.chargeHead}>
-          <Text numberOfLines={2} style={styles.label}>{charge.label}</Text>
+          <Text numberOfLines={2} style={styles.label}>
+            {charge.label}{charge.period ? ` · ${monthName(charge.period)}` : ''}
+          </Text>
           <Standing status={charge.status} />
         </View>
-        <Text style={styles.due}>Due {shortDate(charge.due_on)}</Text>
+        <Text style={styles.due}>
+          {charge.status === 'not_due' ? `Falls due after ${charge.sessions_required} sessions` : `Due ${shortDate(charge.due_on)}`}
+        </Text>
+
+        {/* What the month has actually been earned by. Only a subscription has
+          * one: a kit is a kit whether or not anybody trained. */}
+        {charge.sessions_attended === null ? null : <Text style={styles.sessions}>
+          Training sessions: <Text style={styles.sessionsCount}>{charge.sessions_attended}</Text>
+          {charge.sessions_required !== null && charge.sessions_attended < charge.sessions_required
+            ? <Text style={styles.sessionsOf}> of {charge.sessions_required}</Text>
+            : null}
+        </Text>}
 
         <View style={styles.figures}>
           <View style={styles.figure}><Text style={styles.figureLabel}>Due</Text><Text style={styles.figureValue}>{formatEgp(charge.amount_piastres)}</Text></View>
@@ -105,6 +135,21 @@ export function FinancialsPanel({ playerId }: { playerId: string }) {
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   stack: { gap: theme.spacing.sm },
   heading: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 1, marginTop: theme.spacing.xs, textTransform: 'uppercase' },
+
+  // The totals get their own card and their own air: three amounts crowded
+  // into a tight row is the thing this replaces.
+  totals: { padding: 0 },
+  totalsRow: { flexDirection: 'row' },
+  total: { alignItems: 'center', flexBasis: '33.33%', gap: 4, minWidth: 0, paddingHorizontal: theme.spacing.sm, paddingVertical: theme.spacing.md },
+  totalDivided: { borderLeftColor: colors.border, borderLeftWidth: StyleSheet.hairlineWidth },
+  totalValue: { fontFamily: theme.font.monoBold, fontSize: theme.type.body, fontVariant: ['tabular-nums'] },
+  totalLabel: { color: colors.textMuted, fontSize: theme.type.caption, textAlign: 'center' },
+  // Said once, quietly, instead of three times beside the figures.
+  currency: { borderTopColor: colors.border, borderTopWidth: StyleSheet.hairlineWidth, color: colors.textMuted, fontSize: theme.type.caption, paddingBottom: theme.spacing.sm, paddingTop: theme.spacing.sm, textAlign: 'center' },
+
+  sessions: { color: colors.textSecondary, fontFamily: theme.font.regular, marginTop: 2 },
+  sessionsCount: { color: colors.textPrimary, fontFamily: theme.font.monoBold },
+  sessionsOf: { color: colors.textMuted },
 
   charge: { gap: 4, padding: theme.size.cardPadding },
   chargeHead: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },

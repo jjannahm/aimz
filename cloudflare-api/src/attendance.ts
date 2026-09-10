@@ -28,3 +28,30 @@ export const attendedSql = (alias?: string) => `SUM(CASE WHEN ${column(alias)} I
 
 /** `SUM(...)` over the late marks alone, so punctuality stays visible. */
 export const lateSql = (alias?: string) => `SUM(CASE WHEN ${column(alias)} = 'late' THEN 1 ELSE 0 END)`;
+
+/**
+ * How many sessions each player turned up to, month by month.
+ *
+ * The one query behind the rule that a monthly subscription falls due on the
+ * fourth attended session. Keyed `playerId|YYYY-MM` so a caller holding a
+ * mixed list of charges can look each one up without a query per row.
+ *
+ * Present and late both count, by the same rule as everywhere else — she was
+ * there. Sessions are grouped by the month they started in, which is the month
+ * a subscription covers.
+ */
+export async function attendedByMonth(env: Env, playerIds: string[]): Promise<Map<string, number>> {
+  const tallies = new Map<string, number>();
+  if (!playerIds.length) return tallies;
+  const rows = await env.DB.prepare(
+    `SELECT a.player_id, substr(s.starts_at, 1, 7) period, COUNT(*) attended
+       FROM training_attendance a JOIN training_sessions s ON s.id = a.training_session_id
+      WHERE a.player_id IN (${playerIds.map(() => "?").join(",")}) AND ${attendedCondition("a")}
+      GROUP BY a.player_id, period`,
+  ).bind(...playerIds).all<{ player_id: string; period: string; attended: number }>();
+  for (const row of rows.results) tallies.set(`${row.player_id}|${row.period}`, row.attended);
+  return tallies;
+}
+
+/** The `WHERE` half of the same rule, for counting rather than summing. */
+export const attendedCondition = (alias?: string) => `${column(alias)} IN (${list(ATTENDED)})`;

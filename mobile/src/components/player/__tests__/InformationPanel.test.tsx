@@ -28,6 +28,7 @@ const charge = (over = {}) => ({
   id: 'f-1', player_id: 'p-1', player, team_id: 't-1', fee_plan_id: null, period: '2026-09',
   label: 'September fees', amount_piastres: 500000, paid_piastres: 200000, outstanding_piastres: 300000,
   status: 'partial' as const, due_on: '2026-09-01', voided_at: null, void_reason: null,
+  sessions_attended: 4, sessions_required: 4,
   created_at: '', updated_at: '',
   payments: [{ id: 'pay-1', fee_charge_id: 'f-1', amount_piastres: 200000, paid_on: '2026-09-03', method: 'cash' as const, note: 'Half now', recorded_by_name: 'Admin', created_at: '' }],
   ...over,
@@ -77,9 +78,15 @@ describe('InformationPanel', () => {
     const screen = await render(<InformationPanel playerId="p-1" />, { wrapper });
     await fireEvent.press(screen.getByRole('tab', { name: 'Financials' }));
 
-    await waitFor(() => expect(screen.getByText('September fees')).toBeTruthy());
+    // The billing month is said the way somebody says it, never as 2026-09.
+    await waitFor(() => expect(screen.getByText('September fees · September 2026')).toBeTruthy());
     expect(screen.getByText('Total due')).toBeTruthy();
     expect(screen.getByText('Part paid')).toBeTruthy();
+    // What the month was earned by, and the currency said once rather than
+    // three times beside figures that then have nowhere to go.
+    expect(screen.getByText(/Training sessions:/u)).toBeTruthy();
+    expect(screen.getByText('All amounts in EGP')).toBeTruthy();
+    expect(screen.queryByText(/5,000 EGP/u)).toBeNull();
     // The month's short form varies with the platform's date data, so this asks
     // that the due date is shown rather than exactly how it is abbreviated.
     expect(screen.getByText(/^Due 1 Sept?\s+2026$/u)).toBeTruthy();
@@ -98,6 +105,22 @@ describe('InformationPanel', () => {
 
     await waitFor(() => expect(screen.getByText('Cancelled')).toBeTruthy());
     expect(screen.getByText(/Nothing is owed on it/)).toBeTruthy();
+  });
+
+  it('holds a month back until it has been trained for', async () => {
+    jest.mocked(api.playerFinancials).mockResolvedValue({
+      player,
+      // Not yet earned, so it stays out of the totals as well.
+      summary: { charged_piastres: 0, paid_piastres: 0, outstanding_piastres: 0, overdue: 0 },
+      items: [charge({ paid_piastres: 0, payments: [], sessions_attended: 3, status: 'not_due' })],
+    });
+    const screen = await render(<InformationPanel playerId="p-1" />, { wrapper });
+    await fireEvent.press(screen.getByRole('tab', { name: 'Financials' }));
+
+    await waitFor(() => expect(screen.getByText('Not due yet')).toBeTruthy());
+    // The date is not the point until the month is earned, so it says what is.
+    expect(screen.getByText('Falls due after 4 sessions')).toBeTruthy();
+    expect(screen.getByText(/of 4/u)).toBeTruthy();
   });
 
   it('says so plainly when nothing has been charged', async () => {

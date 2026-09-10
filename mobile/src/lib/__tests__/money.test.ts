@@ -1,4 +1,4 @@
-import { formatEgp, formatEgpRound, parseEgp, poundsOf } from '@/src/lib/money';
+import { amountOnly, formatEgp, formatEgpRound, monthName, parseEgp, poundsOf } from '@/src/lib/money';
 
 describe('formatEgp', () => {
   it('reads a whole subscription as pounds', () => {
@@ -61,5 +61,27 @@ describe('formatEgpRound', () => {
   it('marks a refund the same way the exact figure does', () => {
     expect(formatEgpRound(-5000)).toBe('−50 EGP');
     expect(formatEgpRound(-1230)).toBe('−12.30 EGP');
+  });
+});
+
+describe('amountOnly', () => {
+  it('drops the currency, and the decimals when there are none', () => {
+    expect(amountOnly(500000)).toBe('5,000');
+    expect(amountOnly(250050)).toBe('2,500.50');
+    expect(amountOnly(0)).toBe('0');
+    expect(amountOnly(-250000)).toBe('−2,500');
+  });
+});
+
+describe('monthName', () => {
+  it('says a billing month the way somebody would', () => {
+    expect(monthName('2026-09')).toBe('September 2026');
+    expect(monthName('2026-01')).toBe('January 2026');
+  });
+
+  it('leaves alone anything that is not a month', () => {
+    // Better to show the odd value than to turn it into a confident wrong date.
+    expect(monthName('2026-13')).toBe('2026-13');
+    expect(monthName('')).toBe('');
   });
 });

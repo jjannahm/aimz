@@ -355,7 +355,12 @@ export type SharedReport = {
 };
 
 /** Where a charge stands. Worked out by the server on every read. */
-export type FeeStatus = 'void' | 'paid' | 'partial' | 'overdue' | 'unpaid';
+/**
+ * Where a charge stands, worked out by the API on every read. `not_due` is a
+ * monthly subscription whose month has not yet been earned: the academy
+ * charges for coaching, so a month falls due on the fourth attended session.
+ */
+export type FeeStatus = 'void' | 'paid' | 'partial' | 'overdue' | 'unpaid' | 'not_due';
 export type PaymentMethod = 'cash' | 'instapay' | 'bank_transfer' | 'other';
 
 /** A recurring monthly amount for one squad. Money is whole piastres. */
@@ -481,7 +486,12 @@ export type PlayerPersonalDetails = {
 };
 
 /** One charge on a family's record, with what has been paid against it. */
-export type PlayerFeeCharge = FeeCharge & { payments: FeePayment[] };
+export type PlayerFeeCharge = FeeCharge & {
+  payments: FeePayment[];
+  /** Sessions attended in the month this covers; null for a one-off charge. */
+  sessions_attended: number | null;
+  sessions_required: number | null;
+};
 
 /**
  * A family's money, as a view of the academy's ledger. Voided charges are

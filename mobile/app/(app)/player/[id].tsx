@@ -63,7 +63,9 @@ export default function PlayerDetailScreen() {
     {canSeeInformation === true ? <SegmentedControl label="Which half of the profile" onChange={setSide} options={[STATS, INFORMATION]} value={showing_side} /> : null}
 
     {showing_side === 'information' ? <InformationPanel playerId={id} /> : <>
-    {plays ? <SegmentedControl label="Which statistics" onChange={setHalf} options={[TRAINING, MATCH]} value={showing} /> : null}
+    {plays ? <View style={styles.subTabs}>
+      <SegmentedControl label="Which statistics" onChange={setHalf} options={[TRAINING, MATCH]} tone="quiet" value={showing} />
+    </View> : null}
 
     {showing === 'match' ? <>
       <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />
@@ -84,6 +86,9 @@ export default function PlayerDetailScreen() {
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  // Set in from the main tabs above, and lighter than them, so two capsules do
+  // not read as one control broken in half.
+  subTabs: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.xs },
   note: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, padding: theme.spacing.md },
   noteText: { color: colors.textSecondary, lineHeight: 22 },
 });

@@ -48,3 +48,34 @@ export function formatEgpRound(piastres: number): string {
     ? `${piastres < 0 ? '−' : ''}${new Intl.NumberFormat('en-EG').format(Math.abs(piastres) / PIASTRES_IN_POUND)} EGP`
     : formatEgp(piastres);
 }
+
+/**
+ * The amount alone, grouped and without a currency: `5,000`, or `2,500.50`.
+ *
+ * For a place where the currency is already established by everything around
+ * it — a row of totals on a fees screen — and repeating EGP three times costs
+ * the room the figures need to be read. Decimals appear only when the amount
+ * has any, so whole pounds stay short.
+ */
+export function amountOnly(piastres: number): string {
+  const negative = piastres < 0;
+  const pounds = Math.abs(piastres) / PIASTRES_IN_POUND;
+  const grouped = piastres % PIASTRES_IN_POUND === 0
+    ? new Intl.NumberFormat('en-EG').format(pounds)
+    : formatter.format(pounds);
+  return `${negative ? '−' : ''}${grouped}`;
+}
+
+/**
+ * A billing month as somebody says it: `2026-09` reads as `September 2026`.
+ *
+ * The API stores the month sortably; nobody should ever be shown that. Left
+ * alone if it is not a month, so an unexpected value shows itself rather than
+ * turning into a wrong date.
+ */
+export function monthName(period: string): string {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/u.exec(period);
+  if (!match) return period;
+  const month = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, 1));
+  return month.toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC', year: 'numeric' });
+}
