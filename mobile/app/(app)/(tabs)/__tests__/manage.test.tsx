@@ -140,14 +140,13 @@ describe('ManageScreen navigation', () => {
    * of Settings must not have handed it to anybody else. Matches, which a coach
    * could always reach under Schedule, must not have been taken away either.
    */
-  it('keeps Activity to administrators and leaves a coach her matches', async () => {
+  it('keeps the academy-wide pills away from a coach', async () => {
     mockRole = 'coach';
     const screen = await render(<ManageScreen />, { wrapper });
     await screen.findByTestId('manage-tab-schedule');
 
-    expect(pills(screen)).toEqual(['Schedule', 'Matches', 'Announcements', 'Reports', 'Kit']);
-    await fireEvent.press(screen.getByTestId('manage-tab-matches'));
-    expect(await screen.findByText('Add matches')).toBeTruthy();
+    expect(pills(screen)).toEqual(['Schedule', 'Announcements', 'Reports', 'Kit']);
+    expect(screen.queryByTestId('manage-tab-matches')).toBeNull();
     expect(screen.queryByTestId('manage-tab-activity')).toBeNull();
   });
 

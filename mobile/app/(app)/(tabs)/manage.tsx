@@ -70,6 +70,10 @@ const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Sq
  * Newcomers is people who have not joined yet, which is the academy's intake
  * rather than any squad's football.
  *
+ * Matches are the academy's fixtures: who plays whom, in what, and when. A
+ * coach reads her own squad's under Schedule and works them from the match
+ * itself; making the calendar is not hers.
+ *
  * Activity is the audit log, which was only ever an administrator's to read:
  * the screen behind it turns everybody else away, and it says what every
  * administrator did across the academy rather than anything about a squad.
@@ -83,7 +87,7 @@ const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Sq
  * be a way to find that out the hard way. What is left is the squad's own
  * week: its schedule, its notices, its reports and its kit.
  */
-const ACADEMY_ONLY: Tab[] = ['teams', 'competitions', 'players', 'invites', 'fees', 'newcomers', 'activity'];
+const ACADEMY_ONLY: Tab[] = ['teams', 'competitions', 'players', 'matches', 'invites', 'fees', 'newcomers', 'activity'];
 /** Whose squads the Squads pill is showing. */
 const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
 /** What the Reports pill is showing: a written report, or the numbers behind one. */
