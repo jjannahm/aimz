@@ -1,53 +1,16 @@
--- Shared newcomer intake and squad-scoped coach accounts. SQLite cannot widen
--- the users.role CHECK in place, so preserve every dependent row while users is
--- rebuilt (the same pattern used when parent accounts were introduced).
-CREATE TABLE newcomer_users_backup AS SELECT * FROM users;
-CREATE TABLE newcomer_refresh_backup AS SELECT * FROM refresh_sessions;
-CREATE TABLE newcomer_children_backup AS SELECT * FROM user_children;
-CREATE TABLE newcomer_expiry_backup AS SELECT * FROM account_expiry;
-CREATE TABLE newcomer_calendar_backup AS SELECT * FROM calendar_tokens;
-CREATE TABLE newcomer_invite_author_backup AS SELECT id,created_by_id FROM registration_invites WHERE created_by_id IS NOT NULL;
-CREATE TABLE newcomer_announcement_author_backup AS SELECT id,author_id FROM announcements WHERE author_id IS NOT NULL;
-CREATE TABLE newcomer_audit_actor_backup AS SELECT id,actor_id FROM audit_log WHERE actor_id IS NOT NULL;
-CREATE TABLE newcomer_payment_actor_backup AS SELECT id,recorded_by_id FROM fee_payments WHERE recorded_by_id IS NOT NULL;
-
-CREATE TABLE users_new (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
-  password_hash TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('player','admin','parent','coach')),
-  player_id TEXT UNIQUE REFERENCES players(id) ON DELETE SET NULL,
-  is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
-  onboarding_status TEXT NOT NULL DEFAULT 'approved' CHECK (onboarding_status IN ('pending','approved','declined')),
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
-INSERT INTO users_new(id,name,email,password_hash,role,player_id,is_active,onboarding_status,created_at,updated_at)
-  SELECT id,name,email,password_hash,role,player_id,is_active,'approved',created_at,updated_at FROM newcomer_users_backup;
-DROP TABLE users;
-ALTER TABLE users_new RENAME TO users;
-CREATE INDEX ix_users_email ON users(email);
-CREATE INDEX ix_users_role ON users(role);
+-- Newcomer intake, and the squad-scoped staff table coach accounts hang off.
+--
+-- Everything here is additive: one column appended, tables created. The single
+-- change SQLite will not make in place — widening the users.role CHECK to admit
+-- a coach — is 0033's, on its own, because it has to drop and rebuild users and
+-- that is not a thing to do halfway through creating five other tables. Split
+-- this way, a failure there leaves everything below already committed and the
+-- rebuild retryable by itself.
+--
+-- onboarding_status carries no CHECK yet for the same reason: a constraint
+-- cannot be added to a live column. 0033's rebuild is where it gains one.
+ALTER TABLE users ADD COLUMN onboarding_status TEXT NOT NULL DEFAULT 'approved';
 CREATE INDEX ix_users_onboarding_status ON users(onboarding_status);
-
-INSERT OR IGNORE INTO refresh_sessions SELECT * FROM newcomer_refresh_backup;
-INSERT OR IGNORE INTO user_children SELECT * FROM newcomer_children_backup;
-INSERT OR IGNORE INTO account_expiry SELECT * FROM newcomer_expiry_backup;
-INSERT OR IGNORE INTO calendar_tokens SELECT * FROM newcomer_calendar_backup;
-UPDATE registration_invites SET created_by_id=(SELECT created_by_id FROM newcomer_invite_author_backup b WHERE b.id=registration_invites.id) WHERE created_by_id IS NULL;
-UPDATE announcements SET author_id=(SELECT author_id FROM newcomer_announcement_author_backup b WHERE b.id=announcements.id) WHERE author_id IS NULL;
-UPDATE audit_log SET actor_id=(SELECT actor_id FROM newcomer_audit_actor_backup b WHERE b.id=audit_log.id) WHERE actor_id IS NULL;
-UPDATE fee_payments SET recorded_by_id=(SELECT recorded_by_id FROM newcomer_payment_actor_backup b WHERE b.id=fee_payments.id) WHERE recorded_by_id IS NULL;
-DROP TABLE newcomer_users_backup;
-DROP TABLE newcomer_refresh_backup;
-DROP TABLE newcomer_children_backup;
-DROP TABLE newcomer_expiry_backup;
-DROP TABLE newcomer_calendar_backup;
-DROP TABLE newcomer_invite_author_backup;
-DROP TABLE newcomer_announcement_author_backup;
-DROP TABLE newcomer_audit_actor_backup;
-DROP TABLE newcomer_payment_actor_backup;
 
 ALTER TABLE registration_invites ADD COLUMN team_id TEXT REFERENCES teams(id) ON DELETE SET NULL;
 ALTER TABLE registration_invites ADD COLUMN application_id TEXT;

@@ -386,7 +386,8 @@ describe('ManageScreen invite player picker', () => {
     await fireEvent.changeText(await screen.findByLabelText('Invite label'), 'Family invite');
     fireEvent.press(screen.getByRole('button', { name: 'Invite type' }));
     await fireEvent.press(await screen.findByRole('button', { name: 'Parent' }));
-    await fireEvent.press(screen.getByText('Add item'));
+    // An invitation is generated rather than added, and says so on its button.
+    await fireEvent.press(screen.getByText('Generate invitation'));
     expect(await screen.findByText('Choose at least one child.')).toBeTruthy();
     expect(api.createInvite).not.toHaveBeenCalled();
   });

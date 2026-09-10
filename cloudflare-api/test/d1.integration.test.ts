@@ -30,7 +30,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0031_training_performance.sql');
+    expect(applied.results.at(-1)?.name).toBe('0033_coach_role.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -197,10 +197,16 @@ describe('parent accounts', () => {
   });
 });
 
-// 0023 rebuilds users, and DROP TABLE fires the foreign key actions pointing at
-// it. Everything below would be lost to that — the parent links first among them
-// — if the migration's copy-aside step were ever dropped. Run it a second time
-// over live-looking rows to prove the step earns its place.
+// Rebuilding users fires every foreign key action pointing at it, and DROP
+// TABLE is what does the firing. Everything below would be lost to that — the
+// parent links first among them — if the migration's copy-aside step were ever
+// dropped. Run the rebuild a second time over live-looking rows to prove the
+// step earns its place.
+//
+// It replays the newest rebuild rather than the first one. Replaying 0023 left
+// users in its 0023 shape — no onboarding_status, a role CHECK predating coach
+// — for every test that ran afterwards, which is why the calendar suite below
+// could not register anybody.
 describe('the users rebuild keeps what points at it', () => {
   it('carries links, sessions and authorship through the migration', async () => {
     const admin = await seedUser('admin');
@@ -214,8 +220,8 @@ describe('the users rebuild keeps what points at it', () => {
     expect(sessionsBefore?.n).toBe(1);
 
     const migrations = JSON.parse(testEnv.TEST_MIGRATIONS) as { name: string; queries: string[] }[];
-    const rebuild = migrations.find((migration) => migration.name === '0023_parent_role.sql');
-    expect(rebuild, 'the parent-role migration is in the chain').toBeTruthy();
+    const rebuild = migrations.find((migration) => migration.name === '0033_coach_role.sql');
+    expect(rebuild, 'the coach-role migration is in the chain').toBeTruthy();
     for (const query of rebuild!.queries) await testEnv.DB.prepare(query).run();
 
     const links = await testEnv.DB.prepare('SELECT player_id FROM user_children WHERE user_id=?').bind(parent.user.id).all<{ player_id: string }>();
@@ -228,8 +234,10 @@ describe('the users rebuild keeps what points at it', () => {
     // And the point of the rebuild: the widened role still holds afterwards.
     const roles = await testEnv.DB.prepare('SELECT role FROM users WHERE id=?').bind(parent.user.id).first<{ role: string }>();
     expect(roles?.role).toBe('parent');
+    // A coach is a role now, so the one nobody has defined has to be some
+    // other word for this to still be proving anything.
     const rejected = testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, 1, ?, ?)')
-      .bind(crypto.randomUUID(), 'Nobody', 'nobody@aimz.test', 'unused', 'coach', now, now).run();
+      .bind(crypto.randomUUID(), 'Nobody', 'nobody@aimz.test', 'unused', 'referee', now, now).run();
     await expect(rejected, 'the CHECK still refuses a role nobody defined').rejects.toThrow();
   });
 });
