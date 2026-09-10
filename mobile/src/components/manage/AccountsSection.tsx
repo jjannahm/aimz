@@ -163,7 +163,7 @@ function NewAccount() {
   const create = useMutation({
     mutationFn: () => {
       if (!draft.name.trim() || !draft.email.trim()) throw new Error('Enter a name and an email address.');
-      if (draft.password.length < 10) throw new Error('Choose a password of at least 10 characters.');
+      if (draft.password.length < 8) throw new Error('Choose a password of at least 8 characters.');
       return api.createUser({
         name: draft.name.trim(), email: draft.email.trim(), password: draft.password,
         role: draft.role, expires_at: deadlineIn(draft.hours === '' ? null : Number(draft.hours)),
@@ -175,7 +175,7 @@ function NewAccount() {
   return <CollapsibleCard onOpenChange={setOpen} open={open} summary="A login handed out for a set length of time." title="Create an account" tone="raised">
     <FormField label="Name" onChangeText={(name) => setDraft((current) => ({ ...current, name }))} value={draft.name} />
     <FormField autoCapitalize="none" inputMode="email" keyboardType="email-address" label="Email" onChangeText={(email) => setDraft((current) => ({ ...current, email }))} value={draft.email} />
-    <FormField hint="At least 10 characters. You will have to pass this on yourself." label="Password" onChangeText={(password) => setDraft((current) => ({ ...current, password }))} secureTextEntry value={draft.password} />
+    <FormField hint="At least 8 characters. You will have to pass this on yourself." label="Password" onChangeText={(password) => setDraft((current) => ({ ...current, password }))} secureTextEntry value={draft.password} />
     <ChoiceField
       label="Role"
       onChange={(role) => setDraft((current) => ({ ...current, role: role as UserRole }))}
