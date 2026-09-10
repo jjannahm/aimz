@@ -28,6 +28,8 @@ export const cacheKeys = {
   attendanceRequests: ['attendance-requests'] as const,
   fees: ['fees'] as const,
   reports: ['player-reports'] as const,
+  matchReport: (id: string) => ['match-report', id] as const,
+  allMatchReports: ['match-report'] as const,
   trainingStats: ['training-stats'] as const,
   rosterDetails: ['roster-details'] as const,
   /** A player's own details, and her family's money. */
@@ -39,7 +41,7 @@ export const cacheKeys = {
   allLiveMatches: ['live-match'] as const,
 };
 
-type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award' | 'bracket' | 'account' | 'training' | 'announcement' | 'availability' | 'attendance' | 'attendance-request' | 'roster' | 'fee' | 'report' | 'training-stat';
+type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award' | 'bracket' | 'account' | 'training' | 'announcement' | 'availability' | 'attendance' | 'attendance-request' | 'match-report' | 'roster' | 'fee' | 'report' | 'training-stat';
 
 /**
  * What a write touches, including everything derived from it.
@@ -54,8 +56,8 @@ const affects: Record<Entity, (readonly string[])[]> = {
   team: [cacheKeys.teams, cacheKeys.players, cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.allLiveMatches, cacheKeys.groups, cacheKeys.bracket, cacheKeys.training, cacheKeys.announcements],
   player: [cacheKeys.players, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.allLiveMatches, cacheKeys.accounts, cacheKeys.availability],
   competition: [cacheKeys.competitions, cacheKeys.matches, cacheKeys.standings, cacheKeys.awards, cacheKeys.groups, cacheKeys.bracket],
-  match: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.allLiveMatches, cacheKeys.bracket],
-  event: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.auditLog, cacheKeys.allLiveMatches, cacheKeys.bracket],
+  match: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.allLiveMatches, cacheKeys.bracket, cacheKeys.allMatchReports],
+  event: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.auditLog, cacheKeys.allLiveMatches, cacheKeys.bracket, cacheKeys.allMatchReports],
   bracket: [cacheKeys.bracket, cacheKeys.groups, cacheKeys.standings, cacheKeys.teams],
   lineup: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches],
   invite: [cacheKeys.invites],
@@ -74,11 +76,12 @@ const affects: Record<Entity, (readonly string[])[]> = {
   // same rows, so any one of them changing clears the lot.
   fee: [cacheKeys.fees, cacheKeys.financials],
   report: [cacheKeys.reports],
+  'match-report': [cacheKeys.allMatchReports],
   // A reading changes the session's sheet and every total built on it.
   'training-stat': [cacheKeys.trainingStats, cacheKeys.playerStats],
   roster: [cacheKeys.rosterDetails, cacheKeys.players, cacheKeys.personalDetails],
   // Naming a man of the match changes the match, not the table or the scorers.
-  award: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches],
+  award: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches, cacheKeys.allMatchReports],
 };
 
 /**

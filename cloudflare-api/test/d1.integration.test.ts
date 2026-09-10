@@ -38,7 +38,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0042_drop_event_assignments.sql');
+    expect(applied.results.at(-1)?.name).toBe('0043_match_reports.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
     // 0017 raised the volunteer assignments table and 0042 drops it. Both are
     // still in the chain, so the schema a fresh database ends on is the test:
@@ -2599,5 +2599,133 @@ describe('activity retention', () => {
     expect(kept?.id).toBe(team.id);
     const gone = await testEnv.DB.prepare('SELECT id FROM audit_log WHERE id=?').bind('stale').first();
     expect(gone).toBeNull();
+  });
+});
+
+describe('the match report and its link', () => {
+  /**
+   * A report for a finished match, shared, opened, re-linked and withdrawn.
+   *
+   * The whole point of the address is that it works with no session at all, so
+   * every read of the link below is deliberately unauthenticated.
+   */
+  it('builds a report from what the match already recorded, and shares it behind a private address', async () => {
+    const admin = await seedUser('admin');
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: 'Girls U12', season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U12', is_aimz: true, age_group: 'U12', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: 'Wadi Degla', is_aimz: false, competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const striker = await (await request('/api/v1/players', json('POST', { name: 'Nour Hassan', team_id: squad.id, position: 'ST', jersey_number: 9 }, admin.token))).json<{ id: string }>();
+    const winger = await (await request('/api/v1/players', json('POST', { name: 'Habiba Tarek', team_id: squad.id, position: 'RW', jersey_number: 7 }, admin.token))).json<{ id: string }>();
+
+    const match = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: opponent.id, kickoff_datetime: now, venue: 'AIMZ Ground', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    await request(`/api/v1/matches/${match.id}/lineup`, json('PUT', [
+      { player_id: striker.id, team_id: squad.id, is_starter: true, position: 'ST', is_captain: true },
+      { player_id: winger.id, team_id: squad.id, is_starter: false, position: 'RW' },
+    ], admin.token));
+    await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action: 'start_match' }, admin.token));
+    await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'goal', minute: 18, team_id: squad.id, player_id: striker.id, secondary_player_id: winger.id, client_operation_id: 'report-goal-18' }, admin.token));
+    await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'yellow_card', minute: 40, team_id: squad.id, player_id: striker.id, client_operation_id: 'report-card-40' }, admin.token));
+    for (const action of ['halftime', 'start_second_half', 'finish_match']) {
+      await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action }, admin.token));
+    }
+    await request(`/api/v1/matches/${match.id}/man-of-the-match`, json('POST', { player_id: striker.id }, admin.token));
+
+    // Nothing was typed into a report. Everything below came off the match.
+    const summary = await (await request(`/api/v1/matches/${match.id}/report`, json('GET', undefined, admin.token))).json<{
+      snapshot: { match: Record<string, unknown>; goals: unknown[]; cards: unknown[]; squads: { team: string; players: Record<string, unknown>[] }[] };
+      share_token: string | null;
+    }>();
+    expect(summary.share_token).toBeNull();
+    expect(summary.snapshot.match).toMatchObject({ home: 'AIMZ U12', away: 'Wadi Degla', home_score: 1, away_score: 0, competition: 'Girls U12', man_of_the_match: 'Nour Hassan' });
+    expect(summary.snapshot.goals).toEqual([expect.objectContaining({ minute: 18, scorer: 'Nour Hassan', assist: 'Habiba Tarek', team: 'AIMZ U12', own_goal: false })]);
+    expect(summary.snapshot.cards).toEqual([expect.objectContaining({ minute: 40, player: 'Nour Hassan', colour: 'yellow' })]);
+    expect(summary.snapshot.squads).toHaveLength(1);
+    expect(summary.snapshot.squads[0]).toMatchObject({ team: 'AIMZ U12' });
+    expect(summary.snapshot.squads[0]?.players).toContainEqual(expect.objectContaining({ name: 'Nour Hassan', started: true, captain: true, goals: 1 }));
+
+    // A scheduled match has nothing to report on yet.
+    const early = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: opponent.id, kickoff_datetime: now, venue: 'AIMZ Ground', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    expect((await request(`/api/v1/matches/${early.id}/report/publish`, json('POST', {}, admin.token))).status).toBe(409);
+
+    const published = await (await request(`/api/v1/matches/${match.id}/report/publish`, json('POST', {}, admin.token))).json<{ share_token: string; published_by_name: string }>();
+    expect(published.share_token).toHaveLength(43);
+
+    // The address answers with no session, and stamps that it was opened.
+    const opened = await request(`/api/v1/match-reports/${published.share_token}`, json('GET'));
+    expect(opened.status).toBe(200);
+    expect(opened.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    const shared = await opened.json<Record<string, unknown>>();
+    expect(shared).toMatchObject({ published_by_name: expect.any(String) });
+    // No ids of any kind: a report forwarded on carries no keys to look
+    // anything else up with.
+    expect(JSON.stringify(shared)).not.toContain(match.id);
+    expect(JSON.stringify(shared)).not.toContain(striker.id);
+    expect(JSON.stringify(shared)).not.toContain(squad.id);
+
+    // A new link revokes the old address rather than editing it.
+    const rotated = await (await request(`/api/v1/matches/${match.id}/report/new-link`, json('POST', {}, admin.token))).json<{ share_token: string }>();
+    expect(rotated.share_token).not.toBe(published.share_token);
+    expect((await request(`/api/v1/match-reports/${published.share_token}`, json('GET'))).status).toBe(404);
+    expect((await request(`/api/v1/match-reports/${rotated.share_token}`, json('GET'))).status).toBe(200);
+
+    // Withdrawing takes the address away; the report itself is rebuilt on ask.
+    await request(`/api/v1/matches/${match.id}/report/withdraw`, json('POST', {}, admin.token));
+    expect((await request(`/api/v1/match-reports/${rotated.share_token}`, json('GET'))).status).toBe(404);
+    const after = await (await request(`/api/v1/matches/${match.id}/report`, json('GET', undefined, admin.token))).json<{ share_token: string | null; snapshot: { match: { home_score: number } } }>();
+    expect(after.share_token).toBeNull();
+    expect(after.snapshot.match.home_score).toBe(1);
+  });
+
+  /**
+   * A report already sent must not quietly change when the match does.
+   *
+   * The snapshot is what the address serves, so correcting a score after the
+   * fact leaves the link saying what it said until somebody publishes again.
+   */
+  it('keeps a shared report saying what it said, until it is published again', async () => {
+    const admin = await seedUser('admin');
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: 'Girls U15', season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U15', is_aimz: true, age_group: 'U15', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: 'Zamalek', is_aimz: false, competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const match = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: opponent.id, kickoff_datetime: now, venue: 'AIMZ Ground', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    for (const action of ['start_match', 'halftime', 'start_second_half', 'finish_match']) {
+      await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action }, admin.token));
+    }
+
+    const first = await (await request(`/api/v1/matches/${match.id}/report/publish`, json('POST', {}, admin.token))).json<{ share_token: string }>();
+    const asSent = await (await request(`/api/v1/match-reports/${first.share_token}`, json('GET'))).json<{ snapshot: { match: { home_score: number } } }>();
+    expect(asSent.snapshot.match.home_score).toBe(0);
+
+    await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'goal', minute: 70, team_id: squad.id, client_operation_id: 'late-correction' }, admin.token));
+
+    // The link still says 0. The summary in the app already says 1.
+    const stillSent = await (await request(`/api/v1/match-reports/${first.share_token}`, json('GET'))).json<{ snapshot: { match: { home_score: number } } }>();
+    expect(stillSent.snapshot.match.home_score).toBe(0);
+    const live = await (await request(`/api/v1/matches/${match.id}/report`, json('GET', undefined, admin.token))).json<{ snapshot: { match: { home_score: number } } }>();
+    expect(live.snapshot.match.home_score).toBe(1);
+
+    // Publishing again re-freezes the same address rather than minting one.
+    const again = await (await request(`/api/v1/matches/${match.id}/report/publish`, json('POST', {}, admin.token))).json<{ share_token: string }>();
+    expect(again.share_token).toBe(first.share_token);
+    const corrected = await (await request(`/api/v1/match-reports/${first.share_token}`, json('GET'))).json<{ snapshot: { match: { home_score: number } } }>();
+    expect(corrected.snapshot.match.home_score).toBe(1);
+  });
+
+  it('refuses to let a family share a match report', async () => {
+    const admin = await seedUser('admin');
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: 'Girls U16', season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U16', is_aimz: true, age_group: 'U16', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: 'Maadi SC', is_aimz: false, competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const player = await (await request('/api/v1/players', json('POST', { name: 'Jana Sherif', team_id: squad.id, position: 'CM' }, admin.token))).json<{ id: string }>();
+    const family = await seedUser('player', player.id);
+    const match = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: opponent.id, kickoff_datetime: now, venue: 'AIMZ Ground', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    for (const action of ['start_match', 'halftime', 'start_second_half', 'finish_match']) {
+      await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action }, admin.token));
+    }
+
+    // She can read the report — it is her own match.
+    expect((await request(`/api/v1/matches/${match.id}/report`, json('GET', undefined, family.token))).status).toBe(200);
+    // Sending it to anybody is the academy's decision, not hers.
+    expect((await request(`/api/v1/matches/${match.id}/report/publish`, json('POST', {}, family.token))).status).toBe(403);
   });
 });
