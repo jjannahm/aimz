@@ -6,6 +6,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useMyChildren } from '@/src/auth/useMyTeam';
+import { AppStatus, useOnTheApp } from '@/src/components/AppStatus';
 import { FlatCard } from '@/src/components/FlatCard';
 import { Screen } from '@/src/components/Screen';
 import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
@@ -123,11 +124,15 @@ function Chevron() {
   return <Ionicons accessibilityElementsHidden color={colors.textMuted} name="chevron-forward" size={20} />;
 }
 
-function PlayerRow({ player, subtitle, spoken, trailing, last }: { player: Player; subtitle: string; spoken?: string; trailing?: ReactNode; last?: boolean }) {
+function PlayerRow({ player, subtitle, spoken, trailing, last, onApp }: { player: Player; subtitle: string; spoken?: string; trailing?: ReactNode; last?: boolean; onApp?: boolean }) {
   const styles = useThemedStyles(stylesheet);
-  return <Pressable accessibilityLabel={`${player.name}, ${spoken ?? subtitle}`} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, last && styles.lastRow, pressed && styles.pressed]}>
+  // Spoken as part of the row rather than left to the badge's own label: the
+  // row is one button, and a reader hearing "Amina Adel, Central Midfielder"
+  // should not have to go looking for the rest of it.
+  const said = `${player.name}, ${spoken ?? subtitle}${onApp === undefined ? '' : onApp ? ', on the app' : ', no app'}`;
+  return <Pressable accessibilityLabel={said} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, last && styles.lastRow, pressed && styles.pressed]}>
     {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: mediaUrl(player.photo_url) }} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={40} />}
-    <View style={styles.copy}><Text style={styles.name}>{player.name}</Text><Text style={styles.position}>{subtitle}</Text></View>
+    <View style={styles.copy}><Text style={styles.name}>{player.name}</Text><Text style={styles.position}>{subtitle}</Text>{onApp === undefined ? null : <AppStatus on={onApp} />}</View>
     {trailing}
     <Chevron />
   </Pressable>;
@@ -160,9 +165,16 @@ function useRoster() {
 function TeamsSection() {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
+  const { user } = useAuth();
   const [openTeam, setOpenTeam] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const roster = useRoster();
+  // The same answer Manage · Players gives, under the name here too. Only an
+  // administrator can ask for it — the accounts list is their route — and a
+  // family reading this tab as My Team has no business knowing which of the
+  // other children have an account.
+  const onTheApp = useOnTheApp(user?.role === 'admin');
+  const appStatus = (playerId: string) => onTheApp.known ? onTheApp.ids.has(playerId) : undefined;
 
   // Everything is already in cache — useRoster reads every squad and every
   // player — so searching is filtering, not fetching.
@@ -196,6 +208,7 @@ function TeamsSection() {
         key={player.id}
         last={index === hits.length - 1}
         player={player}
+        onApp={appStatus(player.id)}
         spoken={`${positionName(player.position)}, ${team.name}`}
         subtitle={`${team.name} · ${positionName(player.position)}`}
       />)}</FlatCard> : <EmptyState body="Try part of a player's name, a squad, or a position." title="Nothing matches that" />}
@@ -221,7 +234,7 @@ function TeamsSection() {
       <Text style={styles.backText}>All teams</Text>
     </Pressable>
     <Text accessibilityRole="header" style={styles.squadTitle}>{open.team.name}</Text>
-    {open.players.length ? <FlatCard radius={theme.radius.md} style={styles.list}>{open.players.map((item, index) => <PlayerRow key={item.id} last={index === open.players.length - 1} player={item} spoken={`${positionName(item.position)}, number ${item.jersey_number ?? 'not assigned'}`} subtitle={positionName(item.position)} />)}</FlatCard> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
+    {open.players.length ? <FlatCard radius={theme.radius.md} style={styles.list}>{open.players.map((item, index) => <PlayerRow key={item.id} last={index === open.players.length - 1} onApp={appStatus(item.id)} player={item} spoken={`${positionName(item.position)}, number ${item.jersey_number ?? 'not assigned'}`} subtitle={positionName(item.position)} />)}</FlatCard> : <EmptyState body={copy.emptySquad(open.team.name)} title={`No ${open.team.name} players yet`} />}
   </View>;
 }
 
