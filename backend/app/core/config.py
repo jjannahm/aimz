@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     backend_cors_origins: list[AnyHttpUrl] = [
         AnyHttpUrl("http://localhost:8081"),
         AnyHttpUrl("http://localhost:19006"),
-        AnyHttpUrl("https://aimzegypt-73b85.web.app"),
+        AnyHttpUrl("https://aimz-egypt-staging.pages.dev"),
     ]
     sql_echo: bool = False
     db_pool_size: int = 3
@@ -69,9 +69,9 @@ class Settings(BaseSettings):
     media_max_bytes: int = 5_242_880
     media_enabled: bool = True
     require_player_application: bool = False
-    public_web_origin: str = "https://aimzegypt-73b85.web.app"
+    public_web_origin: str = "https://aimz-egypt-staging.pages.dev"
     turnstile_secret: str | None = None
-    turnstile_hostnames: list[str] = ["aimzegypt-73b85.web.app"]
+    turnstile_hostnames: list[str] = ["aimz-egypt-staging.pages.dev"]
 
     @model_validator(mode="after")
     def normalize_and_validate(self) -> "Settings":

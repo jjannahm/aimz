@@ -81,14 +81,19 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
       JOIN training_metrics t ON t.id = m.metric_id
       JOIN training_sessions s ON s.id = m.training_session_id
       WHERE m.player_id = ? AND s.starts_at >= ? AND s.starts_at < ?
+        AND t.is_active = 1
+        AND (t.player_kind = 'all' OR t.player_kind = ?)
       GROUP BY t.id ORDER BY t.sort_order, t.label`)
-      .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`)
+      .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`, player?.position.trim().toUpperCase() === "GK" ? "goalkeeper" : "outfield")
       .all<{ key: string; label: string; kind: "rating" | "count"; max_value: number | null; sort_order: number; sessions: number; total: number }>(),
     // Marked sessions this player has that the period does not cover.
     env.DB.prepare(`SELECT COUNT(DISTINCT s.id) sessions, MIN(s.starts_at) first, MAX(s.starts_at) last
       FROM training_player_metrics m JOIN training_sessions s ON s.id = m.training_session_id
-      WHERE m.player_id = ? AND (s.starts_at < ? OR s.starts_at >= ?)`)
-      .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`)
+      JOIN training_metrics t ON t.id = m.metric_id
+      WHERE m.player_id = ? AND (s.starts_at < ? OR s.starts_at >= ?)
+        AND t.is_active = 1
+        AND (t.player_kind = 'all' OR t.player_kind = ?)`)
+      .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`, player?.position.trim().toUpperCase() === "GK" ? "goalkeeper" : "outfield")
       .first<{ sessions: number; first: string | null; last: string | null }>(),
     env.DB.prepare(`SELECT COALESCE(SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END), 0) appearances,
       COALESCE(SUM(s.minutes_played), 0) minutes, COALESCE(SUM(s.goals), 0) goals,

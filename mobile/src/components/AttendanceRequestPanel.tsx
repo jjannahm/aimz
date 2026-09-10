@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { AppButton } from '@/src/components/AppButton';
+import { ChoiceField } from '@/src/components/ChoiceField';
 import { FormField } from '@/src/components/FormField';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { api, ApiError } from '@/src/lib/api';
@@ -43,6 +44,11 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
     queryFn: () => api.attendanceRequests(`?training_session_id=${encodeURIComponent(session.id)}&limit=100`),
     enabled: Boolean(session.id),
   });
+  const context = useQuery({
+    queryKey: [...cacheKeys.attendanceRequests, session.id, 'context'],
+    queryFn: () => api.attendanceRequestContext(session.id),
+    enabled: Boolean(session.id) && !decides,
+  });
   const items = requests.data?.items ?? [];
 
   if (decides) return <Decisions items={items} />;
@@ -50,12 +56,13 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
 
   /** The queue, for whoever may answer it. Absent entirely when it is empty. */
   function Decisions({ items: rows }: { items: AttendanceRequest[] }) {
+    const [reasons, setReasons] = React.useState<Record<string, string>>({});
     const pending = rows.filter((row) => row.status === 'pending');
     const decide = useMutation({
-      mutationFn: ({ id, approve }: { id: string; approve: boolean }) =>
-        approve ? api.approveAttendanceRequest(id) : api.rejectAttendanceRequest(id, null),
+      mutationFn: ({ id, approve, reason }: { id: string; approve: boolean; reason?: string }) =>
+        approve ? api.approveAttendanceRequest(id) : api.rejectAttendanceRequest(id, reason?.trim() || null),
       onError: (error) => showMessage('Request not answered', (error as ApiError).message),
-      onSuccess: async () => { await invalidateAfterWrite(client, 'attendance-request'); },
+      onSuccess: async () => { setReasons({}); await invalidateAfterWrite(client, 'attendance-request'); },
     });
     if (!pending.length) return null;
     return <View style={styles.panel}>
@@ -68,6 +75,13 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
           <Text style={{ color: colors.textPrimary }}>{said(row.requested_status)}</Text>
         </Text>
         {row.reason ? <Text style={styles.reason}>“{row.reason}”</Text> : null}
+        <FormField
+          hint="Optional"
+          label={`Rejection reason for ${row.player?.name ?? 'player'}`}
+          onChangeText={(text) => setReasons((current) => ({ ...current, [row.id]: text }))}
+          placeholder="Why the original mark is staying"
+          value={reasons[row.id] ?? ''}
+        />
         <View style={styles.actions}>
           <AppButton
             compact
@@ -79,7 +93,7 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
             compact
             disabled={decide.isPending}
             label="Reject"
-            onPress={() => decide.mutate({ approve: false, id: row.id })}
+            onPress={() => decide.mutate({ approve: false, id: row.id, reason: reasons[row.id] })}
             variant="danger"
           />
         </View>
@@ -90,21 +104,40 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
 
   /** The ask, for the family whose record it is. */
   function Ask({ items: rows, session: current }: { items: AttendanceRequest[]; session: TrainingSession }) {
+    const eligible = context.data?.items ?? [];
+    const [playerId, setPlayerId] = React.useState('');
     const [status, setStatus] = React.useState<AttendanceStatus>('present');
     const [reason, setReason] = React.useState('');
+    const currentMark = eligible.find((item) => item.player.id === playerId)?.current_status ?? null;
+    React.useEffect(() => {
+      if (!playerId && eligible[0]) setPlayerId(eligible[0].player.id);
+    }, [eligible, playerId]);
+    React.useEffect(() => {
+      setStatus(currentMark === 'present' ? 'late' : 'present');
+    }, [currentMark, playerId]);
     // What they have already asked, so a raised request becomes its own answer
     // rather than a form they might fill in twice.
-    const open = rows.find((row) => row.status === 'pending');
-    const decided = rows.filter((row) => row.status !== 'pending');
+    const open = rows.find((row) => row.player_id === playerId && row.status === 'pending');
+    const decided = rows.filter((row) => row.player_id === playerId && row.status !== 'pending');
 
     const ask = useMutation({
-      mutationFn: () => api.requestAttendanceChange(current.id, { reason: reason.trim() || null, requested_status: status }),
+      mutationFn: () => api.requestAttendanceChange(current.id, { player_id: playerId, reason: reason.trim() || null, requested_status: status }),
       onError: (error) => showMessage('Request not sent', (error as ApiError).message),
       onSuccess: async () => { setReason(''); await invalidateAfterWrite(client, 'attendance-request'); },
     });
 
     return <View style={styles.panel}>
       <Text accessibilityRole="header" style={styles.heading}>Attendance</Text>
+
+      {eligible.length > 1 ? <ChoiceField
+        label="Player"
+        onChange={setPlayerId}
+        options={eligible.map((item) => ({ label: item.player.name, value: item.player.id }))}
+        placeholder="Choose a player"
+        value={playerId}
+      /> : null}
+
+      {playerId ? <Text style={styles.current}>Current status: <Text style={styles.currentValue}>{said(currentMark)}</Text></Text> : null}
 
       {open ? <View style={styles.card}>
         <Text style={styles.change}>
@@ -113,7 +146,7 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
           <Text style={{ color: colors.textPrimary }}>{said(open.requested_status)}</Text>
         </Text>
         <Text style={[styles.state, { color: colors.warning }]}>Waiting for a coach to answer</Text>
-      </View> : <>
+      </View> : playerId ? <>
         <Text style={styles.note}>If the register is wrong for this session, ask a coach to correct it. They decide; nothing changes until they do.</Text>
         <SegmentedControl label="What it should say" onChange={setStatus} options={CHOICES} value={status} />
         <FormField
@@ -125,7 +158,8 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
           value={reason}
         />
         <AppButton disabled={ask.isPending} label="Ask for a correction" loading={ask.isPending} onPress={() => ask.mutate()} />
-      </>}
+      </> : context.isLoading ? <Text style={styles.note}>Loading attendance…</Text>
+        : <Text style={styles.note}>There is no linked player on this session’s squad.</Text>}
 
       {decided.map((row) => <View key={row.id} style={styles.card}>
         <Text style={styles.change}>
@@ -153,4 +187,6 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   reason: { color: colors.textMuted, fontFamily: theme.font.regular, lineHeight: 21 },
   actions: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.xs },
   note: { color: colors.textMuted, fontFamily: theme.font.regular, lineHeight: 21 },
+  current: { color: colors.textMuted, fontFamily: theme.font.regular },
+  currentValue: { color: colors.textPrimary, fontFamily: theme.font.semibold },
 });

@@ -287,6 +287,8 @@ export interface TrainingMetricRow {
   min_value: number | null;
   max_value: number | null;
   unit: string | null;
+  /** Which existing player position this metric belongs to. */
+  player_kind: "all" | "outfield" | "goalkeeper";
   sort_order: number;
   is_active: number;
   created_at: string;

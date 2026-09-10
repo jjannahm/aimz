@@ -10,6 +10,7 @@ import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { showMessage, showToast } from '@/src/lib/platformAlert';
+import { metricsForPlayer } from '@/src/lib/trainingMetrics';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { Team, TrainingMetric } from '@/src/types/api';
@@ -76,7 +77,7 @@ export function TrainingStatsManager({ teams }: { teams: Team[] }) {
 function ByHand({ sessionId, metrics, items, onSaved }: {
   sessionId: string;
   metrics: TrainingMetric[];
-  items: { player: { id: string; name: string }; values: Record<string, number> }[];
+  items: { player: { id: string; name: string; position: string }; values: Record<string, number> }[];
   onSaved: () => Promise<unknown>;
 }) {
   const styles = useThemedStyles(stylesheet);
@@ -85,20 +86,25 @@ function ByHand({ sessionId, metrics, items, onSaved }: {
   const [saving, setSaving] = React.useState<string | null>(null);
 
   const save = async (playerId: string) => {
-    const typed = draft[playerId] ?? {};
-    const entries = metrics.map((metric) => {
-      const raw = typed[metric.id];
-      // Untouched fields are left alone; a field cleared to nothing removes the
-      // reading, because for a mark out of ten a blank is not a nought.
-      if (raw === undefined) return null;
-      if (raw.trim() === '') return { player_id: playerId, metric_id: metric.id, value: null };
-      const value = Number(raw);
-      if (!Number.isFinite(value)) throw new Error(`${metric.label} is not a number.`);
-      return { player_id: playerId, metric_id: metric.id, value };
-    }).filter((entry): entry is { player_id: string; metric_id: string; value: number | null } => entry !== null);
-    if (!entries.length) return;
-    setSaving(playerId);
     try {
+      const player = items.find((item) => item.player.id === playerId)!.player;
+      const typed = draft[playerId] ?? {};
+      const entries = metricsForPlayer(metrics, player).map((metric) => {
+        const raw = typed[metric.id];
+        // Untouched fields are left alone; a field cleared to nothing removes
+        // the reading, because a blank mark is not a nought.
+        if (raw === undefined) return null;
+        if (raw.trim() === '') return { player_id: playerId, metric_id: metric.id, value: null };
+        const value = Number(raw);
+        const low = metric.min_value ?? 1;
+        const high = metric.max_value ?? 10;
+        if (!Number.isFinite(value) || value < low || value > high) {
+          throw new Error(`${metric.label} is scored from ${low} to ${high}.`);
+        }
+        return { player_id: playerId, metric_id: metric.id, value };
+      }).filter((entry): entry is { player_id: string; metric_id: string; value: number | null } => entry !== null);
+      if (!entries.length) return;
+      setSaving(playerId);
       await api.setTrainingPerformance(sessionId, entries);
       await onSaved();
       setDraft((current) => ({ ...current, [playerId]: {} }));
@@ -115,9 +121,13 @@ function ByHand({ sessionId, metrics, items, onSaved }: {
   return <View style={styles.list}>{items.map((item) => {
     const typed = draft[item.player.id] ?? {};
     const changed = Object.keys(typed).length > 0;
+    const playerMetrics = metricsForPlayer(metrics, item.player);
     return <View key={item.player.id} style={styles.card}>
-      <Text style={styles.name}>{item.player.name}</Text>
-      <View style={styles.fields}>{metrics.map((metric) => <View key={metric.id} style={styles.field}>
+      <View style={styles.playerHead}>
+        <Text style={styles.name}>{item.player.name}</Text>
+        <Text accessibilityLabel={`Position ${item.player.position}`} style={styles.position}>{item.player.position}</Text>
+      </View>
+      <View style={styles.fields}>{playerMetrics.map((metric) => <View key={metric.id} style={styles.field}>
         <FormField
           hint={askFor(metric)}
           inputMode="decimal"
@@ -137,7 +147,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   stack: { gap: theme.spacing.md },
   list: { gap: theme.spacing.sm },
   card: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md },
+  playerHead: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs },
   name: { color: colors.textPrimary, fontFamily: theme.font.bold },
+  position: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.pill, borderWidth: 1, color: colors.textMuted, fontFamily: theme.font.semibold, fontSize: theme.type.caption, overflow: 'hidden', paddingHorizontal: theme.spacing.xs, paddingVertical: 2 },
   fields: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
   field: { flexBasis: '47%', flexGrow: 1, minWidth: 0 },
   empty: { color: colors.textMuted },

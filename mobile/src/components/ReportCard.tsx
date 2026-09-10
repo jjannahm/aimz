@@ -74,7 +74,7 @@ export function ReportCard({ report, size = 'page', brand = false }: { report: S
     ] : []),
     // A report published before the marks existed carries none, and simply
     // shows the register.
-    ...(snapshot.training ?? []).map((mark) => ({
+    ...(snapshot.training ?? []).filter((mark) => mark.key !== 'minutes_trained').map((mark) => ({
       key: mark.key,
       label: mark.kind === 'rating' ? `${mark.label} avg` : mark.label,
       value: mark.kind === 'rating' ? `${mark.value}/${mark.max_value ?? 10}` : mark.value,
