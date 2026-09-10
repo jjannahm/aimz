@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, CoachAccount, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -299,6 +299,9 @@ export const api = {
   createInvite: (payload: { label: string; code?: string; kind: InviteKind; player_ids?: string[]; team_ids?: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
   revokeInvite: (id: string) => request<void>(`/api/v1/admin/registration-invites/${id}`, { method: 'DELETE' }),
   resolveInvite: (code: string) => request<InviteContext>('/api/v1/auth/invitations/resolve', { method: 'POST', authenticated: false, body: { code } }),
+  // Where the academy trains, with the side of the city each is on, plus any
+  // branch an older application recorded that is no longer offered.
+  branches: () => request<{ items: { name: string; area: string | null }[] }>('/api/v1/branches'),
   newcomers: (query = '?queue=active') => request<Page<Newcomer>>(`/api/v1/admin/newcomers${query}`),
   newcomer: (id: string) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`),
   updateNewcomer: (id: string, body: Partial<{ stage: NewcomerStage; outcome: NewcomerOutcome; last_contacted_at: string | null; next_follow_up_at: string | null }>) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`, { method: 'PATCH', body }),
@@ -320,6 +323,9 @@ export const api = {
   updateTrainingSession: (id: string, payload: Partial<Pick<TrainingSession, 'starts_at' | 'duration_minutes' | 'venue' | 'notes'>>) => request<TrainingSession>(`/api/v1/training-sessions/${id}`, { method: 'PATCH', body: payload }),
   deleteTrainingSession: (id: string, scope: 'one' | 'series' = 'one') => request<void>(`/api/v1/training-sessions/${id}?scope=${scope}`, { method: 'DELETE' }),
   announcements: (query = '') => request<Page<Announcement>>(`/api/v1/announcements${query}`),
+  // The coaches a notice can be addressed to, from the accounts that already
+  // exist rather than a list of names kept somewhere else.
+  announcementCoaches: () => request<{ items: CoachAccount[] }>('/api/v1/announcements/coaches'),
   createAnnouncement: (payload: Partial<Announcement>) => request<Announcement>('/api/v1/announcements', { method: 'POST', body: payload }),
   updateAnnouncement: (id: string, payload: Partial<Announcement>) => request<Announcement>(`/api/v1/announcements/${id}`, { method: 'PATCH', body: payload }),
   deleteAnnouncement: (id: string) => request<void>(`/api/v1/announcements/${id}`, { method: 'DELETE' }),

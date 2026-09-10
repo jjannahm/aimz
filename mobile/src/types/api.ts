@@ -228,15 +228,30 @@ export type TrainingSession = {
   updated_at: string;
 };
 
+/** Who a notice is addressed to, and how loudly it is said. */
+export type AnnouncementAudience = 'academy' | 'team' | 'coaches';
+export type AnnouncementPriority = 'standard' | 'pinned' | 'urgent';
+
+/** A coach, as the picker that addresses a notice to one sees them. */
+export type CoachAccount = { id: string; name: string; email: string };
+
 export type Announcement = {
   id: string;
   team_id: string | null;
   team: Team | null;
+  audience: AnnouncementAudience;
   title: string;
   body: string;
   author_id: string | null;
   author_name: string | null;
+  priority: AnnouncementPriority;
+  /** Written from the priority: urgent is always pinned. */
   pinned: boolean;
+  /** Named recipients. Empty means the whole audience. */
+  player_ids: string[];
+  players: Player[];
+  coach_ids: string[];
+  coaches: { id: string; name: string }[];
   created_at: string;
   updated_at: string;
 };

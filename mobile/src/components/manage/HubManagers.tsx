@@ -19,7 +19,8 @@ import { confirmAction, showMessage } from '@/src/lib/platformAlert';
 import { expandWeekly } from '@/src/lib/trainingSchedule';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { Announcement, Team, TrainingSession } from '@/src/types/api';
+import { PlayerPickerField } from '@/src/components/PlayerPickerField';
+import type { Announcement, AnnouncementAudience, AnnouncementPriority, Team, TrainingSession } from '@/src/types/api';
 
 const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const positiveInteger = (value: string, fallback: number) => {
@@ -127,31 +128,126 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
   </View>;
 }
 
-const blankAnnouncement = { teamId: '', title: '', body: '', pinned: false };
+/**
+ * A notice being written.
+ *
+ * `audience` is the only thing that decides which of the rest matters: a squad
+ * notice reads `teamId` and `playerIds`, a coaches notice reads `coachIds`,
+ * and an academy notice reads neither. Everything is kept while the audience
+ * changes rather than cleared, so somebody who taps Teams, changes their mind,
+ * and taps back finds their squad still chosen.
+ */
+type AnnouncementDraft = {
+  audience: AnnouncementAudience;
+  teamId: string;
+  playerIds: string[];
+  coachIds: string[];
+  title: string;
+  body: string;
+  priority: AnnouncementPriority;
+};
+
+const blankAnnouncement: AnnouncementDraft = {
+  audience: 'academy', teamId: '', playerIds: [], coachIds: [], title: '', body: '', priority: 'standard',
+};
+
+const AUDIENCES: { label: string; value: AnnouncementAudience }[] = [
+  { label: 'Whole academy', value: 'academy' },
+  { label: 'Teams', value: 'team' },
+  { label: 'Coaches', value: 'coaches' },
+];
+
+const PRIORITIES: { label: string; value: AnnouncementPriority }[] = [
+  { label: 'Standard', value: 'standard' },
+  { label: 'Pinned', value: 'pinned' },
+  { label: 'Urgent', value: 'urgent' },
+];
+
+/** Whether a notice goes to everybody in its audience, or to named people. */
+const REACH: { label: string; value: string }[] = [{ label: 'Entire team', value: 'all' }, { label: 'Specific players', value: 'some' }];
+const COACH_REACH: { label: string; value: string }[] = [{ label: 'All coaches', value: 'all' }, { label: 'Specific coaches', value: 'some' }];
+
+/**
+ * Who a notice went to, in the words somebody would use.
+ *
+ * Named recipients are counted rather than listed: a notice to nine of a squad
+ * says so, and the nine names belong on the notice itself rather than in a
+ * line of small print above it.
+ */
+function describeAudience(announcement: Announcement): string {
+  if (announcement.audience === 'coaches') {
+    return announcement.coach_ids.length ? `${announcement.coach_ids.length} coaches` : 'All coaches';
+  }
+  if (announcement.audience === 'team') {
+    const squad = announcement.team?.name ?? 'One squad';
+    return announcement.player_ids.length ? `${squad} · ${announcement.player_ids.length} players` : squad;
+  }
+  return 'Whole academy';
+}
 
 export function AnnouncementsManager({ teams }: { teams: Team[] }) {
   const styles = useThemedStyles(stylesheet);
   const client = useQueryClient();
   const announcements = useQuery({ queryKey: ['announcements', 'admin'], queryFn: () => api.announcements('?limit=100') });
-  const [draft, setDraft] = React.useState(blankAnnouncement);
+  const [draft, setDraft] = React.useState<AnnouncementDraft>(blankAnnouncement);
+  // Whether the audience is being addressed whole or in part. Held apart from
+  // the draft because it is a question about the form rather than about the
+  // notice: no names chosen means everybody, whichever way this is set.
+  const [reach, setReach] = React.useState<'all' | 'some'>('all');
+  const squadPlayers = useQuery({
+    queryKey: ['players', 'team', draft.teamId],
+    queryFn: () => api.players(`?team_id=${encodeURIComponent(draft.teamId)}&limit=200`),
+    enabled: draft.audience === 'team' && Boolean(draft.teamId),
+  });
+  const coaches = useQuery({
+    queryKey: ['announcement-coaches'],
+    queryFn: () => api.announcementCoaches(),
+    enabled: draft.audience === 'coaches',
+  });
   const [editing, setEditing] = React.useState<Announcement | null>(null);
   const [formOpen, setFormOpen] = React.useState(false);
   const [search, setSearch] = React.useState('');
   const save = useMutation({
     mutationFn: () => {
       if (!draft.title.trim() || !draft.body.trim()) throw new Error('Enter a title and message.');
-      const payload = { team_id: draft.teamId || null, title: draft.title.trim(), body: draft.body.trim(), pinned: draft.pinned };
+      if (draft.audience === 'team' && !draft.teamId) throw new Error('Choose a squad.');
+      if (draft.audience === 'team' && reach === 'some' && !draft.playerIds.length) throw new Error('Choose at least one player, or send it to the entire team.');
+      if (draft.audience === 'coaches' && reach === 'some' && !draft.coachIds.length) throw new Error('Choose at least one coach, or send it to all of them.');
+      const payload = {
+        audience: draft.audience,
+        team_id: draft.audience === 'team' ? draft.teamId : null,
+        // No names means the whole audience, which is what "Entire team" and
+        // "All coaches" are: the same notice with nobody singled out.
+        player_ids: draft.audience === 'team' && reach === 'some' ? draft.playerIds : [],
+        coach_ids: draft.audience === 'coaches' && reach === 'some' ? draft.coachIds : [],
+        title: draft.title.trim(),
+        body: draft.body.trim(),
+        priority: draft.priority,
+      };
       return editing ? api.updateAnnouncement(editing.id, payload) : api.createAnnouncement(payload);
     },
     onError: (error) => showMessage('Announcement not saved', (error as Error).message),
     onSuccess: async () => { const wasEditing = editing; await invalidateAfterWrite(client, 'announcement'); setEditing(null); setDraft(blankAnnouncement); confirmManageSave('announcement', wasEditing); },
   });
-  const beginEdit = (announcement: Announcement) => { setEditing(announcement); setFormOpen(true); setDraft({ teamId: announcement.team_id ?? '', title: announcement.title, body: announcement.body, pinned: announcement.pinned }); };
+  const beginEdit = (announcement: Announcement) => {
+    setEditing(announcement);
+    setFormOpen(true);
+    setReach(announcement.player_ids.length || announcement.coach_ids.length ? 'some' : 'all');
+    setDraft({
+      audience: announcement.audience,
+      teamId: announcement.team_id ?? '',
+      playerIds: announcement.player_ids,
+      coachIds: announcement.coach_ids,
+      title: announcement.title,
+      body: announcement.body,
+      priority: announcement.priority,
+    });
+  };
   const remove = (announcement: Announcement) => confirmAction('Delete this announcement?', 'Players will no longer see it.', 'Delete', async () => { try { await api.deleteAnnouncement(announcement.id); await invalidateAfterWrite(client, 'announcement'); confirmManageWrite('announcement', 'deleted'); } catch (error) { showMessage('Announcement not deleted', (error as ApiError).message); } }, { destructive: true });
   // A season's worth of notices piles up, and the wording is often the only
   // thing remembered about one, so the message itself is searched too.
   const announcementItems = announcements.data?.items ?? [];
-  const shownAnnouncements = narrowBySearch(announcementItems, search, (item) => `${item.title} ${item.body} ${item.team?.name ?? 'Whole academy'} ${item.author_name ?? ''}`);
+  const shownAnnouncements = narrowBySearch(announcementItems, search, (item) => `${item.title} ${item.body} ${describeAudience(item)} ${item.author_name ?? ''}`);
   return <View style={styles.stack}>
     <CollapsibleCard
       onOpenChange={setFormOpen}
@@ -160,15 +256,56 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
       title={editing ? 'Edit announcement' : 'Post announcement'}
       tone="raised"
     >
-      <ChoiceField label="Audience" onChange={(teamId) => setDraft((current) => ({ ...current, teamId }))} options={[{ label: 'Whole academy', value: '' }, ...teams.map((team) => ({ label: team.name, value: team.id }))]} value={draft.teamId} />
+      {/* Who it is for, then — only where the answer needs it — which of them.
+        * The academy takes no second question, which is why there is nothing
+        * between this and the title when it is chosen. */}
+      <ChoiceField label="Audience" onChange={(audience) => { setDraft((current) => ({ ...current, audience: audience as AnnouncementAudience })); setReach('all'); }} options={AUDIENCES} value={draft.audience} />
+
+      {draft.audience === 'team' ? <>
+        <ChoiceField label="Team" onChange={(teamId) => { setDraft((current) => ({ ...current, teamId, playerIds: [] })); setReach('all'); }} options={teams.map((team) => ({ label: team.name, value: team.id }))} placeholder="Choose a team" value={draft.teamId} />
+        {draft.teamId ? <>
+          <ChoiceField label="Send to" onChange={(value) => setReach(value as 'all' | 'some')} options={REACH} value={reach} />
+          {reach === 'some' ? <PlayerPickerField
+            label="Players"
+            onChange={(playerIds) => setDraft((current) => ({ ...current, playerIds }))}
+            placeholder={squadPlayers.isLoading ? 'Loading the squad…' : 'Search by player name…'}
+            players={squadPlayers.data?.items ?? []}
+            selectedIds={draft.playerIds}
+            selectionMode="multiple"
+          /> : null}
+        </> : null}
+      </> : null}
+
+      {draft.audience === 'coaches' ? <>
+        <ChoiceField label="Send to" onChange={(value) => setReach(value as 'all' | 'some')} options={COACH_REACH} value={reach} />
+        {reach === 'some' ? <PlayerPickerField
+          label="Coaches"
+          onChange={(coachIds) => setDraft((current) => ({ ...current, coachIds }))}
+          placeholder={coaches.isLoading ? 'Loading coaches…' : 'Search by name…'}
+          players={coaches.data?.items ?? []}
+          selectedIds={draft.coachIds}
+          selectionMode="multiple"
+        /> : null}
+      </> : null}
+
       <FormField label="Title" onChangeText={(title) => setDraft((current) => ({ ...current, title }))} value={draft.title} />
       <FormField label="Message" multiline onChangeText={(body) => setDraft((current) => ({ ...current, body }))} value={draft.body} />
-      <ChoiceField label="Priority" onChange={(value) => setDraft((current) => ({ ...current, pinned: value === 'pinned' }))} options={[{ label: 'Standard', value: 'standard' }, { label: 'Pinned', value: 'pinned' }]} value={draft.pinned ? 'pinned' : 'standard'} />
+      {/* Urgent is pinned as well; the API writes that rather than asking for
+        * both, so there is one dial here and not a dial and a switch. */}
+      <ChoiceField label="Priority" onChange={(priority) => setDraft((current) => ({ ...current, priority: priority as AnnouncementPriority }))} options={PRIORITIES} value={draft.priority} />
+      {draft.priority === 'urgent' ? <Text style={styles.urgentNote}>Urgent notices are pinned to the top and shown in red.</Text> : null}
       <View style={styles.formActions}><AppButton label={editing ? 'Save changes' : 'Publish'} loading={save.isPending} onPress={() => save.mutate()} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); setDraft(blankAnnouncement); }} variant="ghost" /> : null}</View>
     </CollapsibleCard>
     {announcements.isError ? <ErrorState message={(announcements.error as ApiError).message} onRetry={() => announcements.refetch()} /> : <CollapsibleSection count={announcementItems.length} search={{ label: 'Search announcements', onChange: setSearch, placeholder: 'Search a title, message or squad…', resultCount: shownAnnouncements.length, value: search }} title="Current announcements">
       {announcements.isLoading ? <LoadingState /> : !announcementItems.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : !shownAnnouncements.length ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shownAnnouncements.map((announcement) => <View key={announcement.id} style={styles.card}>
-        <View style={styles.copy}><Text style={styles.title}>{announcement.pinned ? 'Pinned · ' : ''}{announcement.title}</Text><Text style={styles.meta}>{announcement.team?.name ?? 'Whole academy'} · {announcement.author_name ?? 'Administrator'}</Text><Text style={styles.body}>{announcement.body}</Text></View>
+        <View style={styles.copy}>
+          {announcement.priority === 'urgent' ? <View style={styles.urgentBadge}><Text style={styles.urgentText}>URGENT</Text></View> : null}
+          <Text style={[styles.title, announcement.priority === 'urgent' && styles.urgentTitle]}>
+            {announcement.priority === 'pinned' ? 'Pinned · ' : ''}{announcement.title}
+          </Text>
+          <Text style={styles.meta}>{describeAudience(announcement)} · {announcement.author_name ?? 'Administrator'}</Text>
+          <Text style={styles.body}>{announcement.body}</Text>
+        </View>
         <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => beginEdit(announcement)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete" onPress={() => remove(announcement)} variant="danger" /></View>
       </View>)}</View>}
     </CollapsibleSection>}
@@ -201,5 +338,10 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   meta: { color: colors.textMuted, marginTop: 4 },
   pressedRow: { opacity: 0.6 },
   stack: { gap: theme.spacing.md },
+  // Urgent, in the red the rest of the app keeps for something being wrong.
+  urgentBadge: { alignSelf: 'flex-start', backgroundColor: colors.error, borderRadius: theme.radius.sm, marginBottom: 4, paddingHorizontal: theme.spacing.sm, paddingVertical: 2 },
+  urgentText: { color: colors.onStatus, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 1 },
+  urgentTitle: { color: colors.error },
+  urgentNote: { color: colors.textMuted, fontFamily: theme.font.regular, fontSize: theme.type.caption },
   title: { color: colors.textPrimary, fontWeight: '900' },
 });

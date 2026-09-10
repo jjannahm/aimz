@@ -17,7 +17,15 @@ import { AppButton } from '@/src/components/AppButton';
 import { getDropdownLayout } from '@/src/components/ChoiceField';
 import { noFocusRing, noFocusRingText, theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { Player } from '@/src/types/api';
+/**
+ * Anything with a name worth searching for.
+ *
+ * A roster player satisfies it, and so does a coach account, which is why this
+ * picker addresses a notice to either without a second one being written. The
+ * component never reads a position or a shirt number — only the name it shows
+ * and the id it hands back.
+ */
+export type PickerPerson = { id: string; name: string };
 
 type Anchor = { x: number; y: number; width: number; height: number };
 type SelectionMode = 'single' | 'multiple';
@@ -27,14 +35,14 @@ const OPTION_HEIGHT = 48;
 
 type Props = {
   label: string;
-  players: Player[];
+  players: PickerPerson[];
   selectedIds: string[];
   selectionMode: SelectionMode;
   onChange: (playerIds: string[]) => void;
   placeholder?: string;
 };
 
-/** A compact, searchable roster picker for single-player and parent invites. */
+/** A compact, searchable picker of people: roster players, or coaches. */
 export function PlayerPickerField({ label, players, selectedIds, selectionMode, onChange, placeholder }: Props) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
@@ -94,7 +102,7 @@ export function PlayerPickerField({ label, players, selectedIds, selectionMode, 
     setOpen(true);
   };
 
-  const toggle = (player: Player) => {
+  const toggle = (player: PickerPerson) => {
     if (!multiple) {
       onChange([player.id]);
       close();

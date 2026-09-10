@@ -42,6 +42,7 @@ jest.mock('@/src/components/manage/HubManagers', () => {
 });
 jest.mock('@/src/lib/api', () => ({
   api: {
+    branches: jest.fn(),
     competitions: jest.fn(),
     groups: jest.fn(),
     invites: jest.fn(),
@@ -94,6 +95,7 @@ describe('ManageScreen navigation', () => {
     jest.mocked(api.players).mockResolvedValue(emptyPage);
     jest.mocked(api.matches).mockResolvedValue(emptyPage);
     jest.mocked(api.invites).mockResolvedValue([]);
+    jest.mocked(api.branches).mockResolvedValue({ items: [{ name: 'Gardenia (Agyal Park)', area: 'East' }, { name: 'AUC', area: 'East' }] });
   });
 
   afterEach(() => {
@@ -296,6 +298,7 @@ describe('ManageScreen confirmations', () => {
     jest.mocked(api.players).mockResolvedValue(emptyPage);
     jest.mocked(api.matches).mockResolvedValue(emptyPage);
     jest.mocked(api.invites).mockResolvedValue([]);
+    jest.mocked(api.branches).mockResolvedValue({ items: [{ name: 'Gardenia (Agyal Park)', area: 'East' }, { name: 'AUC', area: 'East' }] });
   });
 
   afterEach(() => {
@@ -308,9 +311,11 @@ describe('ManageScreen confirmations', () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await openForm(screen, 'squads');
     await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
-    await fireEvent.changeText(screen.getByLabelText('Branch'), 'Gardenia');
+    // The branch is chosen from the academy's list now rather than typed.
+    await fireEvent.press(screen.getByLabelText('Branch'));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Gardenia (Agyal Park) (East)' }));
     await fireEvent.press(screen.getByText('Add item'));
-    await waitFor(() => expect(api.createTeam).toHaveBeenCalledWith(expect.objectContaining({ branch: 'Gardenia' })));
+    await waitFor(() => expect(api.createTeam).toHaveBeenCalledWith(expect.objectContaining({ branch: 'Gardenia (Agyal Park)' })));
     expect(showToast).toHaveBeenCalledWith('Squad created');
   });
 
@@ -331,7 +336,9 @@ describe('ManageScreen confirmations', () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await openForm(screen, 'squads');
     await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
-    await fireEvent.changeText(screen.getByLabelText('Branch'), 'Gardenia');
+    // The branch is chosen from the academy's list now rather than typed.
+    await fireEvent.press(screen.getByLabelText('Branch'));
+    await fireEvent.press(await screen.findByRole('button', { name: 'Gardenia (Agyal Park) (East)' }));
     await fireEvent.press(screen.getByText('Add item'));
     await waitFor(() => expect(screen.getByText('The server refused it.')).toBeTruthy());
     expect(showToast).not.toHaveBeenCalled();
@@ -376,6 +383,7 @@ describe('ManageScreen invite player picker', () => {
     jest.mocked(api.players).mockResolvedValue(playerPage as never);
     jest.mocked(api.matches).mockResolvedValue(emptyPage);
     jest.mocked(api.invites).mockResolvedValue([]);
+    jest.mocked(api.branches).mockResolvedValue({ items: [{ name: 'Gardenia (Agyal Park)', area: 'East' }, { name: 'AUC', area: 'East' }] });
   });
 
   afterEach(() => {

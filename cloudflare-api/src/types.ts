@@ -163,12 +163,19 @@ export interface AssignmentRow {
   updated_at: string;
 }
 
+/** Who a notice is addressed to, and how loudly it is said. */
+export type AnnouncementAudience = "academy" | "team" | "coaches";
+export type AnnouncementPriority = "standard" | "pinned" | "urgent";
+
 export interface AnnouncementRow {
   id: string;
   team_id: string | null;
+  audience: AnnouncementAudience;
   title: string;
   body: string;
   author_id: string | null;
+  priority: AnnouncementPriority;
+  /** Written from the priority, never on its own: urgent is always pinned. */
   pinned: number;
   created_at: string;
   updated_at: string;
