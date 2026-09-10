@@ -559,16 +559,16 @@ function AppStatus({ on }: { on: boolean }) {
 /**
  * The audit log, where an administrator now finds it.
  *
- * The same feed that used to sit folded inside Settings, unchanged: the latest
- * twenty here, and the whole thing on its own screen behind the button. The
- * screen is still the one place that reads it in full, and still turns away
- * anybody who is not an administrator.
+ * The same feed that used to sit folded inside Settings: the latest twenty
+ * here, the magnifier beside the heading for finding one particular line among
+ * them, and the whole thing on its own screen behind the button. The screen is
+ * still the one place that reads it in full, and still turns away anybody who
+ * is not an administrator.
  */
 function ActivityManager() {
   const styles = useThemedStyles(stylesheet);
   return <View style={styles.activity}>
-    <Text style={styles.pickerNote}>Every change an admin made to a match.</Text>
-    <AuditTrail limit={20} />
+    <AuditTrail heading="Admin activity" limit={20} />
     <AppButton label="See the full log" onPress={() => router.push('/audit')} variant="secondary" />
   </View>;
 }

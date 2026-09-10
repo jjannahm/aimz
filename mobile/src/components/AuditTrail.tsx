@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import { CollapsibleSection } from '@/src/components/CollapsibleSection';
 import { narrowBySearch, SearchField } from '@/src/components/SearchField';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TrophyIcon } from '@/src/components/TrophyIcon';
@@ -35,15 +36,25 @@ function when(timestamp: string): string {
 type Props = {
   /** Narrow the trail to one match. Omitted reads the whole academy. */
   matchId?: string;
-  /** Settings shows a recent slice; the full screen shows everything fetched. */
+  /** Manage shows a recent slice; the full screen shows everything fetched. */
   limit?: number;
+  /**
+   * A heading over the trail, with a magnifier beside it.
+   *
+   * The slice is what Manage opens on, and twenty rows do not need a search box
+   * standing over them permanently — but the log is where you go looking for
+   * one particular correction, so the magnifier is there when you want it. It
+   * searches everything fetched rather than the twenty on screen: a search that
+   * only looked at what you can already see would find nothing worth finding.
+   */
+  heading?: string;
 };
 
 /**
  * The admin activity trail. Shared so the Settings card and the full screen
  * render the same rows from one place.
  */
-export function AuditTrail({ matchId, limit }: Props) {
+export function AuditTrail({ matchId, limit, heading }: Props) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const [search, setSearch] = useState('');
@@ -58,16 +69,18 @@ export function AuditTrail({ matchId, limit }: Props) {
   if (!all.length) {
     return <EmptyState body="Scoring a match, saving a lineup or correcting an event will show up here." title="Nothing recorded yet" />;
   }
-  // Only the full log carries a search: the Settings card is a fixed slice of
-  // twenty, and a box over those would be furniture. A season of scoring runs to
-  // hundreds of lines, where finding one correction means reading every one.
-  const full = limit === undefined;
-  const matches = full ? narrowBySearch(all, search, (entry) => `${entry.summary} ${entry.actor_name}`) : all;
-  const entries = full ? matches : matches.slice(0, limit);
+  // Every word a row puts on screen, which is what somebody types part of when
+  // they are looking for one: what was done, and who did it.
+  const words = (entry: AuditEntry) => `${entry.summary} ${entry.actor_name}`;
+  const searching = Boolean(search.trim());
+  // A search reaches the whole log rather than the slice on screen; without one,
+  // the slice is what Manage asked for.
+  const matches = narrowBySearch(all, search, words);
+  const entries = searching || limit === undefined ? matches : matches.slice(0, limit);
   const total = trail.data?.total ?? all.length;
-  const narrowed = full && Boolean(search.trim());
-  return <View style={styles.list}>
-    {full ? <SearchField
+  const narrowed = searching;
+  const list = <View style={styles.list}>
+    {limit === undefined && heading === undefined ? <SearchField
       label="Search the activity log"
       onChange={setSearch}
       placeholder="Search an action or an admin…"
@@ -92,6 +105,15 @@ export function AuditTrail({ matchId, limit }: Props) {
       </View>
     </View>)}
   </View>;
+
+  // Under a heading, the magnifier lives in the header the way every other
+  // searchable section in Manage keeps it, rather than as a second box.
+  return heading === undefined ? list : <CollapsibleSection
+    count={total}
+    defaultOpen
+    search={{ label: 'Search the activity log', onChange: setSearch, placeholder: 'Search an action, a player or an admin…', resultCount: entries.length, value: search }}
+    title={heading}
+  >{list}</CollapsibleSection>;
 }
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({

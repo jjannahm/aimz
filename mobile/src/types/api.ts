@@ -69,6 +69,8 @@ export type KitOrder = {
   shirt_name: string; shirt_number: number | null;
   kit_size: KitSize; hoodie_size: KitSize; outwear_size: KitSize;
   delivery: 'branch' | 'home'; status: KitStatus; notes: string | null;
+  /** When the academy marked it paid. Null while it is still in the queue. */
+  paid_at: string | null;
   created_at: string; updated_at: string;
 };
 

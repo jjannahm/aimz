@@ -21,7 +21,7 @@ jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: mo
 jest.mock('@/src/components/AuditTrail', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
-  return { AuditTrail: () => React.createElement(Text, null, 'Audit trail content') };
+  return { AuditTrail: ({ heading }: { heading?: string }) => React.createElement(Text, null, `Audit trail content${heading ? ` under ${heading}` : ''}`) };
 });
 jest.mock('@/src/components/manage/FeesManager', () => {
   const React = jest.requireActual('react');
@@ -176,7 +176,10 @@ describe('ManageScreen navigation', () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(screen.getByTestId('manage-tab-activity'));
 
-    expect(await screen.findByText('Audit trail content')).toBeTruthy();
+    // The trail carries its own heading and magnifier; the section above it says
+    // nothing more, so the line that used to explain it is gone.
+    expect(await screen.findByText('Audit trail content under Admin activity')).toBeTruthy();
+    expect(screen.queryByText('Every change an admin made to a match.')).toBeNull();
     expect(screen.getByRole('button', { name: 'See the full log' })).toBeTruthy();
   });
 

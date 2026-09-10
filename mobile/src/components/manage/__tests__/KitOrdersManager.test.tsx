@@ -7,7 +7,11 @@ import { api } from '@/src/lib/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('expo-router', () => ({ router: { push: jest.fn() }, usePathname: () => '/manage' }));
-jest.mock('@/src/lib/platformAlert', () => ({ showMessage: jest.fn() }));
+// Marking an order paid asks first; the test takes the confirmation as given.
+jest.mock('@/src/lib/platformAlert', () => ({
+  showMessage: jest.fn(),
+  confirmAction: (_title: string, _message: string, _label: string, onConfirm: () => void) => onConfirm(),
+}));
 jest.mock('@/src/lib/api', () => ({
   api: { kitOrders: jest.fn(), setKitStatus: jest.fn() },
   ApiError: class extends Error {},
@@ -22,22 +26,22 @@ const order = (over: Record<string, unknown> = {}) => ({
   id: 'k-1', player_id: 'p-1', player_name: 'Jana Sherif', team_id: 't-1', squad_name: 'AIMZ U13',
   ordered_by_id: 'u-1', team_label: 'Senzo 2013', kind: 'player', shirt_name: 'JANA', shirt_number: 10,
   kit_size: '12', hoodie_size: 'S', outwear_size: 'S', delivery: 'branch', status: 'ordered',
-  notes: null, created_at: '2026-09-10T08:00:00.000Z', updated_at: '2026-09-10T08:00:00.000Z', ...over,
+  notes: null, paid_at: null, created_at: '2026-09-10T08:00:00.000Z', updated_at: '2026-09-10T08:00:00.000Z', ...over,
 });
 
 describe('the kit book', () => {
   beforeEach(() => {
     jest.mocked(api.kitOrders).mockResolvedValue({ items: [order()], total: 1, limit: 100, offset: 0 } as never);
-    jest.mocked(api.setKitStatus).mockResolvedValue(order({ status: 'fulfilled' }) as never);
+    jest.mocked(api.setKitStatus).mockResolvedValue(order({ status: 'fulfilled', paid_at: '2026-09-10T09:00:00.000Z' }) as never);
   });
   afterEach(() => jest.clearAllMocks());
 
   // The open orders are the list somebody works from; a season of filled ones
   // underneath would bury them.
-  it('opens on the orders still to be made', async () => {
+  it('opens on the orders still to be paid for', async () => {
     const screen = await render(<KitOrdersManager />, { wrapper });
     await waitFor(() => expect(api.kitOrders).toHaveBeenCalledWith('?status=ordered&limit=100'));
-    expect(screen.getByRole('tab', { name: 'To order' }).props.accessibilityState.selected).toBe(true);
+    expect(screen.getByRole('tab', { name: 'Orders' }).props.accessibilityState.selected).toBe(true);
   });
 
   it('gives the supplier one line to work from', async () => {
@@ -48,9 +52,11 @@ describe('the kit book', () => {
     expect(screen.getByText(/Senzo 2013 · AIMZ U13/u)).toBeTruthy();
   });
 
-  it('marks an order ready', async () => {
+  // An order sits in the queue until somebody says the money arrived. Opening
+  // it, or reading it, is not that.
+  it('moves an order to Ready only when it is marked paid', async () => {
     const screen = await render(<KitOrdersManager />, { wrapper });
-    await fireEvent.press(await screen.findByText('Mark ready'));
+    await fireEvent.press(await screen.findByText('Mark as paid'));
     expect(api.setKitStatus).toHaveBeenCalledWith('k-1', 'fulfilled');
   });
 
@@ -60,12 +66,13 @@ describe('the kit book', () => {
     await waitFor(() => expect(api.kitOrders).toHaveBeenCalledWith('?status=cancelled&limit=100'));
   });
 
-  // A filled order offers no "mark ready", or the button would say nothing.
-  it('offers only the moves an order has left', async () => {
-    jest.mocked(api.kitOrders).mockResolvedValue({ items: [order({ status: 'fulfilled' })], total: 1, limit: 100, offset: 0 } as never);
+  // A paid order offers no "mark as paid", or pressing it would say nothing new.
+  it('offers only the moves an order has left, and says when it was paid', async () => {
+    jest.mocked(api.kitOrders).mockResolvedValue({ items: [order({ status: 'fulfilled', paid_at: '2026-09-10T09:00:00.000Z' })], total: 1, limit: 100, offset: 0 } as never);
     const screen = await render(<KitOrdersManager />, { wrapper });
     await screen.findByText('Jana Sherif');
-    expect(screen.queryByText('Mark ready')).toBeNull();
-    expect(screen.getByText('Back to ordered')).toBeTruthy();
+    expect(screen.queryByText('Mark as paid')).toBeNull();
+    expect(screen.getByText(/^Paid /u)).toBeTruthy();
+    expect(screen.getByText('Back to orders')).toBeTruthy();
   });
 });
