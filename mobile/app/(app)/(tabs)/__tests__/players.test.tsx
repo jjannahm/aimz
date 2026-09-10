@@ -344,7 +344,7 @@ describe('PlayersScreen', () => {
     const squad = await screen.findByTestId('training-award-team-t-u9');
     const training = screen.getByRole('tab', { name: 'Training' });
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.indexOf(squad)).toBeLessThan(tabs.indexOf(training));
+    expect(tabs.indexOf(training)).toBeLessThan(tabs.indexOf(squad));
     expect(screen.queryByTestId('award-competition-c-1')).toBeNull();
     fireEvent.press(screen.getByRole('tab', { name: 'Match' }));
     expect(await screen.findByText('Top scorer')).toBeTruthy();
