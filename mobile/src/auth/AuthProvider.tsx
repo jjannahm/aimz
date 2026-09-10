@@ -2,13 +2,15 @@ import { createContext, type PropsWithChildren, useContext, useEffect, useMemo, 
 
 import { api } from '@/src/lib/api';
 import { sessionStore } from '@/src/lib/session';
-import type { TokenResponse, User } from '@/src/types/api';
+import type { NewcomerApplicationPayload, TokenResponse, User } from '@/src/types/api';
 
 type AuthContextValue = {
   isReady: boolean;
   user: User | null;
   signIn(email: string, password: string): Promise<void>;
-  register(name: string, email: string, password: string, inviteCode: string): Promise<void>;
+  register(name: string, email: string, password: string, inviteCode: string, application?: NewcomerApplicationPayload): Promise<void>;
+  refreshUser(): Promise<void>;
+  deleteAccount(): Promise<void>;
   signOut(): Promise<void>;
 };
 
@@ -31,9 +33,19 @@ export function AuthProvider({ children }: PropsWithChildren) {
       await api.waitUntilReady();
       await sessionStore.save(await api.login(email.trim().toLowerCase(), password));
     },
-    async register(name, email, password, inviteCode) {
+    async register(name, email, password, inviteCode, application) {
       await api.waitUntilReady();
-      await sessionStore.save(await api.register(name.trim(), email.trim().toLowerCase(), password, inviteCode.trim()));
+      await sessionStore.save(await api.register(name.trim(), email.trim().toLowerCase(), password, inviteCode.trim(), application));
+    },
+    async refreshUser() {
+      const current = sessionStore.get();
+      if (!current) return;
+      const user = await api.me();
+      await sessionStore.save({ ...current, user });
+    },
+    async deleteAccount() {
+      await api.deleteMe();
+      await sessionStore.clear();
     },
     async signOut() {
       const current = sessionStore.get();

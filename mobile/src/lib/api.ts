@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -216,9 +216,9 @@ export const api = {
     request<TokenResponse>('/api/v1/auth/login', {
       method: 'POST', body: { email, password }, authenticated: false,
     }),
-  register: (name: string, email: string, password: string, invite_code: string) =>
+  register: (name: string, email: string, password: string, invite_code: string, application?: NewcomerApplicationPayload) =>
     request<TokenResponse>('/api/v1/auth/register', {
-      method: 'POST', body: { name, email, password, invite_code }, authenticated: false,
+      method: 'POST', body: { name, email, password, invite_code, application }, authenticated: false,
     }),
   logout: (refresh_token: string) =>
     request<void>('/api/v1/auth/logout', { method: 'POST', body: { refresh_token }, authenticated: false }),
@@ -241,7 +241,6 @@ export const api = {
     request<{ message: string }>('/api/v1/auth/password/change', {
       method: 'POST', body: { current_password, new_password },
     }),
-  deleteMe: () => request<void>('/api/v1/users/me', { method: 'DELETE' }),
   teams: (query = '') => allPages<Team>('/api/v1/teams', query),
   createTeam: (payload: Partial<Team>) => request<Team>('/api/v1/teams', { method: 'POST', body: payload }),
   updateTeam: (id: string, payload: Partial<Team>) => request<Team>(`/api/v1/teams/${id}`, { method: 'PATCH', body: payload }),
@@ -297,8 +296,18 @@ export const api = {
   playerStats: (playerId: string, season?: string) => request<PlayerSeasonSummary>(`/api/v1/players/${playerId}/stats${season ? `?season=${encodeURIComponent(season)}` : ''}`),
   playerHonours: (playerId: string) => request<PlayerHonours>(`/api/v1/players/${playerId}/honours`),
   invites: () => request<RegistrationInvite[]>('/api/v1/admin/registration-invites'),
-  createInvite: (payload: { label: string; code: string; kind: InviteKind; player_ids?: string[]; team_ids?: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
+  createInvite: (payload: { label: string; code?: string; kind: InviteKind; player_ids?: string[]; team_ids?: string[]; expires_at?: string | null; max_uses?: number | null }) => request<RegistrationInvite>('/api/v1/admin/registration-invites', { method: 'POST', body: payload }),
   revokeInvite: (id: string) => request<void>(`/api/v1/admin/registration-invites/${id}`, { method: 'DELETE' }),
+  resolveInvite: (code: string) => request<InviteContext>('/api/v1/auth/invitations/resolve', { method: 'POST', authenticated: false, body: { code } }),
+  newcomers: (query = '?queue=active') => request<Page<Newcomer>>(`/api/v1/admin/newcomers${query}`),
+  newcomer: (id: string) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`),
+  updateNewcomer: (id: string, body: Partial<{ stage: NewcomerStage; outcome: NewcomerOutcome; last_contacted_at: string | null; next_follow_up_at: string | null }>) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`, { method: 'PATCH', body }),
+  addNewcomerNote: (id: string, body: string) => request(`/api/v1/admin/newcomers/${id}/notes`, { method: 'POST', body: { body } }),
+  assignNewcomer: (id: string, body: { team_id: string; position: string; jersey_number: number | null }) => request<{ application: Newcomer; player_id: string; invitation: RegistrationInvite | null }>(`/api/v1/admin/newcomers/${id}/assign-and-confirm`, { method: 'POST', body }),
+  kitOrders: (query = '') => request<Page<KitOrder>>(`/api/v1/kit-orders${query}`),
+  orderKit: (body: KitOrderPayload) => request<KitOrder>('/api/v1/kit-orders', { method: 'POST', body }),
+  setKitStatus: (id: string, status: KitStatus) => request<KitOrder>(`/api/v1/admin/kit-orders/${id}`, { method: 'PATCH', body: { status } }),
+  deleteMe: () => request<void>('/api/v1/users/me', { method: 'DELETE' }),
   myChildren: () => request<{ items: LinkedChild[] }>('/api/v1/users/me/children'),
   adminUsers: (query = '?limit=100') => request<Page<AdminAccount>>(`/api/v1/admin/users${query}`),
   linkUserPlayer: (id: string, player_id: string | null) => request<User>(`/api/v1/admin/users/${id}`, { method: 'PATCH', body: { player_id } }),
@@ -373,7 +382,7 @@ export const api = {
   deleteTrainingAssignment: (trainingId: string, id: string) => request<void>(`/api/v1/training-sessions/${trainingId}/assignments/${id}`, { method: 'DELETE' }),
   playerRosterDetails: (id: string) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`),
   // The sensitive pair, on routes of their own: an administrator, the player
-  // herself, or her parent. A manager is refused both.
+  // herself, or her parent. A coach is refused both.
   playerPersonalDetails: (id: string) => request<PlayerPersonalDetails>(`/api/v1/players/${id}/personal-details`),
   playerFinancials: (id: string) => request<PlayerFinancials>(`/api/v1/players/${id}/financials`),
   savePlayerRosterDetails: (id: string, payload: { date_of_birth: string | null; contacts: { name: string; relationship: string | null; email: string | null; phone: string | null }[] }) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`, { method: 'PUT', body: payload }),

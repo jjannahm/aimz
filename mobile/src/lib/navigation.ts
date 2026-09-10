@@ -12,7 +12,7 @@ export type TabVisibility = { name: string; title: string; onBar: boolean };
  * then their squad, then the academy's fixtures. An admin has neither of the
  * first two and reads My Team, Matches, Manage.
  *
- * A manager runs one squad, so they get three — their fixtures, their squad,
+ * A coach runs one squad, so they get three — their fixtures, their squad,
  * and the Manage screen held to it — and none of the academy-wide browsing.
  * The Hub is the screen for somebody being told things rather than deciding
  * them, so it is not one of the three.
@@ -22,17 +22,17 @@ export type TabVisibility = { name: string; title: string; onBar: boolean };
  */
 export function tabsForRole(role: UserRole | undefined): TabVisibility[] {
   const isAdmin = role === 'admin';
-  const isManager = role === 'manager';
-  const isFamily = !isAdmin && !isManager;
+  const isCoach = role === 'coach';
+  const isFamily = !isAdmin && !isCoach;
   return [
     { name: 'my-team', title: 'Hub', onBar: isFamily },
     { name: 'reports', title: 'Reports', onBar: isFamily },
     // "My Team" rather than "Players": for a family it is their own squad they
     // are looking at, not a directory of the academy.
-    { name: 'players', title: 'My Team', onBar: !isManager },
+    { name: 'players', title: 'My Team', onBar: !isCoach },
     { name: 'index', title: 'Matches', onBar: true },
-    { name: 'squad', title: 'Team', onBar: isManager },
-    { name: 'manage', title: 'Manage', onBar: isAdmin || isManager },
+    { name: 'squad', title: 'Team', onBar: isCoach },
+    { name: 'manage', title: 'Manage', onBar: isAdmin || isCoach },
     // Reached from the gear in every screen's header, never from the dock.
     { name: 'settings', title: 'Settings', onBar: false },
   ];

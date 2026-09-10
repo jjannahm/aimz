@@ -43,7 +43,7 @@ export function registerAnnouncementRoutes(app: App): void {
     const body = await jsonObject(c);
     const teamId = stringField(body, "team_id", { optional: true, nullable: true, max: 36 }) ?? null;
     // A notice with no squad goes to the whole academy, which is not a
-    // manager's to send.
+    // coach's to send.
     if (!teamId) assertAdminOnly(actor, "An announcement to the whole academy");
     else assertCanManageTeam(scope, teamId);
     if (teamId) await requireAimzTeam(c.env, teamId);

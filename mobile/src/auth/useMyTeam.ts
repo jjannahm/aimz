@@ -29,8 +29,8 @@ export function useMyTeam() {
  * her family owes.
  *
  * An administrator may open anybody's; a player and a parent only the records
- * their own account speaks for; a manager nobody's, including on her own
- * squad. The API enforces exactly this, and refuses a manager both endpoints
+ * their own account speaks for; a coach nobody's, including on her own
+ * squad. The API enforces exactly this, and refuses a coach both endpoints
  * outright — this only decides whether the tab is worth drawing.
  *
  * `undefined` while the answer is still coming, so a caller can hold the tab
@@ -43,7 +43,7 @@ export function useCanSeeInformation(playerId: string | null | undefined): boole
   if (user.role === 'admin') return true;
   // Squad management is football. A family's phone number and what they have
   // paid are not, and holding them is a liability rather than a convenience.
-  if (user.role === 'manager') return false;
+  if (user.role === 'coach') return false;
   if (user.player_id === playerId) return true;
   if (user.role !== 'parent') return false;
   return isLoading ? undefined : children.some((child) => child.id === playerId);

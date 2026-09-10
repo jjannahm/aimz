@@ -25,7 +25,7 @@ const said = (status: AttendanceStatus | null) => (status ? STATUS_LABEL[status]
  *
  * Two halves of one thing, on the session they are about. A family sees the
  * mark against them and can say it is wrong; an administrator or the squad's
- * manager sees what has been asked and answers it. Neither is a screen of its
+ * coach sees what has been asked and answers it. Neither is a screen of its
  * own, because the context — which session, which squad, what the register
  * currently says — is all already here.
  *
@@ -36,7 +36,7 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
   const colors = useColors();
   const client = useQueryClient();
   const { user } = useAuth();
-  const decides = user?.role === 'admin' || user?.role === 'manager';
+  const decides = user?.role === 'admin' || user?.role === 'coach';
 
   const requests = useQuery({
     queryKey: [...cacheKeys.attendanceRequests, session.id],

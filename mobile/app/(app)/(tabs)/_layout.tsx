@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { FloatingTabBar } from '@/src/components/FloatingTabBar';
@@ -15,6 +15,8 @@ export const unstable_settings = { anchor: 'index' };
 
 export default function TabsLayout() {
   const { user } = useAuth();
+  // An application still being read has no academy to look at yet.
+  if (user?.onboarding_status === 'pending') return <Redirect href={'/(app)/pending' as never} />;
   // Which tabs this account gets is a rule, and it lives in one place beside
   // the roles it is about rather than inline here. Declaration order is dock
   // order, so the list comes back in the order it is drawn.

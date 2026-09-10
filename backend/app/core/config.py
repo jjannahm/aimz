@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     backend_cors_origins: list[AnyHttpUrl] = [
         AnyHttpUrl("http://localhost:8081"),
         AnyHttpUrl("http://localhost:19006"),
+        AnyHttpUrl("https://aimzegypt-73b85.web.app"),
     ]
     sql_echo: bool = False
     db_pool_size: int = 3
@@ -67,6 +68,10 @@ class Settings(BaseSettings):
     s3_presign_seconds: int = 900
     media_max_bytes: int = 5_242_880
     media_enabled: bool = True
+    require_player_application: bool = False
+    public_web_origin: str = "https://aimzegypt-73b85.web.app"
+    turnstile_secret: str | None = None
+    turnstile_hostnames: list[str] = ["aimzegypt-73b85.web.app"]
 
     @model_validator(mode="after")
     def normalize_and_validate(self) -> "Settings":

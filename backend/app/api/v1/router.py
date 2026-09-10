@@ -11,6 +11,7 @@ from app.api.v1.routes import (
     knockout,
     match_ops,
     media,
+    newcomers,
     results,
     roster,
     training,
@@ -20,8 +21,10 @@ from app.api.v1.routes import (
 api_router = APIRouter()
 api_router.include_router(health.router, prefix="/health", tags=["system"])
 api_router.include_router(auth.router, prefix="/auth", tags=["authentication"])
+api_router.include_router(newcomers.public_router, tags=["newcomer intake"])
 api_router.include_router(users.router, prefix="/users", tags=["account"])
 api_router.include_router(admin.router, prefix="/admin", tags=["administration"])
+api_router.include_router(newcomers.admin_router, prefix="/admin", tags=["newcomers"])
 api_router.include_router(domain.router, tags=["sports data"])
 api_router.include_router(announcements.router, tags=["announcements"])
 api_router.include_router(roster.router, tags=["roster"])
