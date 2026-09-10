@@ -307,6 +307,7 @@ class Team(TimestampMixin, Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(160), index=True)
+    branch: Mapped[str | None] = mapped_column(String(160), index=True)
     squad_code: Mapped[str | None] = mapped_column(String(40), index=True)
     age_group: Mapped[str | None] = mapped_column(String(40))
     season: Mapped[str | None] = mapped_column(String(40), index=True)

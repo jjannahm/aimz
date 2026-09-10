@@ -34,6 +34,7 @@ type App = Hono<{ Bindings: Env }>;
 
 interface JoinedMatchRow extends MatchRow {
   home_name: string;
+  home_branch: string | null;
   home_squad_code: string | null;
   home_age_group: string | null;
   home_season: string | null;
@@ -46,6 +47,7 @@ interface JoinedMatchRow extends MatchRow {
   home_created_at: string;
   home_updated_at: string;
   away_name: string;
+  away_branch: string | null;
   away_squad_code: string | null;
   away_age_group: string | null;
   away_season: string | null;
@@ -70,11 +72,11 @@ interface JoinedMatchRow extends MatchRow {
 
 const matchSelect = `
   SELECT m.*,
-    h.name home_name, h.squad_code home_squad_code, h.age_group home_age_group,
+    h.name home_name, h.branch home_branch, h.squad_code home_squad_code, h.age_group home_age_group,
     h.season home_season, h.is_aimz home_is_aimz, h.is_active home_is_active,
     h.logo_key home_logo_key, h.badge_style home_badge_style, h.coach home_coach, h.assistant_coach home_assistant_coach,
     h.created_at home_created_at, h.updated_at home_updated_at,
-    a.name away_name, a.squad_code away_squad_code, a.age_group away_age_group,
+    a.name away_name, a.branch away_branch, a.squad_code away_squad_code, a.age_group away_age_group,
     a.season away_season, a.is_aimz away_is_aimz, a.is_active away_is_active,
     a.logo_key away_logo_key, a.badge_style away_badge_style, a.coach away_coach, a.assistant_coach away_assistant_coach,
     a.created_at away_created_at, a.updated_at away_updated_at,
@@ -88,14 +90,14 @@ const matchSelect = `
 
 export function joinedMatch(row: JoinedMatchRow): Record<string, unknown> {
   const home: TeamRow = {
-    id: row.home_team_id, name: row.home_name, squad_code: row.home_squad_code,
+    id: row.home_team_id, name: row.home_name, branch: row.home_branch, squad_code: row.home_squad_code,
     age_group: row.home_age_group, season: row.home_season, is_aimz: row.home_is_aimz,
     is_active: row.home_is_active, logo_key: row.home_logo_key, badge_style: row.home_badge_style,
     coach: row.home_coach, assistant_coach: row.home_assistant_coach, competition_id: null, competition_group_id: null,
     created_at: row.home_created_at, updated_at: row.home_updated_at,
   };
   const away: TeamRow = {
-    id: row.away_team_id, name: row.away_name, squad_code: row.away_squad_code,
+    id: row.away_team_id, name: row.away_name, branch: row.away_branch, squad_code: row.away_squad_code,
     age_group: row.away_age_group, season: row.away_season, is_aimz: row.away_is_aimz,
     is_active: row.away_is_active, logo_key: row.away_logo_key, badge_style: row.away_badge_style,
     coach: row.away_coach, assistant_coach: row.away_assistant_coach, competition_id: null, competition_group_id: null,
@@ -157,6 +159,8 @@ export function registerDomainRoutes(app: App): void {
     if (active === "true" || active === "false") { conditions.push("is_active = ?"); values.push(active === "true" ? 1 : 0); }
     const isAimz = url.searchParams.get("is_aimz");
     if (isAimz === "true" || isAimz === "false") { conditions.push("is_aimz = ?"); values.push(isAimz === "true" ? 1 : 0); }
+    const branch = url.searchParams.get("branch");
+    if (branch) { conditions.push("branch = ?"); values.push(branch); }
     const season = url.searchParams.get("season");
     if (season) { conditions.push("season = ?"); values.push(season); }
     const search = url.searchParams.get("search");
@@ -175,6 +179,7 @@ export function registerDomainRoutes(app: App): void {
     const now = nowIso();
     const team: TeamRow = {
       id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!,
+      branch: stringField(body, "branch", { optional: true, nullable: true, max: 160 }) ?? null,
       squad_code: stringField(body, "squad_code", { optional: true, nullable: true, max: 40 }) ?? null,
       age_group: stringField(body, "age_group", { optional: true, nullable: true, max: 40 }) ?? null,
       season: stringField(body, "season", { optional: true, nullable: true, max: 40 }) ?? null,
@@ -188,7 +193,7 @@ export function registerDomainRoutes(app: App): void {
       competition_group_id: stringField(body, "competition_group_id", { optional: true, nullable: true, max: 36 }) ?? null,
       created_at: now, updated_at: now,
     };
-    await c.env.DB.prepare("INSERT INTO teams (id, name, squad_code, age_group, season, is_aimz, is_active, logo_key, badge_style, coach, assistant_coach, competition_id, competition_group_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(team.id, team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.badge_style, team.coach, team.assistant_coach, team.competition_id, team.competition_group_id, now, now).run();
+    await c.env.DB.prepare("INSERT INTO teams (id, name, branch, squad_code, age_group, season, is_aimz, is_active, logo_key, badge_style, coach, assistant_coach, competition_id, competition_group_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(team.id, team.name, team.branch, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.badge_style, team.coach, team.assistant_coach, team.competition_id, team.competition_group_id, now, now).run();
     return c.json(publicTeam(team), 201);
   });
 
@@ -201,6 +206,7 @@ export function registerDomainRoutes(app: App): void {
     const team: TeamRow = {
       ...current,
       name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name,
+      branch: optionalNullableText(body, "branch", current.branch, 160),
       squad_code: optionalNullableText(body, "squad_code", current.squad_code, 40),
       age_group: optionalNullableText(body, "age_group", current.age_group, 40),
       season: optionalNullableText(body, "season", current.season, 40),
@@ -216,7 +222,7 @@ export function registerDomainRoutes(app: App): void {
     };
     // Leaving a competition leaves its group with it.
     const groupId = team.competition_id === current.competition_id ? team.competition_group_id : null;
-    await c.env.DB.prepare("UPDATE teams SET name=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, badge_style=?, coach=?, assistant_coach=?, competition_id=?, competition_group_id=?, updated_at=? WHERE id=?").bind(team.name, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.badge_style, team.coach, team.assistant_coach, team.competition_id, groupId, team.updated_at, team.id).run();
+    await c.env.DB.prepare("UPDATE teams SET name=?, branch=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, badge_style=?, coach=?, assistant_coach=?, competition_id=?, competition_group_id=?, updated_at=? WHERE id=?").bind(team.name, team.branch, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.badge_style, team.coach, team.assistant_coach, team.competition_id, groupId, team.updated_at, team.id).run();
     return c.json(publicTeam({ ...team, competition_group_id: groupId }));
   });
   app.delete("/api/v1/teams/:id", async (c) => deleteRestricted(c, "teams", "team", c.req.param("id")));

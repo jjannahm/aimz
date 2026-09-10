@@ -309,6 +309,7 @@ class NewcomerAssignmentResult(BaseModel):
 
 class TeamInput(BaseModel):
     name: str = Field(min_length=2, max_length=160)
+    branch: str | None = Field(default=None, max_length=160)
     squad_code: str | None = Field(default=None, max_length=40)
     age_group: str | None = Field(default=None, max_length=40)
     season: str | None = Field(default=None, max_length=40)

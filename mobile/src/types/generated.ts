@@ -1540,6 +1540,8 @@ export interface components {
         TeamInput: {
             /** Name */
             name: string;
+            /** Branch */
+            branch?: string | null;
             /** Squad Code */
             squad_code?: string | null;
             /** Age Group */
@@ -1569,6 +1571,8 @@ export interface components {
         TeamRead: {
             /** Name */
             name: string;
+            /** Branch */
+            branch?: string | null;
             /** Squad Code */
             squad_code?: string | null;
             /** Age Group */

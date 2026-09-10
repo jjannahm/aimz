@@ -201,7 +201,7 @@ describe('ManageScreen navigation', () => {
     const screen = await render(<ManageScreen />, { wrapper });
     expect(await screen.findByText('Add squads')).toBeTruthy();
     // Folded, the card still says what it holds.
-    expect(screen.getByText('A squad’s name, age group, competition and coaches.')).toBeTruthy();
+    expect(screen.getByText('A squad’s name, branch, age group, competition and coaches.')).toBeTruthy();
     expect(screen.queryByLabelText('Team or squad name')).toBeNull();
 
     await openForm(screen, 'squads');
@@ -224,6 +224,23 @@ describe('ManageScreen navigation', () => {
 
     expect(await screen.findByText('Edit players')).toBeTruthy();
     await waitFor(() => expect(screen.getByLabelText('Player name').props.value).toBe('Amina Adel'));
+  });
+
+  it('groups current AIMZ squads by branch and keeps legacy squads visible', async () => {
+    jest.mocked(api.teams).mockResolvedValue({ ...emptyPage, total: 4, items: [
+      { id: 'team-1', name: 'U12 Blue', branch: 'Gardenia', is_aimz: true, season: '2026/27' },
+      { id: 'team-2', name: 'U14 Blue', branch: 'Gardenia', is_aimz: true, season: '2026/27' },
+      { id: 'team-3', name: 'U16 West', branch: 'Palm Hills', is_aimz: true, season: '2026/27' },
+      { id: 'team-4', name: 'Legacy squad', branch: null, is_aimz: true, season: '2026/27' },
+    ] } as never);
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.press(await screen.findByRole('button', { name: 'Show current squads' }));
+
+    expect(await screen.findByRole('header', { name: 'Gardenia' })).toBeTruthy();
+    expect(screen.getByText('2 squads')).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Palm Hills' })).toBeTruthy();
+    expect(screen.getByRole('header', { name: 'Branch not set' })).toBeTruthy();
+    expect(screen.getByText('Legacy squad')).toBeTruthy();
   });
 
   it('uses the family glyph for a player’s private roster details', async () => {
@@ -291,8 +308,10 @@ describe('ManageScreen confirmations', () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await openForm(screen, 'squads');
     await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
+    await fireEvent.changeText(screen.getByLabelText('Branch'), 'Gardenia');
     await fireEvent.press(screen.getByText('Add item'));
-    await waitFor(() => expect(showToast).toHaveBeenCalledWith('Squad created'));
+    await waitFor(() => expect(api.createTeam).toHaveBeenCalledWith(expect.objectContaining({ branch: 'Gardenia' })));
+    expect(showToast).toHaveBeenCalledWith('Squad created');
   });
 
   // The same form, the same button, a different section: the confirmation has
@@ -312,6 +331,7 @@ describe('ManageScreen confirmations', () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await openForm(screen, 'squads');
     await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
+    await fireEvent.changeText(screen.getByLabelText('Branch'), 'Gardenia');
     await fireEvent.press(screen.getByText('Add item'));
     await waitFor(() => expect(screen.getByText('The server refused it.')).toBeTruthy());
     expect(showToast).not.toHaveBeenCalled();
@@ -326,6 +346,15 @@ describe('ManageScreen confirmations', () => {
     await waitFor(() => expect(screen.getByText('Enter a team or squad name.')).toBeTruthy());
     expect(api.createTeam).not.toHaveBeenCalled();
     expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('requires a branch for a new AIMZ squad', async () => {
+    const screen = await render(<ManageScreen />, { wrapper });
+    await openForm(screen, 'squads');
+    await fireEvent.changeText(await screen.findByLabelText('Team or squad name'), 'AIMZ U14');
+    await fireEvent.press(screen.getByText('Add item'));
+    expect(await screen.findByText('Enter the squad branch.')).toBeTruthy();
+    expect(api.createTeam).not.toHaveBeenCalled();
   });
 });
 

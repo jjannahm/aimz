@@ -40,6 +40,7 @@ export interface UserRow {
 export interface TeamRow {
   id: string;
   name: string;
+  branch: string | null;
   squad_code: string | null;
   age_group: string | null;
   season: string | null;
