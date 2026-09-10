@@ -240,7 +240,7 @@ export function registerNewcomerRoutes(app: App): void {
         id: inviteId, label: `${item.full_name} — ${team.name}`, kind: "player",
         player_id: playerId, team_id: teamId, application_id: item.id, max_uses: 1,
         use_count: 0, is_active: true, created_at: now, code: generated.code,
-        share_url: `https://aimzegypt-73b85.web.app/join/${generated.compact}`,
+        share_url: `${c.env.PUBLIC_FORM_ORIGIN}/join/${generated.compact}`,
       };
     }
     statements.push(c.env.DB.prepare(`UPDATE newcomer_applications SET player_id=?,suggested_team_id=?,stage='closed',outcome='joined',closed_at=?,next_follow_up_at=NULL,reviewed_by_id=?,updated_at=? WHERE id=?`)

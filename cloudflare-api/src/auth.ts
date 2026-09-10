@@ -437,7 +437,7 @@ export function registerAuthRoutes(app: App): void {
       throw new ApiProblem(409, "invite_exists", "That invitation code already exists.");
     }
     const compact = normalizeInviteCode(generated.code);
-    return c.json({ ...publicInvite(invite), player_ids: playerIds, code: displayInviteCode(compact), share_url: `https://aimzegypt-73b85.web.app/join/${compact}` }, 201);
+    return c.json({ ...publicInvite(invite), player_ids: playerIds, code: displayInviteCode(compact), share_url: `${c.env.PUBLIC_FORM_ORIGIN}/join/${compact}` }, 201);
   });
   app.delete("/api/v1/admin/registration-invites/:id", async (c) => {
     await adminUser(c);
