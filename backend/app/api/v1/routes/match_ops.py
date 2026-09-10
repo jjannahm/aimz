@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Header, Response, status
 from sqlalchemy import delete, select
 
-from app.api.deps import AdminUser, CurrentUser, SessionDep
+from app.api.deps import AdminUser, CurrentUser, SessionDep, TeamOperator
 from app.core.errors import api_error
 from app.db.models import (
     Match,
@@ -11,6 +11,8 @@ from app.db.models import (
     MatchStatus,
     Player,
     PlayerMatchStat,
+    User,
+    UserRole,
 )
 from app.schemas import (
     LineupEntryInput,
@@ -39,6 +41,7 @@ from app.services.scoring import (
     squads_for_match,
     update_event,
 )
+from app.services.team_access import can_open_team
 
 router = APIRouter()
 
@@ -55,14 +58,35 @@ async def require_match(session: SessionDep, match_id: str) -> Match:
     return match
 
 
+async def require_match_operator(session: SessionDep, actor: User, match: Match) -> None:
+    if actor.role == UserRole.admin:
+        return
+    if actor.role != UserRole.coach:
+        raise api_error(
+            403,
+            "team_access_denied",
+            "Only administrators and coaches can operate matches.",
+        )
+    if await can_open_team(session, actor, match.home_team_id) or await can_open_team(
+        session, actor, match.away_team_id
+    ):
+        return
+    raise api_error(
+        403,
+        "team_access_denied",
+        "You can only operate matches involving your assigned squad.",
+    )
+
+
 @router.post("/{match_id}/phase", response_model=MatchRead)
 async def update_match_phase(
     match_id: str,
     payload: MatchPhaseUpdate,
-    actor: AdminUser,
+    actor: TeamOperator,
     session: SessionDep,
 ) -> Match:
     match = await require_match(session, match_id)
+    await require_match_operator(session, actor, match)
     await require_scorable(session, match)
     await require_open_season(session, match)
     apply_phase_action(match, payload.action)
@@ -142,10 +166,11 @@ async def record_result(
 async def set_man_of_the_match(
     match_id: str,
     payload: ManOfTheMatchInput,
-    actor: AdminUser,
+    actor: TeamOperator,
     session: SessionDep,
 ) -> Match:
     match = await require_match(session, match_id)
+    await require_match_operator(session, actor, match)
     await require_scorable(session, match)
     await require_open_season(session, match)
     if match.status != MatchStatus.finished:
@@ -208,9 +233,10 @@ async def list_events(match_id: str, _: CurrentUser, session: SessionDep) -> lis
 
 @router.post("/{match_id}/events", response_model=MatchEventRead, status_code=201)
 async def create_event(
-    match_id: str, payload: MatchEventInput, actor: AdminUser, session: SessionDep
+    match_id: str, payload: MatchEventInput, actor: TeamOperator, session: SessionDep
 ) -> MatchEvent:
     match = await require_match(session, match_id)
+    await require_match_operator(session, actor, match)
     await require_scorable(session, match)
     if match.status == MatchStatus.scheduled:
         raise api_error(409, "match_not_started", "Start the match before adding events.")
@@ -234,9 +260,10 @@ async def edit_event(
     match_id: str,
     event_id: str,
     payload: MatchEventUpdate,
-    actor: AdminUser,
+    actor: TeamOperator,
     session: SessionDep,
 ) -> MatchEvent:
+    await require_match_operator(session, actor, await require_match(session, match_id))
     event = await update_event(session, match_id, event_id, payload)
     record_audit(
         session,
@@ -254,8 +281,9 @@ async def edit_event(
 
 @router.delete("/{match_id}/events/{event_id}", status_code=204)
 async def delete_event(
-    match_id: str, event_id: str, actor: AdminUser, session: SessionDep
+    match_id: str, event_id: str, actor: TeamOperator, session: SessionDep
 ) -> Response:
+    await require_match_operator(session, actor, await require_match(session, match_id))
     await remove_event(session, match_id, event_id)
     record_audit(
         session,
@@ -288,10 +316,11 @@ async def get_lineup(match_id: str, _: CurrentUser, session: SessionDep) -> list
 async def replace_lineup(
     match_id: str,
     payload: list[LineupEntryInput],
-    actor: AdminUser,
+    actor: TeamOperator,
     session: SessionDep,
 ) -> list[MatchLineupEntry]:
     match = await require_match(session, match_id)
+    await require_match_operator(session, actor, match)
     await require_scorable(session, match)
     await require_open_season(session, match)
     # Once the match is under way, who is on the pitch changes through
@@ -353,10 +382,11 @@ async def get_player_stats(
 async def update_player_stats(
     match_id: str,
     payload: list[PlayerStatInput],
-    actor: AdminUser,
+    actor: TeamOperator,
     session: SessionDep,
 ) -> list[PlayerMatchStat]:
     match = await require_match(session, match_id)
+    await require_match_operator(session, actor, match)
     await require_scorable(session, match)
     await require_open_season(session, match)
     # The squad each player turned out for, stamped on the statistic so a

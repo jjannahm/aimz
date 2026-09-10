@@ -36,12 +36,19 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.aimzegypt.scores",
       "buildNumber": "1",
+      "associatedDomains": ["applinks:aimzegypt-73b85.web.app"],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.aimzegypt.scores"
+      "package": "com.aimzegypt.scores",
+      "intentFilters": [{
+        "action": "VIEW",
+        "autoVerify": true,
+        "data": [{ "scheme": "https", "host": "aimzegypt-73b85.web.app", "pathPrefix": "/join" }],
+        "category": ["BROWSABLE", "DEFAULT"]
+      }]
     },
     "extra": {
       "eas": {

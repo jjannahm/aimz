@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
-import { ApiProblem, adminUser, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
-import { canOpenTeam, requireAimzTeam, scopedTeams } from "./team-access";
+import { ApiProblem, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
+import { canOpenTeam, requireTeamOperator, scopedTeams } from "./team-access";
 import type { AttendanceRow, AvailabilityRow, PlayerRow, TeamRow, TrainingRow, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -92,10 +92,9 @@ export function registerTrainingRoutes(app: App): void {
   });
 
   app.post("/api/v1/training-sessions", async (c) => {
-    await adminUser(c);
     const body = await jsonObject(c);
     const teamId = stringField(body, "team_id", { min: 1, max: 36 })!;
-    await requireAimzTeam(c.env, teamId);
+    await requireTeamOperator(c, teamId);
     const venue = stringField(body, "venue", { min: 2, max: 200 })!;
     const notes = stringField(body, "notes", { optional: true, nullable: true, max: 2000 }) ?? null;
     const duration = numberField(body, "duration_minutes", { min: 15, max: 300, integer: true })!;
@@ -110,8 +109,8 @@ export function registerTrainingRoutes(app: App): void {
   });
 
   app.patch("/api/v1/training-sessions/:id", async (c) => {
-    await adminUser(c);
     const current = await trainingById(c.env, c.req.param("id"));
+    await requireTeamOperator(c, current.team_id);
     const body = await jsonObject(c);
     const row: TrainingRow = {
       ...current,
@@ -126,8 +125,8 @@ export function registerTrainingRoutes(app: App): void {
   });
 
   app.delete("/api/v1/training-sessions/:id", async (c) => {
-    await adminUser(c);
     const row = await trainingById(c.env, c.req.param("id"));
+    await requireTeamOperator(c, row.team_id);
     const scope = new URL(c.req.url).searchParams.get("scope") ?? "one";
     if (scope !== "one" && scope !== "series") throw new ApiProblem(422, "validation_error", "Delete one session or its whole series.");
     if (scope === "series" && row.series_id) await c.env.DB.prepare("DELETE FROM training_sessions WHERE series_id=?").bind(row.series_id).run();
@@ -165,8 +164,8 @@ export function registerTrainingRoutes(app: App): void {
    * null for somebody takes their mark away rather than guessing at it.
    */
   app.put("/api/v1/training-sessions/:id/attendance", async (c) => {
-    await adminUser(c);
     const session = await trainingById(c.env, c.req.param("id"));
+    await requireTeamOperator(c, session.team_id);
     const body = await jsonObject(c);
     if (!Array.isArray(body.entries) || body.entries.length > 200) throw new ApiProblem(422, "validation_error", "Send between 1 and 200 attendance marks.", [{ field: "entries", message: "Send up to 200 marks." }]);
     const entries = body.entries.map((raw) => {

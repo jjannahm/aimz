@@ -11,6 +11,7 @@ import { ApiProblem, currentUser, errorResponse } from "./helpers";
 import { registerKnockoutRoutes } from "./knockout";
 import { registerMatchRoutes } from "./matches";
 import { registerMediaRoutes } from "./media";
+import { registerNewcomerRoutes } from "./newcomers";
 import { registerReportRoutes } from "./reports";
 import { registerRosterRoutes } from "./roster";
 import { registerStatsRoutes } from "./stats";
@@ -20,7 +21,7 @@ import { registerTrainingStatsRoutes } from "./training-stats";
 const app = new Hono<{ Bindings: Env }>();
 
 app.use("/api/*", async (c, next) => cors({
-  origin: (origin) => origin === c.env.FRONTEND_ORIGIN || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u.test(origin) ? origin : c.env.FRONTEND_ORIGIN,
+  origin: (origin) => origin === c.env.FRONTEND_ORIGIN || origin === c.env.PUBLIC_FORM_ORIGIN || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u.test(origin) ? origin : c.env.FRONTEND_ORIGIN,
   allowHeaders: ["Authorization", "Content-Type", "If-None-Match"],
   exposeHeaders: ["ETag"],
   allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
@@ -42,6 +43,8 @@ const PUBLIC_ROUTES: { method: string; path: RegExp }[] = [
   { method: "GET", path: /^\/api\/v1\/health(\/ready)?$/u },
   // The ways in, and the way back in.
   { method: "POST", path: /^\/api\/v1\/auth\/(login|register|refresh|logout|password-reset\/(request|confirm))$/u },
+  { method: "POST", path: /^\/api\/v1\/auth\/invitations\/resolve$/u },
+  { method: "POST", path: /^\/api\/v1\/newcomer-applications$/u },
   // A calendar client polls this with no headers it can be given; the random
   // token in the address is the whole of the credential.
   { method: "GET", path: /^\/api\/v1\/calendar\/[^/]+\/aimz\.ics$/u },
@@ -60,7 +63,15 @@ app.use("/api/*", async (c, next) => {
   if (isPublic(c.req.method, c.req.path)) return next();
   // Throwing here rather than returning lets onError render it in the same
   // shape every other refusal takes.
-  await currentUser(c);
+  const user = await currentUser(c);
+  const pendingAllowed = /^\/api\/v1\/users\/me$/u.test(c.req.path)
+    || c.req.path === "/api/v1/auth/password/change";
+  if (user.onboarding_status === "pending" && !pendingAllowed) {
+    throw new ApiProblem(403, "approval_pending", "Your player application is awaiting approval.");
+  }
+  if (user.onboarding_status === "declined" && !pendingAllowed) {
+    throw new ApiProblem(403, "application_declined", "This player application was declined.");
+  }
   return next();
 });
 
@@ -71,6 +82,7 @@ app.get("/api/v1/health/ready", async (c) => {
 });
 
 registerAuthRoutes(app);
+registerNewcomerRoutes(app);
 registerDomainRoutes(app);
 registerMatchRoutes(app);
 registerStatsRoutes(app);

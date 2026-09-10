@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import api_error
-from app.db.models import Player, Team, User, UserChild, UserRole
+from app.db.models import Player, Team, TeamStaff, User, UserChild, UserRole
 
 NO_LINK = "Ask an AIMZ administrator to link your account to a squad player."
 
@@ -38,6 +38,15 @@ async def linked_player_ids(session: AsyncSession, user: User) -> list[str]:
 async def linked_team_ids(session: AsyncSession, user: User) -> list[str]:
     """The squads a non-admin account speaks for. A parent with children on two
     squads gets both."""
+    if user.role == UserRole.coach:
+        team_ids = list(
+            (
+                await session.scalars(select(TeamStaff.team_id).where(TeamStaff.user_id == user.id))
+            ).all()
+        )
+        if not team_ids:
+            raise api_error(403, "team_access_denied", "No squad is assigned to this coach.")
+        return team_ids
     player_ids = await linked_player_ids(session, user)
     team_ids = list(
         (
@@ -87,8 +96,15 @@ async def can_open_team(session: AsyncSession, user: User, team_id: str) -> bool
 
 
 async def require_aimz_team(session: AsyncSession, team_id: str) -> None:
-    team = await session.scalar(
-        select(Team).where(Team.id == team_id, Team.is_aimz.is_(True))
-    )
+    team = await session.scalar(select(Team).where(Team.id == team_id, Team.is_aimz.is_(True)))
     if team is None:
         raise api_error(422, "team_not_found", "Choose an AIMZ squad.")
+
+
+async def require_team_operator(session: AsyncSession, user: User, team_id: str) -> None:
+    """Allow an admin or a coach assigned to this exact squad."""
+    await require_aimz_team(session, team_id)
+    if user.role == UserRole.admin:
+        return
+    if user.role != UserRole.coach or team_id not in await linked_team_ids(session, user):
+        raise api_error(403, "team_access_denied", "You can only operate your assigned squad.")

@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { FloatingTabBar } from '@/src/components/FloatingTabBar';
@@ -14,6 +14,7 @@ export const unstable_settings = { anchor: 'index' };
 
 export default function TabsLayout() {
   const { user } = useAuth();
+  if (user?.onboarding_status === 'pending') return <Redirect href={'/(app)/pending' as never} />;
   // The bar floats over the page, so it draws itself rather than taking a
   // strip of the layout. Each screen leaves room for it at the foot of its
   // scroller.

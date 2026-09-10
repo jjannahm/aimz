@@ -1,6 +1,6 @@
-export type UserRole = "player" | "admin" | "parent";
+export type UserRole = "player" | "admin" | "parent" | "coach";
 /** What an invitation creates when it is redeemed. */
-export type InviteKind = "player" | "parent";
+export type InviteKind = "player" | "parent" | "coach";
 export type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
 export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";
@@ -16,6 +16,7 @@ export interface UserRow {
   role: UserRole;
   player_id: string | null;
   is_active: number;
+  onboarding_status?: "pending" | "approved" | "declined";
   /**
    * When the account stops working, or null for one that never does.
    *
@@ -374,6 +375,8 @@ export interface InviteRow {
   kind: InviteKind;
   /** Kept for invitations written before `invite_players`; read that instead. */
   player_id: string | null;
+  team_id?: string | null;
+  application_id?: string | null;
   expires_at: string | null;
   max_uses: number | null;
   use_count: number;

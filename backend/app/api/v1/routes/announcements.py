@@ -2,7 +2,7 @@ from fastapi import APIRouter, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import AdminUser, CurrentUser, SessionDep
+from app.api.deps import CurrentUser, SessionDep, TeamOperator
 from app.core.errors import api_error
 from app.db.models import Announcement
 from app.schemas import (
@@ -12,7 +12,7 @@ from app.schemas import (
     Page,
     TeamRead,
 )
-from app.services.team_access import require_aimz_team, scoped_teams
+from app.services.team_access import require_team_operator, scoped_teams
 
 router = APIRouter()
 
@@ -66,24 +66,23 @@ async def list_announcements(
     total = await session.scalar(count_query) or 0
     rows = (
         await session.scalars(
-            query.order_by(
-                Announcement.pinned.desc(), Announcement.created_at.desc()
-            )
+            query.order_by(Announcement.pinned.desc(), Announcement.created_at.desc())
             .limit(limit)
             .offset(offset)
         )
     ).all()
-    return Page(
-        items=[_serialize(row) for row in rows], total=total, limit=limit, offset=offset
-    )
+    return Page(items=[_serialize(row) for row in rows], total=total, limit=limit, offset=offset)
 
 
 @router.post("/announcements", response_model=AnnouncementRead, status_code=201)
 async def create_announcement(
-    payload: AnnouncementInput, actor: AdminUser, session: SessionDep
+    payload: AnnouncementInput, actor: TeamOperator, session: SessionDep
 ) -> AnnouncementRead:
-    if payload.team_id:
-        await require_aimz_team(session, payload.team_id)
+    if not payload.team_id:
+        if actor.role.value != "admin":
+            raise api_error(403, "team_access_denied", "Coaches must choose their assigned squad.")
+    else:
+        await require_team_operator(session, actor, payload.team_id)
     row = Announcement(
         team_id=payload.team_id,
         title=payload.title,
@@ -100,16 +99,20 @@ async def create_announcement(
 async def update_announcement(
     announcement_id: str,
     payload: AnnouncementUpdate,
-    _: AdminUser,
+    actor: TeamOperator,
     session: SessionDep,
 ) -> AnnouncementRead:
     row = await session.get(Announcement, announcement_id)
     if row is None:
         raise api_error(404, "announcement_not_found", "Announcement not found.")
+    if row.team_id is None and actor.role.value != "admin":
+        raise api_error(403, "team_access_denied", "Coaches cannot edit academy announcements.")
+    if row.team_id:
+        await require_team_operator(session, actor, row.team_id)
     provided = payload.model_fields_set
     if "team_id" in provided:
         if payload.team_id:
-            await require_aimz_team(session, payload.team_id)
+            await require_team_operator(session, actor, payload.team_id)
         row.team_id = payload.team_id
     if "title" in provided and payload.title is not None:
         row.title = payload.title
@@ -123,11 +126,15 @@ async def update_announcement(
 
 @router.delete("/announcements/{announcement_id}", status_code=204)
 async def delete_announcement(
-    announcement_id: str, _: AdminUser, session: SessionDep
+    announcement_id: str, actor: TeamOperator, session: SessionDep
 ) -> Response:
     row = await session.get(Announcement, announcement_id)
     if row is None:
         raise api_error(404, "announcement_not_found", "Announcement not found.")
+    if row.team_id is None and actor.role.value != "admin":
+        raise api_error(403, "team_access_denied", "Coaches cannot delete academy announcements.")
+    if row.team_id:
+        await require_team_operator(session, actor, row.team_id)
     await session.delete(row)
     await session.commit()
     return Response(status_code=204)

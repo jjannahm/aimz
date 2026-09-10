@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
@@ -13,6 +13,10 @@ from app.db.models import (
     InviteKind,
     MatchPhase,
     MatchStatus,
+    NewcomerOutcome,
+    NewcomerSource,
+    NewcomerStage,
+    OnboardingStatus,
     PenaltyOutcome,
     SubstitutionReason,
     UserRole,
@@ -42,9 +46,59 @@ class UserRead(ORMModel):
     email: EmailStr
     role: UserRole
     player_id: str | None
+    onboarding_status: OnboardingStatus = OnboardingStatus.approved
     # Null when the account never expires; a date it stops working on otherwise.
     expires_at: datetime | None = None
     created_at: datetime
+
+
+class NewcomerApplicationInput(BaseModel):
+    branch: str = Field(min_length=2, max_length=120)
+    full_name: str = Field(min_length=2, max_length=160)
+    mobile: str = Field(min_length=5, max_length=60)
+    email: EmailStr
+    whatsapp_mobile: str = Field(min_length=5, max_length=60)
+    date_of_birth: date
+    nationality: str = Field(min_length=2, max_length=100)
+    address: str = Field(min_length=2, max_length=500)
+    previous_academy: str = Field(min_length=2, max_length=200)
+    school_university: str = Field(min_length=2, max_length=200)
+    father_name: str = Field(min_length=2, max_length=160)
+    father_mobile: str = Field(min_length=5, max_length=60)
+    mother_name: str = Field(min_length=2, max_length=160)
+    mother_mobile: str = Field(min_length=5, max_length=60)
+    medical_concerns: str = Field(min_length=2, max_length=4000)
+    medications: str = Field(min_length=2, max_length=4000)
+    consent: Literal[True]
+    consent_version: str = Field(default="2026-09", min_length=1, max_length=40)
+
+    @field_validator(
+        "branch",
+        "full_name",
+        "mobile",
+        "whatsapp_mobile",
+        "nationality",
+        "address",
+        "previous_academy",
+        "school_university",
+        "father_name",
+        "father_mobile",
+        "mother_name",
+        "mother_mobile",
+        "medical_concerns",
+        "medications",
+    )
+    @classmethod
+    def _strip_required(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("This field is required. Enter None when it does not apply.")
+        return value
+
+
+class PublicNewcomerCreate(NewcomerApplicationInput):
+    client_submission_id: str = Field(pattern=r"^[A-Za-z0-9_-]{8,64}$")
+    turnstile_token: str = Field(min_length=1, max_length=2048)
 
 
 class RegisterRequest(BaseModel):
@@ -52,6 +106,7 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=10, max_length=128)
     invite_code: str = Field(min_length=4, max_length=128)
+    application: NewcomerApplicationInput | None = None
 
 
 class LoginRequest(BaseModel):
@@ -99,7 +154,7 @@ class AdminUserCreate(RegisterRequest):
 
 class InviteCreate(BaseModel):
     label: str = Field(min_length=2, max_length=120)
-    code: str = Field(min_length=4, max_length=128)
+    code: str | None = Field(default=None, min_length=4, max_length=128)
     # Which of the two kinds of account this invitation redeems into. A player
     # invitation names one player and links the account to that roster record,
     # which is how a player sees their own stats; a parent invitation names one
@@ -110,6 +165,8 @@ class InviteCreate(BaseModel):
     # several a parent invitation needs. Either or both may be given.
     player_id: str | None = Field(default=None, max_length=36)
     player_ids: list[str] = Field(default_factory=list)
+    team_id: str | None = Field(default=None, max_length=36)
+    application_id: str | None = Field(default=None, max_length=36)
     expires_at: datetime | None = None
     max_uses: int | None = Field(default=None, ge=1)
 
@@ -134,12 +191,120 @@ class InviteRead(ORMModel):
     label: str
     kind: InviteKind
     player_id: str | None
+    team_id: str | None = None
+    application_id: str | None = None
     players: list[InvitePlayerRead] = Field(default_factory=list)
     expires_at: datetime | None
     max_uses: int | None
     use_count: int
     is_active: bool
     created_at: datetime
+
+
+class GeneratedInviteRead(InviteRead):
+    code: str
+    share_url: str
+
+
+class InviteResolveRequest(BaseModel):
+    code: str = Field(min_length=4, max_length=128)
+
+
+class InviteContext(BaseModel):
+    kind: InviteKind
+    label: str
+    team_id: str | None = None
+    team_name: str | None = None
+    players: list[InvitePlayerRead] = Field(default_factory=list)
+    requires_application: bool = False
+
+
+class NewcomerNoteCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+
+
+class NewcomerNoteRead(ORMModel):
+    id: str
+    author_id: str | None
+    body: str
+    created_at: datetime
+
+
+class NewcomerRead(ORMModel):
+    id: str
+    source: NewcomerSource
+    stage: NewcomerStage
+    outcome: NewcomerOutcome | None
+    user_id: str | None
+    player_id: str | None
+    invite_id: str | None
+    suggested_team_id: str | None
+    branch: str
+    full_name: str
+    mobile: str
+    email: EmailStr
+    whatsapp_mobile: str
+    date_of_birth: str
+    nationality: str
+    address: str
+    previous_academy: str
+    school_university: str
+    father_name: str
+    father_mobile: str
+    mother_name: str
+    mother_mobile: str
+    medical_concerns: str
+    medications: str
+    consent_version: str
+    consented_at: datetime
+    last_contacted_at: datetime | None
+    next_follow_up_at: datetime | None
+    closed_at: datetime | None
+    redacted_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    duplicate_likely: bool = False
+    notes: list[NewcomerNoteRead] = Field(default_factory=list)
+
+
+class NewcomerCreated(BaseModel):
+    id: str
+    stage: NewcomerStage
+    duplicate_likely: bool = False
+
+
+class NewcomerUpdate(BaseModel):
+    stage: NewcomerStage | None = None
+    outcome: NewcomerOutcome | None = None
+    last_contacted_at: datetime | None = None
+    next_follow_up_at: datetime | None = None
+
+    @model_validator(mode="after")
+    def _closed_has_outcome(self) -> NewcomerUpdate:
+        if self.stage == NewcomerStage.closed and self.outcome is None:
+            raise ValueError("A closed application needs an outcome.")
+        if self.outcome is not None and self.stage not in {None, NewcomerStage.closed}:
+            raise ValueError("An outcome can only be set when closing an application.")
+        return self
+
+
+class NewcomerAssignment(BaseModel):
+    team_id: str = Field(min_length=1, max_length=36)
+    position: str = Field(min_length=1, max_length=60)
+    jersey_number: int | None = Field(default=None, ge=0, le=99)
+
+    @field_validator("position")
+    @classmethod
+    def _assignment_position(cls, value: str) -> str:
+        if value not in POSITION_CODES:
+            raise ValueError("Choose a position from the list.")
+        return value
+
+
+class NewcomerAssignmentResult(BaseModel):
+    application: NewcomerRead
+    player_id: str
+    invitation: GeneratedInviteRead | None = None
 
 
 class TeamInput(BaseModel):

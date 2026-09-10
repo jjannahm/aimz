@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
-import { ApiProblem, adminUser, booleanField, jsonObject, nowIso, parsePagination, publicTeam, stringField } from "./helpers";
-import { requireAimzTeam, scopedTeams } from "./team-access";
+import { ApiProblem, currentUser, booleanField, jsonObject, nowIso, parsePagination, publicTeam, stringField } from "./helpers";
+import { requireTeamOperator, scopedTeams } from "./team-access";
 import type { AnnouncementRow, TeamRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -38,10 +38,11 @@ export function registerAnnouncementRoutes(app: App): void {
   });
 
   app.post("/api/v1/announcements", async (c) => {
-    const actor = await adminUser(c);
+    const actor = await currentUser(c);
     const body = await jsonObject(c);
     const teamId = stringField(body, "team_id", { optional: true, nullable: true, max: 36 }) ?? null;
-    if (teamId) await requireAimzTeam(c.env, teamId);
+    if (!teamId && actor.role !== "admin") throw new ApiProblem(403, "team_access_denied", "Coaches must choose their assigned squad.");
+    if (teamId) await requireTeamOperator(c, teamId);
     const now = nowIso();
     const row: AnnouncementRow = { id: crypto.randomUUID(), team_id: teamId, title: stringField(body, "title", { min: 2, max: 160 })!, body: stringField(body, "body", { min: 2, max: 5000 })!, author_id: actor.id, pinned: booleanField(body, "pinned", false) ? 1 : 0, created_at: now, updated_at: now };
     await c.env.DB.prepare("INSERT INTO announcements (id, team_id, title, body, author_id, pinned, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(row.id, row.team_id, row.title, row.body, row.author_id, row.pinned, now, now).run();
@@ -49,19 +50,25 @@ export function registerAnnouncementRoutes(app: App): void {
   });
 
   app.patch("/api/v1/announcements/:id", async (c) => {
-    const actor = await adminUser(c);
+    const actor = await currentUser(c);
     const current = await announcementById(c.env, c.req.param("id"));
+    if (!current.team_id && actor.role !== "admin") throw new ApiProblem(403, "team_access_denied", "Coaches cannot edit academy announcements.");
+    if (current.team_id) await requireTeamOperator(c, current.team_id);
     const body = await jsonObject(c);
     const teamId = body.team_id === undefined ? current.team_id : stringField(body, "team_id", { nullable: true, max: 36 }) ?? null;
-    if (teamId) await requireAimzTeam(c.env, teamId);
+    if (!teamId && actor.role !== "admin") throw new ApiProblem(403, "team_access_denied", "Coaches cannot create academy announcements.");
+    if (teamId) await requireTeamOperator(c, teamId);
     const row: AnnouncementRow = { ...current, team_id: teamId, title: stringField(body, "title", { optional: true, min: 2, max: 160 }) ?? current.title, body: stringField(body, "body", { optional: true, min: 2, max: 5000 }) ?? current.body, pinned: body.pinned === undefined ? current.pinned : booleanField(body, "pinned") ? 1 : 0, updated_at: nowIso() };
     await c.env.DB.prepare("UPDATE announcements SET team_id=?, title=?, body=?, pinned=?, updated_at=? WHERE id=?").bind(row.team_id, row.title, row.body, row.pinned, row.updated_at, row.id).run();
     return c.json(await publicAnnouncement(c.env, row, actor.id === row.author_id ? actor.name : null));
   });
 
   app.delete("/api/v1/announcements/:id", async (c) => {
-    await adminUser(c);
-    const result = await c.env.DB.prepare("DELETE FROM announcements WHERE id=?").bind(c.req.param("id")).run();
+    const actor = await currentUser(c);
+    const row = await announcementById(c.env, c.req.param("id"));
+    if (!row.team_id && actor.role !== "admin") throw new ApiProblem(403, "team_access_denied", "Coaches cannot delete academy announcements.");
+    if (row.team_id) await requireTeamOperator(c, row.team_id);
+    const result = await c.env.DB.prepare("DELETE FROM announcements WHERE id=?").bind(row.id).run();
     if (!result.meta.changes) throw new ApiProblem(404, "announcement_not_found", "Announcement not found.");
     return c.body(null, 204);
   });

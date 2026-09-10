@@ -3,6 +3,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
 from app.api.deps import AdminUser, SessionDep
+from app.core.config import settings
 from app.core.errors import api_error
 from app.core.security import hash_password, secret_hash
 from app.db.models import (
@@ -21,6 +22,7 @@ from app.schemas import (
     AdminUserUpdate,
     AuditLogRead,
     ChildRead,
+    GeneratedInviteRead,
     InviteCreate,
     InvitePlayerRead,
     InviteRead,
@@ -28,6 +30,7 @@ from app.schemas import (
     UserRead,
 )
 from app.services.accounts import set_account_expiry, validate_expiry
+from app.services.invitations import invite_hash_candidates, unique_invite_code
 
 router = APIRouter()
 
@@ -77,6 +80,8 @@ async def invite_read(session: SessionDep, invite: RegistrationInvite) -> Invite
         label=invite.label,
         kind=invite.kind,
         player_id=invite.player_id,
+        team_id=invite.team_id,
+        application_id=invite.application_id,
         players=[InvitePlayerRead(id=pid, name=name) for pid, name in rows],
         expires_at=invite.expires_at,
         max_uses=invite.max_uses,
@@ -239,26 +244,29 @@ async def list_invites(_: AdminUser, session: SessionDep) -> list[InviteRead]:
 
 
 @router.post(
-    "/registration-invites", response_model=InviteRead, status_code=status.HTTP_201_CREATED
+    "/registration-invites", response_model=GeneratedInviteRead, status_code=status.HTTP_201_CREATED
 )
 async def create_invite(
     payload: InviteCreate, admin: AdminUser, session: SessionDep
-) -> InviteRead:
+) -> GeneratedInviteRead:
     # The players named on the invitation, deduplicated with order kept, from
     # either the single-player field or the list a parent invitation uses.
     requested = list(
         dict.fromkeys(payload.player_ids + ([payload.player_id] if payload.player_id else []))
     )
-    if not requested:
+    if payload.kind == InviteKind.parent and not requested:
         raise api_error(
             422,
             "validation_error",
-            "Choose at least one child from the roster."
-            if payload.kind == InviteKind.parent
-            else "Choose a player from the roster.",
+            "Choose at least one child from the roster.Choose at least one child from the roster.",
         )
     if payload.kind == InviteKind.player and len(requested) > 1:
         raise api_error(422, "validation_error", "A player invitation is for one player.")
+    if payload.kind == InviteKind.coach and not payload.team_id:
+        raise api_error(422, "validation_error", "Choose one squad for the coach.")
+    team = await session.get(Team, payload.team_id) if payload.team_id else None
+    if payload.team_id and (team is None or not team.is_aimz or not team.is_active):
+        raise api_error(422, "team_not_found", "Choose an active AIMZ squad.")
 
     # A player may only ever hold one account of their own, so a player
     # invitation is refused up front when that roster record is taken. A parent
@@ -272,15 +280,29 @@ async def create_invite(
         else:
             player_ids.append(await roster_player(session, player_id))
 
+    if payload.code:
+        code = payload.code.strip().upper()
+        code_hash = secret_hash("".join(c for c in code if c.isalnum()))
+        if await session.scalar(
+            select(RegistrationInvite.id).where(
+                RegistrationInvite.code_hash.in_(invite_hash_candidates(payload.code))
+            )
+        ):
+            raise api_error(409, "invite_exists", "That invitation code already exists.")
+    else:
+        code, code_hash = await unique_invite_code(session)
     invite = RegistrationInvite(
         label=payload.label,
-        code_hash=secret_hash(payload.code),
+        code_hash=code_hash,
         kind=payload.kind,
         player_id=player_ids[0] if payload.kind == InviteKind.player else None,
+        team_id=payload.team_id
+        or ((await session.get(Player, player_ids[0])).team_id if player_ids else None),
+        application_id=payload.application_id,
         expires_at=payload.expires_at,
         # A player invitation is for that one person, whatever the caller asks
         # for: a second claim would find the roster record taken.
-        max_uses=1 if payload.kind == InviteKind.player else payload.max_uses,
+        max_uses=1 if payload.kind in {InviteKind.player, InviteKind.coach} else payload.max_uses,
         created_by_id=admin.id,
     )
     invite.players = [InvitePlayer(player_id=player_id) for player_id in player_ids]
@@ -291,7 +313,13 @@ async def create_invite(
         await session.rollback()
         raise api_error(409, "invite_exists", "That invitation code already exists.") from exc
     await session.refresh(invite)
-    return await invite_read(session, invite)
+    readable = await invite_read(session, invite)
+    compact = "".join(character for character in code if character.isalnum())
+    return GeneratedInviteRead(
+        **readable.model_dump(),
+        code=code,
+        share_url=f"{settings.public_web_origin}/join/{compact}",
+    )
 
 
 @router.delete("/registration-invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)

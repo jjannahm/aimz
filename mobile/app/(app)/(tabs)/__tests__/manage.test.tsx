@@ -114,6 +114,7 @@ describe('ManageScreen navigation', () => {
       'Invites',
       'Fees',
       'Reports',
+      'Newcomers',
     ]);
     // The two that were merged away are reachable, but underneath their pill.
     expect(screen.queryByTestId('manage-tab-opponents')).toBeNull();
@@ -378,16 +379,11 @@ describe('ManageScreen invite player picker', () => {
     await waitFor(() => expect(screen.queryByTestId('player-picker-menu')).toBeNull());
   });
 
-  it('keeps the existing player and parent selection validation', async () => {
+  it('allows an unassigned player intake and still requires a parent child', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(await screen.findByRole('tab', { name: 'Invites' }));
     await openForm(screen, 'invites');
     await fireEvent.changeText(await screen.findByLabelText('Invite label'), 'Family invite');
-    await fireEvent.changeText(screen.getByLabelText('Invite code'), 'FAMILY-26');
-
-    await fireEvent.press(screen.getByText('Add item'));
-    expect(await screen.findByText('Choose a player.')).toBeTruthy();
-
     fireEvent.press(screen.getByRole('button', { name: 'Invite type' }));
     await fireEvent.press(await screen.findByRole('button', { name: 'Parent' }));
     await fireEvent.press(screen.getByText('Add item'));

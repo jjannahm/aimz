@@ -8,6 +8,8 @@
   "vars": {
     "ENVIRONMENT": "staging",
     "FRONTEND_ORIGIN": "https://aimz-egypt-staging.pages.dev",
+    "PUBLIC_FORM_ORIGIN": "https://aimzegypt-73b85.web.app",
+    "TURNSTILE_HOSTNAMES": "aimzegypt-73b85.web.app",
     "ADMIN_NAME": "AIMZ Staging Admin",
     "ACCESS_TOKEN_SECONDS": "900",
     "REFRESH_TOKEN_DAYS": "30",

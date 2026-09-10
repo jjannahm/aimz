@@ -21,6 +21,13 @@ export async function linkedPlayerIds(env: Env, user: UserRow): Promise<string[]
  * both, which is why this is a list rather than the single id it started as.
  */
 export async function linkedTeamIds(env: Env, user: UserRow): Promise<string[]> {
+  if (user.role === "coach") {
+    const result = await env.DB.prepare("SELECT team_id FROM team_staff WHERE user_id=?")
+      .bind(user.id).all<{ team_id: string }>();
+    const teamIds = result.results.map((row) => row.team_id);
+    if (!teamIds.length) throw new ApiProblem(403, "team_access_denied", "No squad is assigned to this coach.");
+    return teamIds;
+  }
   const playerIds = await linkedPlayerIds(env, user);
   const placeholders = playerIds.map(() => "?").join(",");
   const result = await env.DB.prepare(`SELECT DISTINCT team_id FROM players WHERE id IN (${placeholders})`).bind(...playerIds).all<{ team_id: string }>();
@@ -58,4 +65,15 @@ export async function scopedTeams(c: Context<{ Bindings: Env }>, requested: stri
 export async function requireAimzTeam(env: Env, teamId: string): Promise<void> {
   const team = await env.DB.prepare("SELECT id FROM teams WHERE id=? AND is_aimz=1").bind(teamId).first();
   if (!team) throw new ApiProblem(422, "team_not_found", "Choose an AIMZ squad.");
+}
+
+/** A write boundary for administrators and coaches assigned to this squad. */
+export async function requireTeamOperator(c: Context<{ Bindings: Env }>, teamId: string): Promise<UserRow> {
+  const user = await currentUser(c);
+  await requireAimzTeam(c.env, teamId);
+  if (user.role === "admin") return user;
+  if (user.role !== "coach" || !(await linkedTeamIds(c.env, user)).includes(teamId)) {
+    throw new ApiProblem(403, "team_access_denied", "You can only operate your assigned squad.");
+  }
+  return user;
 }
