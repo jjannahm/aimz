@@ -1,7 +1,15 @@
 import type { AttendanceStatus } from "./attendance";
 export type UserRole = "player" | "admin" | "parent" | "coach";
-/** What an invitation creates when it is redeemed. */
-export type InviteKind = "player" | "parent" | "coach";
+/**
+ * What an invitation creates when it is redeemed.
+ *
+ * The difference between a player and a newcomer is whether AIMZ already knows
+ * who is arriving. A player invitation names somebody on the roster and lets
+ * them straight in; a newcomer invitation names nobody, asks them to apply, and
+ * waits for an administrator to confirm them — which is when their player
+ * record is created.
+ */
+export type InviteKind = "player" | "parent" | "coach" | "newcomer";
 export type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
 export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";

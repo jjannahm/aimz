@@ -2278,3 +2278,92 @@ describe('a month is earned before it is owed', () => {
     expect(kit).toMatchObject({ status: 'overdue', sessions_attended: null, sessions_required: null });
   });
 });
+
+describe('who waits at the door and who walks in', () => {
+  const applicationBody = (name: string, email: string) => ({
+    branch: 'Maadi', full_name: name, mobile: '0100', email, whatsapp_mobile: '0100',
+    date_of_birth: '2014-05-02', nationality: 'Egyptian', address: 'Cairo', previous_academy: 'None',
+    school_university: 'School', father_name: 'Hossam', father_mobile: '0101', mother_name: 'Mona',
+    mother_mobile: '0102', medical_concerns: 'None', medications: 'None', consent: true,
+  });
+
+  /**
+   * The two invitations differ on one thing: whether AIMZ already knows who is
+   * arriving. A player was invited by name off the roster, so there is nothing
+   * left to decide.
+   */
+  it('lets a player invited by name straight in', async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: `Straight ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+    const player = await (await request('/api/v1/players', json('POST', { name: 'Layla Adel', team_id: team.id, position: 'ST' }, admin.token))).json<{ id: string }>();
+    const invite = await (await request('/api/v1/admin/registration-invites', json('POST', { label: 'Layla', kind: 'player', player_ids: [player.id] }, admin.token))).json<{ code: string }>();
+
+    const unique = crypto.randomUUID().slice(0, 8);
+    const created = await request('/api/v1/auth/register', json('POST', { name: 'Layla Adel', email: `layla-${unique}@aimz.test`, password: 'long-enough', invite_code: invite.code }));
+    expect(created.status, await created.clone().text()).toBe(201);
+    const account = await created.json<{ access_token: string; user: { onboarding_status: string; player_id: string } }>();
+    expect(account.user).toMatchObject({ onboarding_status: 'approved', player_id: player.id });
+    // Approved means the academy opens, rather than answering with the waiting room.
+    expect((await request('/api/v1/matches?limit=1', json('GET', undefined, account.access_token))).status).toBe(200);
+  });
+
+  it('makes a newcomer apply, and holds them until somebody says yes', async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: `Waiting ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+    // No player named: that is the point of the kind.
+    const invite = await (await request('/api/v1/admin/registration-invites', json('POST', { label: 'Autumn intake', kind: 'newcomer' }, admin.token))).json<{ code: string; player_id: string | null }>();
+    expect(invite.player_id).toBeNull();
+
+    const unique = crypto.randomUUID().slice(0, 8);
+    const email = `nour-${unique}@aimz.test`;
+    const created = await request('/api/v1/auth/register', json('POST', { name: 'Nour Sami', email, password: 'long-enough', invite_code: invite.code, application: applicationBody('Nour Sami', email) }));
+    expect(created.status, await created.clone().text()).toBe(201);
+    const account = await created.json<{ access_token: string; user: { id: string; onboarding_status: string; player_id: string | null } }>();
+    expect(account.user).toMatchObject({ onboarding_status: 'pending', player_id: null });
+    // Pending means the door is shut, whatever they ask for.
+    const refused = await request('/api/v1/matches?limit=1', json('GET', undefined, account.access_token));
+    expect(refused.status).toBe(403);
+
+    // The application reached the queue, carrying the account that made it.
+    const queue = await (await request('/api/v1/admin/newcomers?queue=active&limit=50', json('GET', undefined, admin.token))).json<{ items: { id: string; user_id: string | null; source: string }[] }>();
+    const mine = queue.items.find((item) => item.user_id === account.user.id);
+    expect(mine, 'the application is in the queue').toBeTruthy();
+    expect(mine!.source).toBe('account_registration');
+
+    // Approving creates the player and opens the door.
+    const confirmed = await (await request(`/api/v1/admin/newcomers/${mine!.id}/assign-and-confirm`, json('POST', { team_id: team.id, position: 'CM', jersey_number: 7 }, admin.token))).json<{ player_id: string }>();
+    expect(confirmed.player_id).toBeTruthy();
+    const opened = await request('/api/v1/matches?limit=1', json('GET', undefined, account.access_token));
+    expect(opened.status).toBe(200);
+    const row = await testEnv.DB.prepare('SELECT onboarding_status, player_id FROM users WHERE id=?').bind(account.user.id).first<{ onboarding_status: string; player_id: string }>();
+    expect(row).toMatchObject({ onboarding_status: 'approved', player_id: confirmed.player_id });
+  });
+
+  it('refuses a newcomer who has not applied', async () => {
+    const admin = await seedUser('admin');
+    const invite = await (await request('/api/v1/admin/registration-invites', json('POST', { label: 'No form', kind: 'newcomer' }, admin.token))).json<{ code: string }>();
+    const unique = crypto.randomUUID().slice(0, 8);
+    const refused = await request('/api/v1/auth/register', json('POST', { name: 'Nobody', email: `no-${unique}@aimz.test`, password: 'long-enough', invite_code: invite.code }));
+    expect(refused.status).toBe(422);
+  });
+
+  // The other half of the rule: an invitation that says "player" has to name one.
+  it('refuses a player invitation that names nobody', async () => {
+    const admin = await seedUser('admin');
+    const refused = await request('/api/v1/admin/registration-invites', json('POST', { label: 'Unlinked', kind: 'player', player_ids: [] }, admin.token));
+    expect(refused.status).toBe(422);
+  });
+
+  it('tells the sign-up form which invitations need an application', async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: `Resolve ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+    const player = await (await request('/api/v1/players', json('POST', { name: 'Mariam Nabil', team_id: team.id, position: 'GK' }, admin.token))).json<{ id: string }>();
+    const asPlayer = await (await request('/api/v1/admin/registration-invites', json('POST', { label: 'Mariam', kind: 'player', player_ids: [player.id] }, admin.token))).json<{ code: string }>();
+    const asNewcomer = await (await request('/api/v1/admin/registration-invites', json('POST', { label: 'Intake', kind: 'newcomer' }, admin.token))).json<{ code: string }>();
+
+    const one = await (await request('/api/v1/auth/invitations/resolve', json('POST', { code: asPlayer.code }))).json<{ kind: string; requires_application: boolean }>();
+    expect(one).toMatchObject({ kind: 'player', requires_application: false });
+    const two = await (await request('/api/v1/auth/invitations/resolve', json('POST', { code: asNewcomer.code }))).json<{ kind: string; requires_application: boolean }>();
+    expect(two).toMatchObject({ kind: 'newcomer', requires_application: true });
+  });
+});
