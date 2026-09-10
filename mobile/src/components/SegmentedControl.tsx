@@ -6,6 +6,13 @@ import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 export type SegmentedOption<Value extends string> = {
   accessibilityLabel?: string;
+  /**
+   * A red mark beside the label, for a tab holding something unread.
+   *
+   * It sits over the row rather than in it, so a tab that grows one does not
+   * push its own words along or make the bar any taller.
+   */
+  dot?: boolean;
   label: string;
   value: Value;
 };
@@ -114,6 +121,8 @@ export function SegmentedControl<Value extends string>({ label, onChange, option
             style={({ pressed }) => [styles.segment, quiet && styles.segmentQuiet, pressed && styles.pressed]}
           >
             <Text numberOfLines={1} style={[styles.label, quiet && styles.labelQuiet, selected && styles.labelOn]}>{option.label}</Text>
+            {/* Wordless, and the tab it sits on says "urgent unread" in its own label, so it needs no announcement of its own. */}
+            {option.dot ? <View pointerEvents="none" style={styles.dot} testID={`segmented-control-dot-${option.value}`} /> : null}
           </Pressable>
         );
       })}
@@ -160,5 +169,16 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   labelQuiet: { fontSize: theme.type.caption },
   label: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.label, textAlign: 'center' },
   labelOn: { color: colors.onAccent, fontFamily: theme.font.bold },
+  // The red the urgent announcement card is outlined in, so one alert and the
+  // thing it points at are plainly the same alert.
+  dot: {
+    backgroundColor: colors.error,
+    borderRadius: 4,
+    height: 8,
+    position: 'absolute',
+    right: theme.spacing.xs,
+    top: theme.spacing.xs,
+    width: 8,
+  },
   pressed: { opacity: 0.7 },
 });
