@@ -1914,3 +1914,97 @@ describe('late marks and register corrections', () => {
     expect(await pointless.json()).toMatchObject({ detail: { code: 'already_marked' } });
   });
 });
+
+describe('a player\'s own information', () => {
+  /** One squad, two players, and a charge against the first of them. */
+  async function world() {
+    const admin = await seedUser('admin');
+    const unique = crypto.randomUUID().slice(0, 8);
+    const post = async <T>(path: string, body: unknown): Promise<T> => (await request(path, json('POST', body, admin.token))).json<T>();
+    const squad = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ Info ${unique}`, is_aimz: true });
+    const player = await post<{ id: string }>('/api/v1/players', { name: 'Layla Hassan', team_id: squad.id, position: 'CM' });
+    const mate = await post<{ id: string }>('/api/v1/players', { name: 'Nour Adel', team_id: squad.id, position: 'ST' });
+    await request(`/api/v1/players/${player.id}/contacts`, json('PUT', {
+      date_of_birth: '2012-04-02',
+      contacts: [{ name: 'Mona Hassan', relationship: 'Mother', email: 'mona@aimz.test', phone: '+20 100 000 0000' }],
+    }, admin.token));
+    const charge = await post<{ id: string }>('/api/v1/fee-charges', {
+      player_id: player.id, label: 'September fees', amount_piastres: 500000, due_on: '2026-09-01',
+    });
+    await post(`/api/v1/fee-charges/${charge.id}/payments`, { amount_piastres: 200000, paid_on: '2026-09-03', method: 'cash' });
+    return { admin, unique, squad, player, mate, charge };
+  }
+
+  it('gathers what the academy already holds, without a table of its own', async () => {
+    const it = await world();
+    const details = await (await request(`/api/v1/players/${it.player.id}/personal-details`, json('GET', undefined, it.admin.token)))
+      .json<{ date_of_birth: string; age: number; contacts: { name: string; phone: string }[]; player: { name: string } }>();
+
+    expect(details.player.name).toBe('Layla Hassan');
+    expect(details.date_of_birth).toBe('2012-04-02');
+    // Worked out on read rather than stored, so it is never a year stale.
+    expect(details.age).toBeGreaterThan(10);
+    expect(details.contacts).toEqual([expect.objectContaining({ name: 'Mona Hassan', phone: '+20 100 000 0000' })]);
+  });
+
+  it('reads the fee ledger rather than a second one', async () => {
+    const it = await world();
+    const money = await (await request(`/api/v1/players/${it.player.id}/financials`, json('GET', undefined, it.admin.token)))
+      .json<{ summary: { charged_piastres: number; paid_piastres: number; outstanding_piastres: number }; items: { status: string; payments: unknown[] }[] }>();
+
+    expect(money.summary).toMatchObject({ charged_piastres: 500000, paid_piastres: 200000, outstanding_piastres: 300000 });
+    expect(money.items).toHaveLength(1);
+    // The same status the admin ledger works out, from the same rows.
+    expect(money.items[0]).toMatchObject({ status: 'overdue' });
+    expect(money.items[0]!.payments).toHaveLength(1);
+
+    // A cancelled charge is still listed, and is nobody's debt.
+    await request(`/api/v1/fee-charges/${it.charge.id}/void`, json('POST', { reason: 'Raised twice' }, it.admin.token));
+    const after = await (await request(`/api/v1/players/${it.player.id}/financials`, json('GET', undefined, it.admin.token)))
+      .json<{ summary: { charged_piastres: number; outstanding_piastres: number }; items: unknown[] }>();
+    expect(after.summary).toMatchObject({ charged_piastres: 0, outstanding_piastres: 0 });
+    expect(after.items).toHaveLength(1);
+  });
+
+  it('gives a player and her parent her own, and nobody else theirs', async () => {
+    const it = await world();
+    const player = await seedUser('player', it.player.id);
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, it.player.id, now).run();
+
+    for (const account of [player, parent]) {
+      for (const kind of ['personal-details', 'financials']) {
+        expect((await request(`/api/v1/players/${it.player.id}/${kind}`, json('GET', undefined, account.token))).status).toBe(200);
+        // A squad-mate's, by changing the id in the URL.
+        const refused = await request(`/api/v1/players/${it.mate.id}/${kind}`, json('GET', undefined, account.token));
+        expect(refused.status, `${kind} for somebody else`).toBe(403);
+        expect(await refused.json()).toMatchObject({ detail: { code: 'player_access_denied' } });
+      }
+    }
+  });
+
+  it('shuts a manager out of both, and out of the fee ledger with them', async () => {
+    const it = await world();
+    const manager = await seedUser('manager');
+    // Her own squad, which is the point: this is not squad scope.
+    await assignSquad(manager.id, it.squad.id);
+
+    for (const kind of ['personal-details', 'financials']) {
+      const refused = await request(`/api/v1/players/${it.player.id}/${kind}`, json('GET', undefined, manager.token));
+      expect(refused.status, kind).toBe(403);
+      expect(await refused.json()).toMatchObject({ detail: { code: 'personal_data_denied' } });
+    }
+
+    // The private roster record is the same information by another door.
+    expect((await request(`/api/v1/players/${it.player.id}/contacts`, json('GET', undefined, manager.token))).status).toBe(403);
+
+    // And so is the ledger behind the Manage screen.
+    for (const path of ['/api/v1/fee-charges', '/api/v1/fee-plans', `/api/v1/teams/${it.squad.id}/fee-summary`]) {
+      expect((await request(path, json('GET', undefined, manager.token))).status, path).toBe(403);
+    }
+    expect((await request('/api/v1/fee-charges', json('POST', { player_id: it.player.id, label: 'Kit', amount_piastres: 1000, due_on: '2026-10-01' }, manager.token))).status).toBe(403);
+
+    // Her squad's football is untouched by any of it.
+    expect((await request(`/api/v1/players/${it.player.id}/training-stats`, json('GET', undefined, manager.token))).status).toBe(200);
+  });
+});

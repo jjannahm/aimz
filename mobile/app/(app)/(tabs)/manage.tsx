@@ -60,12 +60,18 @@ const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Sq
 /**
  * The pills a manager does not get.
  *
- * Both are the academy's own business rather than a squad's: entering teams in
- * competitions reaches across the club, and an invitation creates an account.
- * The API refuses a manager either, so showing the pill would only be a way to
+ * Competitions and invitations are the academy's own business rather than a
+ * squad's: entering teams in competitions reaches across the club, and an
+ * invitation creates an account.
+ *
+ * Fees are here for a different reason. A manager runs a squad's football —
+ * she picks the team, takes the register, marks training — and what a family
+ * has paid is not that. The player profile keeps her out of it, and this is
+ * the other door into the same information, so it is shut too. The API refuses
+ * a manager every one of these, so showing the pill would only be a way to
  * find that out the hard way.
  */
-const ACADEMY_ONLY: Tab[] = ['competitions', 'invites'];
+const ACADEMY_ONLY: Tab[] = ['competitions', 'invites', 'fees'];
 /** Whose squads the Squads pill is showing. */
 const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
 /** Which half of the diary the Schedule pill is showing. */

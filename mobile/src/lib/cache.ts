@@ -31,6 +31,9 @@ export const cacheKeys = {
   trainingStats: ['training-stats'] as const,
   assignments: ['assignments'] as const,
   rosterDetails: ['roster-details'] as const,
+  /** A player's own details, and her family's money. */
+  personalDetails: ['personal-details'] as const,
+  financials: ['financials'] as const,
   awards: ['awards'] as const,
   auditLog: ['audit-log'] as const,
   liveMatch: (id: string) => ['live-match', id] as const,
@@ -70,12 +73,12 @@ const affects: Record<Entity, (readonly string[])[]> = {
   'attendance-request': [cacheKeys.attendanceRequests, cacheKeys.attendance, cacheKeys.playerStats, cacheKeys.trainingStats],
   // Plans, charges, payments and the squad ledger are all read back from the
   // same rows, so any one of them changing clears the lot.
-  fee: [cacheKeys.fees],
+  fee: [cacheKeys.fees, cacheKeys.financials],
   report: [cacheKeys.reports],
   // A reading changes the session's sheet and every total built on it.
   'training-stat': [cacheKeys.trainingStats, cacheKeys.playerStats],
   assignment: [cacheKeys.assignments],
-  roster: [cacheKeys.rosterDetails, cacheKeys.players],
+  roster: [cacheKeys.rosterDetails, cacheKeys.players, cacheKeys.personalDetails],
   // Naming a man of the match changes the match, not the table or the scorers.
   award: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches],
 };

@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -372,6 +372,10 @@ export const api = {
   deleteMatchAssignment: (matchId: string, id: string) => request<void>(`/api/v1/matches/${matchId}/assignments/${id}`, { method: 'DELETE' }),
   deleteTrainingAssignment: (trainingId: string, id: string) => request<void>(`/api/v1/training-sessions/${trainingId}/assignments/${id}`, { method: 'DELETE' }),
   playerRosterDetails: (id: string) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`),
+  // The sensitive pair, on routes of their own: an administrator, the player
+  // herself, or her parent. A manager is refused both.
+  playerPersonalDetails: (id: string) => request<PlayerPersonalDetails>(`/api/v1/players/${id}/personal-details`),
+  playerFinancials: (id: string) => request<PlayerFinancials>(`/api/v1/players/${id}/financials`),
   savePlayerRosterDetails: (id: string, payload: { date_of_birth: string | null; contacts: { name: string; relationship: string | null; email: string | null; phone: string | null }[] }) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`, { method: 'PUT', body: payload }),
   presign: (entity: 'team' | 'player', entity_id: string, content_type: 'image/jpeg' | 'image/png' | 'image/webp') => request<PresignResponse>('/api/v1/media/uploads/presign', { method: 'POST', body: { entity, entity_id, content_type } }),
 };

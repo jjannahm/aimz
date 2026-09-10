@@ -362,3 +362,34 @@ export async function requestsForPlayer(c: Context<{ Bindings: Env }>, playerId:
   }
   return user;
 }
+
+/**
+ * Who may read a player's personal details and their money.
+ *
+ * A different question from every other guard in this file, and deliberately
+ * not built on `teamScope`: squad scope is about who may look at a squad's
+ * football, and a child's birth date, her emergency contacts and what her
+ * family owes are not that.
+ *
+ *     admin   → any player in the academy
+ *     player  → herself, and nobody else
+ *     parent  → her own children
+ *     manager → nobody, including on her own squad
+ *
+ * A manager runs a squad's football. She picks the team, takes the register
+ * and marks training; none of that needs a family's phone number or what they
+ * have paid, and holding them is a liability rather than a convenience.
+ */
+export async function guardPersonalData(c: Context<{ Bindings: Env }>, playerId: string): Promise<UserRow> {
+  const user = await currentUser(c);
+  if (user.role === "admin") return user;
+  if (user.role === "manager") {
+    throw new ApiProblem(403, "personal_data_denied", "Personal details and fees are not part of squad management.");
+  }
+  // A player and a parent arrive the same way: through the roster records their
+  // account speaks for.
+  if (!(await linkedPlayerIds(c.env, user)).includes(playerId)) {
+    throw new ApiProblem(403, "player_access_denied", "You can only open your own family's details.");
+  }
+  return user;
+}

@@ -1,10 +1,8 @@
 import type { Context, Hono } from "hono";
 import { recordAudit } from "./audit";
-import { ApiProblem, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
+import { ApiProblem, adminUser, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
 import { linkedPlayerIds, requireAimzTeam } from "./team-access";
 import type { FeeChargeRow, FeePaymentRow, FeePlanRow, PlayerRow, TeamRow, UserRow } from "./types";
-import { assertCanManageTeam, managingUser, scopeClause } from "./team-access";
-import { managedTeamIds } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -103,16 +101,11 @@ const actorName = (actor: UserRow) => actor.name;
 export function registerFeeRoutes(app: App): void {
   // ---- plans -------------------------------------------------------------
   app.get("/api/v1/fee-plans", async (c) => {
-    const { scope } = await managingUser(c);
+    await adminUser(c);
     const url = new URL(c.req.url);
     const teamId = url.searchParams.get("team_id");
-    if (teamId) assertCanManageTeam(scope, teamId);
     const { limit, offset } = parsePagination(url);
-    const clauses: string[] = [];
-    const scoped = scopeClause(scope, "team_id");
-    if (scoped) clauses.push(scoped.sql);
-    if (teamId) clauses.push("team_id = ?");
-    const where = clauses.length ? ` WHERE ${clauses.join(" AND ")}` : "";
+    const where = teamId ? " WHERE team_id = ?" : "";
     const values = teamId ? [teamId] : [];
     const [count, rows] = await Promise.all([
       c.env.DB.prepare(`SELECT COUNT(*) total FROM fee_plans${where}`).bind(...values).first<{ total: number }>(),
@@ -123,10 +116,9 @@ export function registerFeeRoutes(app: App): void {
   });
 
   app.post("/api/v1/fee-plans", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const body = await jsonObject(c);
     const teamId = stringField(body, "team_id", { min: 1, max: 36 })!;
-    assertCanManageTeam(scope, teamId);
     await requireAimzTeam(c.env, teamId);
     const now = nowIso();
     const row: FeePlanRow = {
@@ -148,9 +140,8 @@ export function registerFeeRoutes(app: App): void {
   });
 
   app.patch("/api/v1/fee-plans/:id", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const current = await planById(c.env, c.req.param("id"));
-    assertCanManageTeam(scope, current.team_id);
     const body = await jsonObject(c);
     const row: FeePlanRow = {
       ...current,
@@ -169,9 +160,8 @@ export function registerFeeRoutes(app: App): void {
   });
 
   app.delete("/api/v1/fee-plans/:id", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const plan = await planById(c.env, c.req.param("id"));
-    assertCanManageTeam(scope, plan.team_id);
     await c.env.DB.batch([
       c.env.DB.prepare("DELETE FROM fee_plans WHERE id=?").bind(plan.id),
       recordAudit(c.env, actor, { action: "fee_plan_deleted", entityType: "fee_plan", entityId: plan.id, matchId: null, summary: plan.label }),
@@ -189,9 +179,8 @@ export function registerFeeRoutes(app: App): void {
    * player who joined mid-month is picked up by pressing it again.
    */
   app.post("/api/v1/fee-plans/:id/generate", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const plan = await planById(c.env, c.req.param("id"));
-    assertCanManageTeam(scope, plan.team_id);
     const body = await jsonObject(c);
     const period = periodField(body);
     if (!plan.is_active) throw new ApiProblem(409, "fee_plan_inactive", "This plan is no longer running.");
@@ -221,16 +210,7 @@ export function registerFeeRoutes(app: App): void {
     const values: unknown[] = [];
     // A family sees their own children and nobody else's. Scoped by player
     // rather than by squad: team scope would hand a parent every child on it.
-    if (actor.role === "manager") {
-      // A manager sees the money for the squads they run and filters within it.
-      const mine = await managedTeamIds(c.env, actor);
-      conditions.push(`team_id IN (${mine.map(() => "?").join(",")})`);
-      values.push(...mine);
-      for (const [parameter, column] of [["player_id", "player_id"], ["team_id", "team_id"], ["period", "period"]] as const) {
-        const value = url.searchParams.get(parameter);
-        if (value) { conditions.push(`${column} = ?`); values.push(value); }
-      }
-    } else if (actor.role !== "admin") {
+    if (actor.role !== "admin") {
       const mine = await linkedPlayerIds(c.env, actor);
       const asked = url.searchParams.get("player_id");
       if (asked && !mine.includes(asked)) throw new ApiProblem(403, "player_access_denied", "You can only see your own family's fees.");
@@ -267,12 +247,11 @@ export function registerFeeRoutes(app: App): void {
   });
 
   app.post("/api/v1/fee-charges", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const body = await jsonObject(c);
     const playerId = stringField(body, "player_id", { min: 1, max: 36 })!;
     const player = await playerOf(c.env, playerId);
     if (!player) throw new ApiProblem(422, "player_not_found", "Choose a player from the roster.");
-    assertCanManageTeam(scope, player.team_id);
     const now = nowIso();
     const row: FeeChargeRow = {
       id: crypto.randomUUID(),
@@ -297,9 +276,8 @@ export function registerFeeRoutes(app: App): void {
   });
 
   app.patch("/api/v1/fee-charges/:id", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const current = await chargeById(c.env, c.req.param("id"));
-    assertCanManageTeam(scope, await chargeTeamId(c.env, current));
     if (current.voided_at) throw new ApiProblem(409, "fee_charge_voided", "This charge has been cancelled.");
     const body = await jsonObject(c);
     const row: FeeChargeRow = {
@@ -319,9 +297,8 @@ export function registerFeeRoutes(app: App): void {
 
   /** Cancelled, not deleted: a receipt already seen still has to be explained. */
   app.post("/api/v1/fee-charges/:id/void", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const charge = await chargeById(c.env, c.req.param("id"));
-    assertCanManageTeam(scope, await chargeTeamId(c.env, charge));
     const body = await jsonObject(c);
     const reason = stringField(body, "reason", { optional: true, nullable: true, max: 500 }) ?? null;
     const when = nowIso();
@@ -335,9 +312,8 @@ export function registerFeeRoutes(app: App): void {
 
   // ---- payments ----------------------------------------------------------
   app.post("/api/v1/fee-charges/:id/payments", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const charge = await chargeById(c.env, c.req.param("id"));
-    assertCanManageTeam(scope, await chargeTeamId(c.env, charge));
     if (charge.voided_at) throw new ApiProblem(409, "fee_charge_voided", "This charge has been cancelled.");
     const body = await jsonObject(c);
     const amount = numberField(body, "amount_piastres", { min: -100_000_000, max: 100_000_000, integer: true })!;
@@ -370,10 +346,9 @@ export function registerFeeRoutes(app: App): void {
   });
 
   app.delete("/api/v1/fee-payments/:id", async (c) => {
-    const { user: actor, scope } = await managingUser(c);
+    const actor = await adminUser(c);
     const payment = await c.env.DB.prepare("SELECT * FROM fee_payments WHERE id=?").bind(c.req.param("id")).first<FeePaymentRow>();
     if (!payment) throw new ApiProblem(404, "fee_payment_not_found", "Payment not found.");
-    assertCanManageTeam(scope, await chargeTeamId(c.env, await chargeById(c.env, payment.fee_charge_id)));
     await c.env.DB.batch([
       c.env.DB.prepare("DELETE FROM fee_payments WHERE id=?").bind(payment.id),
       recordAudit(c.env, actor, { action: "fee_payment_removed", entityType: "fee_charge", entityId: payment.fee_charge_id, matchId: null, summary: `${payment.amount_piastres} piastres` }),
@@ -383,9 +358,8 @@ export function registerFeeRoutes(app: App): void {
 
   // ---- the squad ledger, which is the view an administrator opens ---------
   app.get("/api/v1/teams/:id/fee-summary", async (c) => {
-    const { scope } = await managingUser(c);
+    await adminUser(c);
     const teamId = c.req.param("id");
-    assertCanManageTeam(scope, teamId);
     const team = await teamOf(c.env, teamId);
     if (!team) throw new ApiProblem(404, "team_not_found", "Squad not found.");
     const url = new URL(c.req.url);
