@@ -2,7 +2,8 @@ import { env } from 'cloudflare:workers';
 import { applyD1Migrations } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import app from '../src/index';
+import { app } from '../src/index';
+import { purgeExpiredAudit } from '../src/retention';
 import { createAccessToken } from '../src/security';
 
 const testEnv = env as Env & { TEST_MIGRATIONS: string };
@@ -37,7 +38,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0040_branches.sql');
+    expect(applied.results.at(-1)?.name).toBe('0041_kit_paid_at.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -1750,15 +1751,40 @@ describe('kit orders', () => {
     expect(book.items.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('lets the academy mark an order filled, and refuses a status nobody defined', async () => {
+  it('lets the academy mark an order paid, and refuses a status nobody defined', async () => {
+    const admin = await seedUser('admin');
+    const { mine } = await squad(admin);
+    const created = await (await request('/api/v1/kit-orders', json('POST', order(mine.id), admin.token))).json<{ id: string; paid_at: string | null }>();
+    expect(created.paid_at).toBeNull();
+
+    const paid = await (await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'fulfilled' }, admin.token))).json<{ status: string; paid_at: string | null }>();
+    expect(paid.status).toBe('fulfilled');
+    expect(paid.paid_at).toBeTruthy();
+
+    // Money changed hands once. Putting the order back in the queue by mistake,
+    // then marking it paid again, must not rewrite the date it did.
+    await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'ordered' }, admin.token));
+    const again = await (await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'fulfilled' }, admin.token))).json<{ paid_at: string }>();
+    expect(again.paid_at).toBe(paid.paid_at);
+
+    const nonsense = await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'posted' }, admin.token));
+    expect(nonsense.status).toBe(422);
+  });
+
+  /** A queue is filtered on what the database says, not on what a screen remembers. */
+  it('serves each queue from the stored status', async () => {
     const admin = await seedUser('admin');
     const { mine } = await squad(admin);
     const created = await (await request('/api/v1/kit-orders', json('POST', order(mine.id), admin.token))).json<{ id: string }>();
 
-    const filled = await (await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'fulfilled' }, admin.token))).json<{ status: string }>();
-    expect(filled.status).toBe('fulfilled');
-    const nonsense = await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'posted' }, admin.token));
-    expect(nonsense.status).toBe(422);
+    const queued = await (await request('/api/v1/kit-orders?status=ordered', json('GET', undefined, admin.token))).json<{ items: { id: string }[] }>();
+    expect(queued.items.some((item) => item.id === created.id)).toBe(true);
+
+    await request(`/api/v1/admin/kit-orders/${created.id}`, json('PATCH', { status: 'fulfilled' }, admin.token));
+    const stillQueued = await (await request('/api/v1/kit-orders?status=ordered', json('GET', undefined, admin.token))).json<{ items: { id: string }[] }>();
+    const ready = await (await request('/api/v1/kit-orders?status=fulfilled', json('GET', undefined, admin.token))).json<{ items: { id: string }[] }>();
+    expect(stillQueued.items.some((item) => item.id === created.id)).toBe(false);
+    expect(ready.items.some((item) => item.id === created.id)).toBe(true);
   });
 
   // The sizes are the supplier's, not free text: an order it cannot fill is
@@ -2525,5 +2551,52 @@ describe('who a notice is for', () => {
     }, it.admin.token));
     expect(legacy.status).toBe(201);
     expect(await legacy.json()).toMatchObject({ audience: 'team', priority: 'pinned', pinned: true });
+  });
+});
+
+/**
+ * The activity log keeps a month and then deletes itself, on a timer rather
+ * than on somebody opening the screen. What the log says it holds has to shrink
+ * with it, which is the count the Activity header reads.
+ */
+describe('activity retention', () => {
+  const writeEntry = async (id: string, createdAt: string) => {
+    await testEnv.DB.prepare('INSERT INTO audit_log (id, actor_id, actor_name, action, entity_type, entity_id, match_id, summary, created_at) VALUES (?, NULL, ?, ?, ?, NULL, NULL, ?, ?)')
+      .bind(id, 'Test Admin', 'event_added', 'match', 'Added goal at 1.', createdAt).run();
+  };
+
+  it('deletes activity older than a month and keeps the rest', async () => {
+    const admin = await seedUser('admin');
+    const today = new Date('2026-09-10T09:00:00.000Z');
+    await writeEntry('fresh', '2026-09-09T09:00:00.000Z');
+    await writeEntry('a-month-less-a-day', '2026-08-12T09:00:00.000Z');
+    await writeEntry('stale', '2026-07-01T09:00:00.000Z');
+
+    const deleted = await purgeExpiredAudit(testEnv, today);
+    expect(deleted).toBe(1);
+
+    // Read straight from the table: the endpoint pages, and every other test in
+    // this file has written activity of its own that would fill the first page.
+    const ours = await testEnv.DB.prepare("SELECT id FROM audit_log WHERE id IN ('fresh','a-month-less-a-day','stale') ORDER BY id").all<{ id: string }>();
+    expect(ours.results.map((entry) => entry.id)).toEqual(['a-month-less-a-day', 'fresh']);
+
+    // The header counts what is left, because nothing else is there to count.
+    const counted = await testEnv.DB.prepare('SELECT COUNT(*) AS total FROM audit_log').first<{ total: number }>();
+    const log = await (await request('/api/v1/admin/audit-log', json('GET', undefined, admin.token))).json<{ total: number }>();
+    expect(log.total).toBe(counted?.total);
+  });
+
+  it('leaves the records themselves alone', async () => {
+    const admin = await seedUser('admin');
+    const team = await (await request('/api/v1/teams', json('POST', { name: `Kept ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+    await writeEntry('stale', '2026-01-01T09:00:00.000Z');
+
+    await purgeExpiredAudit(testEnv, new Date('2026-09-10T09:00:00.000Z'));
+
+    // The squad it was a note about is a record, not a note, and is untouched.
+    const kept = await testEnv.DB.prepare('SELECT id FROM teams WHERE id=?').bind(team.id).first<{ id: string }>();
+    expect(kept?.id).toBe(team.id);
+    const gone = await testEnv.DB.prepare('SELECT id FROM audit_log WHERE id=?').bind('stale').first();
+    expect(gone).toBeNull();
   });
 });

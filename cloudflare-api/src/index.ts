@@ -14,6 +14,7 @@ import { registerMatchRoutes } from "./matches";
 import { registerMediaRoutes } from "./media";
 import { registerNewcomerRoutes } from "./newcomers";
 import { registerReportRoutes } from "./reports";
+import { purgeExpiredAudit } from "./retention";
 import { registerAttendanceRequestRoutes } from "./attendance-requests";
 import { registerBranchRoutes } from "./branches";
 import { registerPlayerInformationRoutes } from "./player-information";
@@ -113,4 +114,18 @@ app.onError((error, c) => {
   return errorResponse(c, new ApiProblem(503, "internal_error", "The AIMZ preview could not complete this request."));
 });
 
-export default app;
+/**
+ * The worker itself: the API, plus the timer that keeps the activity log to a
+ * month. The Hono app is exported by name as well, because the integration
+ * tests drive it through `app.request` rather than through `fetch`.
+ */
+export { app };
+export default {
+  fetch: app.fetch,
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
+    ctx.waitUntil(purgeExpiredAudit(env).then(
+      (deleted) => { if (deleted) console.log(JSON.stringify({ message: "purged expired activity", deleted })); },
+      (error: unknown) => { console.error(JSON.stringify({ message: "activity purge failed", error: error instanceof Error ? error.message : String(error) })); },
+    ));
+  },
+} satisfies ExportedHandler<Env>;

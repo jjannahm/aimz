@@ -8,19 +8,20 @@ import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
-import { showMessage } from '@/src/lib/platformAlert';
+import { confirmAction, showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { KitStatus } from '@/src/types/api';
 
-const queues = [{ label: 'To order', value: 'ordered' }, { label: 'Ready', value: 'fulfilled' }, { label: 'Cancelled', value: 'cancelled' }] as const;
+const queues = [{ label: 'Orders', value: 'ordered' }, { label: 'Ready', value: 'fulfilled' }, { label: 'Cancelled', value: 'cancelled' }] as const;
 
 /**
- * The kit book: what has been asked for, and what has been handed over.
+ * The kit book: what has been asked for, and what has been paid for.
  *
  * One queue at a time rather than everything at once — the open orders are the
- * list somebody works from, and a season of filled ones underneath would bury
- * them.
+ * list somebody works from, and a season of settled ones underneath would bury
+ * them. An order a family places lands in Orders and stays there until an
+ * administrator says the money arrived; nothing else moves it.
  */
 export function KitOrdersManager() {
   const styles = useThemedStyles(stylesheet);
@@ -46,11 +47,22 @@ export function KitOrdersManager() {
             <Text selectable style={styles.line}>
               {order.shirt_name}{order.shirt_number === null ? '' : ` ${order.shirt_number}`} · Kit {order.kit_size} · Hoodie {order.hoodie_size} · Outwear {order.outwear_size}
             </Text>
-            <Text style={styles.meta}>{order.delivery === 'home' ? 'Home delivery' : 'Collect at the branch'} · {formatEgyptDateTime(order.created_at)}</Text>
+            <Text style={styles.meta}>{order.delivery === 'home' ? 'Home delivery' : 'Collect at the branch'} · Ordered {formatEgyptDateTime(order.created_at)}</Text>
+            {order.paid_at ? <Text style={styles.paid}>Paid {formatEgyptDateTime(order.paid_at)}</Text> : null}
             <View style={styles.actions}>
-              {order.status === 'fulfilled' ? null : <AppButton compact label="Mark ready" loading={setStatus.isPending} onPress={() => setStatus.mutate({ id: order.id, status: 'fulfilled' })} style={styles.flex} />}
+              {/* Marking an order paid is a statement about money, made from the
+                * card of whoever is standing there, so it asks first. Already
+                * paid, the button is not offered at all rather than offered
+                * spent: pressing it again would say nothing new. */}
+              {order.status === 'fulfilled' ? null : <AppButton
+                compact
+                label="Mark as paid"
+                loading={setStatus.isPending}
+                onPress={() => confirmAction('Mark as paid?', `${order.player_name}'s kit order moves to Ready.`, 'Mark as paid', () => setStatus.mutate({ id: order.id, status: 'fulfilled' }))}
+                style={styles.flex}
+              />}
               {order.status === 'cancelled' ? null : <AppButton compact label="Cancel" onPress={() => setStatus.mutate({ id: order.id, status: 'cancelled' })} variant="ghost" />}
-              {order.status === 'ordered' ? null : <AppButton compact label="Back to ordered" onPress={() => setStatus.mutate({ id: order.id, status: 'ordered' })} variant="secondary" />}
+              {order.status === 'ordered' ? null : <AppButton compact label="Back to orders" onPress={() => setStatus.mutate({ id: order.id, status: 'ordered' })} variant="secondary" />}
             </View>
           </FlatCard>)}
   </View>;
@@ -63,6 +75,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   name: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontSize: theme.type.body },
   meta: { color: colors.textMuted, fontSize: theme.type.label },
   line: { color: colors.textPrimary, fontFamily: theme.font.mono, fontSize: theme.type.label, marginTop: 2 },
+  paid: { color: colors.liveText, fontFamily: theme.font.semibold, fontSize: theme.type.label },
   actions: { flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
   flex: { flex: 1 },
 });

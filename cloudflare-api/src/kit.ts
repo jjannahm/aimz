@@ -99,7 +99,14 @@ export function registerKitRoutes(app: App): void {
     return c.json(await c.env.DB.prepare(`${ORDER_SELECT} WHERE o.id=?`).bind(order.id).first(), 201);
   });
 
-  /** Working the book: an order is filled, or it is called off. */
+  /**
+   * Working the book: an order is paid for, or it is called off.
+   *
+   * `fulfilled` is what an administrator marking an order paid writes, and
+   * `paid_at` is stamped the first time it does. Stamped once and kept: an
+   * order put back in the queue by mistake was still paid for, and the date
+   * money changed hands is not something a wrong tap should rewrite.
+   */
   app.patch("/api/v1/admin/kit-orders/:id", async (c) => {
     await adminUser(c);
     const body = await jsonObject(c);
@@ -107,9 +114,13 @@ export function registerKitRoutes(app: App): void {
     if (typeof status !== "string" || !(STATUSES as readonly string[]).includes(status)) {
       throw new ApiProblem(422, "validation_error", "Choose ordered, fulfilled or cancelled.");
     }
-    const result = await c.env.DB.prepare("UPDATE kit_orders SET status=?,updated_at=? WHERE id=?")
-      .bind(status, nowIso(), c.req.param("id")).run();
+    const id = c.req.param("id");
+    const result = status === "fulfilled"
+      ? await c.env.DB.prepare("UPDATE kit_orders SET status=?,paid_at=COALESCE(paid_at,?),updated_at=? WHERE id=?")
+        .bind(status, nowIso(), nowIso(), id).run()
+      : await c.env.DB.prepare("UPDATE kit_orders SET status=?,updated_at=? WHERE id=?")
+        .bind(status, nowIso(), id).run();
     if (!result.meta.changes) throw new ApiProblem(404, "kit_order_not_found", "Kit order not found.");
-    return c.json(await c.env.DB.prepare(`${ORDER_SELECT} WHERE o.id=?`).bind(c.req.param("id")).first());
+    return c.json(await c.env.DB.prepare(`${ORDER_SELECT} WHERE o.id=?`).bind(id).first());
   });
 }

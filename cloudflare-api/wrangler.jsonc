@@ -15,6 +15,11 @@
     "REFRESH_TOKEN_DAYS": "30",
     "MEDIA_MAX_BYTES": "5242880"
   },
+  // Nightly, a little after 3am Cairo: the activity log keeps a month, and the
+  // purge that enforces it must not wait on somebody opening the screen.
+  "triggers": {
+    "crons": ["0 1 * * *"]
+  },
   "d1_databases": [
     {
       "binding": "DB",
