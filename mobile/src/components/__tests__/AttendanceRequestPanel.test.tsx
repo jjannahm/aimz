@@ -91,8 +91,8 @@ describe('AttendanceRequestPanel', () => {
     expect(screen.getByText('Ask for a correction')).toBeTruthy();
   });
 
-  it('gives a manager the queue rather than the form', async () => {
-    mockUser.role = 'manager';
+  it('gives a coach the queue rather than the form', async () => {
+    mockUser.role = 'coach';
     jest.mocked(api.attendanceRequests).mockResolvedValue(page([req()]));
     const screen = await render(<AttendanceRequestPanel session={session} />, { wrapper });
 

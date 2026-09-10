@@ -195,9 +195,9 @@ function sharedReport(row: PlayerReportRow): Record<string, unknown> {
 /** An administrator, or the family of the player the report is about. */
 async function requireReportAccess(env: Env, actor: UserRow, report: PlayerReportRow): Promise<void> {
   if (actor.role === "admin") return;
-  // A manager reads the reports of the squads they run, drafts included: they
+  // A coach reads the reports of the squads they run, drafts included: they
   // are the ones writing them.
-  if (actor.role === "manager") {
+  if (actor.role === "coach") {
     if (!(await managedTeamIds(env, actor)).includes(report.team_id)) {
       throw new ApiProblem(403, "team_access_denied", "You can only read your own squad's reports.");
     }
@@ -235,10 +235,10 @@ export function registerReportRoutes(app: App): void {
     const { limit, offset } = parsePagination(url);
     const conditions: string[] = [];
     const values: unknown[] = [];
-    if (actor.role === "admin" || actor.role === "manager") {
-      // A manager filters the same way an administrator does, inside their own
+    if (actor.role === "admin" || actor.role === "coach") {
+      // A coach filters the same way an administrator does, inside their own
       // squads rather than across the academy.
-      if (actor.role === "manager") {
+      if (actor.role === "coach") {
         const mine = await managedTeamIds(c.env, actor);
         conditions.push(`team_id IN (${mine.map(() => "?").join(",")})`);
         values.push(...mine);

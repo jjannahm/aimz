@@ -19,10 +19,10 @@ export default function TrainingDetailScreen() {
   const styles = useThemedStyles(stylesheet);
   const { id } = useLocalSearchParams<{ id: string }>();
   // Taking the register is the coach's job — an administrator's or the squad
-  // manager's — and a family reads the replies below it, with a way to say the
+  // coach's — and a family reads the replies below it, with a way to say the
   // register has them wrong.
   const { user } = useAuth();
-  const marksRegister = user?.role === 'admin' || user?.role === 'manager';
+  const marksRegister = user?.role === 'admin' || user?.role === 'coach';
   const query = useQuery({ queryKey: ['training', id], queryFn: () => api.trainingSession(id), enabled: Boolean(id) });
   return <Screen action={<CloseButton />} title="Training">
     {query.isLoading ? <LoadingState label="Loading training session" /> : query.isError || !query.data ? <ErrorState message={(query.error as ApiError)?.message ?? 'Training session not found.'} onRetry={() => query.refetch()} /> : <><View style={styles.hero}><Text style={styles.team}>{query.data.team.name}</Text><Text style={styles.time}>{formatEgyptDateTime(query.data.starts_at)}</Text><Text style={styles.meta}>{query.data.duration_minutes} minutes · {query.data.venue}</Text>{query.data.notes ? <Text style={styles.notes}>{query.data.notes}</Text> : null}</View>{marksRegister ? <AttendancePanel session={query.data} /> : null}<AttendanceRequestPanel session={query.data} /><AvailabilityPanel session={query.data} /><AssignmentsPanel eligibleTeamIds={[query.data.team_id]} eventId={query.data.id} kind="training" /></>}

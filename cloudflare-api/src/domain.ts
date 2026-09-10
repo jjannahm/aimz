@@ -127,7 +127,7 @@ function countValue(row: { total: number } | null): number {
 }
 
 /**
- * A fixture is a manager's to touch when one of the two teams is theirs.
+ * A fixture is a coach's to touch when one of the two teams is theirs.
  *
  * The same rule that decides whether they may see it, applied to whether they
  * may change it, so a fixture cannot be edited into or out of their squad.
@@ -446,7 +446,7 @@ export function registerDomainRoutes(app: App): void {
     const { scope } = await managingUser(c); const body = await jsonObject(c);
     const current = await c.env.DB.prepare("SELECT * FROM players WHERE id = ?").bind(c.req.param("id")).first<PlayerRow>(); if (!current) throw new ApiProblem(404, "player_not_found", "Player not found.");
     assertCanManageTeam(scope, current.team_id);
-    // Both ends of a move are checked: a manager cannot post a player out of
+    // Both ends of a move are checked: a coach cannot post a player out of
     // their squad into one they do not run, or claim one out of another.
     const teamId = stringField(body, "team_id", { optional: true, min: 1, max: 36 }) ?? current.team_id; assertCanManageTeam(scope, teamId); await requireTeam(c.env, teamId);
     const player: PlayerRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, team_id: teamId, position: body.position === undefined ? current.position : enumField(body, "position", POSITION_CODES), jersey_number: body.jersey_number === undefined ? current.jersey_number : numberField(body, "jersey_number", { nullable: true, min: 0, max: 99 }) ?? null, photo_key: optionalNullableText(body, "photo_key", current.photo_key, 512), is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active, updated_at: nowIso() };
@@ -597,7 +597,7 @@ function optionalNullableText(body: Record<string, unknown>, field: string, curr
 
 async function deleteRestricted(c: Context<{ Bindings: Env }>, table: "teams" | "competitions" | "players", label: string, id: string): Promise<Response> {
   if (table === "players") {
-    // A manager may remove a player from the squad they run. Deleting a squad
+    // A coach may remove a player from the squad they run. Deleting a squad
     // or a competition stays with the academy: both reach far past one team.
     const { scope } = await managingUser(c);
     const player = await c.env.DB.prepare("SELECT team_id FROM players WHERE id = ?").bind(id).first<{ team_id: string }>();

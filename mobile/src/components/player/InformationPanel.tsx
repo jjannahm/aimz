@@ -19,7 +19,7 @@ const HALVES = [
  * reads as a bill.
  *
  * Whether this is offered at all is decided by whoever renders it, and by the
- * API underneath: a manager is refused both of these endpoints outright, and a
+ * API underneath: a coach is refused both of these endpoints outright, and a
  * family is refused anybody's but their own.
  */
 export function InformationPanel({ playerId }: { playerId: string }) {

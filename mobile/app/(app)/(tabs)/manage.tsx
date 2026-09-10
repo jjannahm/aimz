@@ -61,17 +61,17 @@ type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'announcements' |
  * quarter of a phone's width does not hold every label at the pill's type size. */
 const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }, { label: 'Fees', value: 'fees' }, { label: 'Reports', value: 'reports' }, { label: 'Newcomers', value: 'newcomers' }, { label: 'Kit', value: 'kit' }];
 /**
- * The pills a manager does not get.
+ * The pills a coach does not get.
  *
  * Competitions and invitations are the academy's own business rather than a
  * squad's: entering teams in competitions reaches across the club, and an
  * invitation creates an account.
  *
- * Fees are here for a different reason. A manager runs a squad's football —
+ * Fees are here for a different reason. A coach runs a squad's football —
  * she picks the team, takes the register, marks training — and what a family
  * has paid is not that. The player profile keeps her out of it, and this is
  * the other door into the same information, so it is shut too. The API refuses
- * a manager every one of these, so showing the pill would only be a way to
+ * a coach every one of these, so showing the pill would only be a way to
  * find that out the hard way.
  */
 const ACADEMY_ONLY: Tab[] = ['competitions', 'invites', 'fees'];
@@ -90,7 +90,7 @@ const formSummary: Record<LegacyResource, string> = {
   opponents: 'An opposing club, and the competition it is entered in.',
   players: 'A player’s squad, position and shirt number.',
   matches: 'Two teams, a kickoff and how long the match runs.',
-  invites: 'A one-time code that becomes a player, parent or manager account.',
+  invites: 'A one-time code that becomes a player, parent or coach account.',
 };
 const schema = z.object({ name: z.string(), code: z.string(), ageGroup: z.string(), season: z.string(), type: z.string(), teamId: z.string(), position: z.string(), jersey: z.string(), competitionId: z.string(), homeTeamId: z.string(), awayTeamId: z.string(), kickoff: z.string(), venue: z.string(), status: z.string(), halfLength: z.string(), numHalves: z.string(), halfTimeBreak: z.string(), coach: z.string(), assistantCoach: z.string(), teamCompetitionId: z.string(), hasExtraTime: z.string(), extraTimeLength: z.string(), label: z.string(), teamCount: z.string(), teamGroupId: z.string(), groupCount: z.string(), groupSize: z.string(), inviteKind: z.string(), invitePlayerIds: z.string(), inviteTeamIds: z.string(), badgeStyle: z.string() });
 type Values = z.infer<typeof schema>;
@@ -286,12 +286,12 @@ export default function ManageScreen() {
   const matches = useQuery({ queryKey: ['matches', 'admin'], queryFn: () => api.matches('?limit=100') });
   const invites = useQuery({ queryKey: ['invites'], queryFn: api.invites, enabled: user?.role === 'admin' });
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: defaults });
-  const isManager = user?.role === 'manager';
-  if (user?.role !== 'admin' && !isManager) return <Redirect href="/(app)/(tabs)" />;
-  // A manager's Manage screen is this one with the academy-wide pills taken
+  const isCoach = user?.role === 'coach';
+  if (user?.role !== 'admin' && !isCoach) return <Redirect href="/(app)/(tabs)" />;
+  // A coach's Manage screen is this one with the academy-wide pills taken
   // off. Everything left is already scoped by the API, which is what makes
   // reusing the sections wholesale safe rather than merely convenient.
-  const visibleResources = isManager ? resources.filter((item) => !ACADEMY_ONLY.includes(item.value)) : resources;
+  const visibleResources = isCoach ? resources.filter((item) => !ACADEMY_ONLY.includes(item.value)) : resources;
   // The pill actually open. A pill left selected from another role, or named by
   // hand, falls back to the first one this account has rather than rendering a
   // section it may not open.
@@ -322,7 +322,7 @@ export default function ManageScreen() {
   // pill, so the sections themselves did not have to change.
   const resource: Resource = openTab === 'teams' ? squadKind : openTab === 'schedule' ? scheduleKind : openTab === 'reports' ? reportKind : openTab;
   const subTabs = openTab === 'teams'
-    ? (isManager ? null : <SegmentedControl label="Squad kind" onChange={switchSquadKind} options={squadKinds} value={squadKind} />)
+    ? (isCoach ? null : <SegmentedControl label="Squad kind" onChange={switchSquadKind} options={squadKinds} value={squadKind} />)
     : openTab === 'schedule'
       ? <SegmentedControl label="Schedule kind" onChange={switchScheduleKind} options={scheduleKinds} value={scheduleKind} />
       : openTab === 'reports'
@@ -334,7 +334,7 @@ export default function ManageScreen() {
   const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
   // The sections that manage themselves rather than through the shared form
   // scaffold below: each is a screen of its own shape.
-  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats' || resource === 'newcomers' || resource === 'kit') return <Screen scrollRef={pageRef} title={isManager ? "Manage Squad" : "Manage Academy"}>
+  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats' || resource === 'newcomers' || resource === 'kit') return <Screen scrollRef={pageRef} title={isCoach ? "Manage Squad" : "Manage Academy"}>
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
@@ -409,14 +409,14 @@ export default function ManageScreen() {
         editing ? await api.updateMatch(editing.id, payload) : await api.createMatch(payload);
       } else {
         if (!values.label.trim()) throw new Error('Enter an invite label.');
-        // A manager is invited to squads rather than to a roster player, so it
+        // A coach is invited to squads rather than to a roster player, so it
         // takes the other half of this form and the other half of the payload.
         // The code is generated rather than typed either way.
         let created;
-        if (values.inviteKind === 'manager') {
+        if (values.inviteKind === 'coach') {
           const inviteTeamIds = values.inviteTeamIds.split(',').filter(Boolean);
-          if (!inviteTeamIds.length) throw new Error('Choose at least one squad for this manager.');
-          created = await api.createInvite({ label: values.label.trim(), kind: 'manager', team_ids: inviteTeamIds });
+          if (!inviteTeamIds.length) throw new Error('Choose at least one squad for this coach.');
+          created = await api.createInvite({ label: values.label.trim(), kind: 'coach', team_ids: inviteTeamIds });
         } else {
           const invitePlayerIds = values.invitePlayerIds.split(',').filter(Boolean);
           // Every invitation names who it is for; there is no unlinked code.
@@ -499,7 +499,7 @@ export default function ManageScreen() {
     } catch (error) { showMessage('Upload failed', (error as Error).message); }
   };
 
-  return <><Screen scrollRef={pageRef} title={isManager ? "Manage Squad" : "Manage Academy"}>
+  return <><Screen scrollRef={pageRef} title={isCoach ? "Manage Squad" : "Manage Academy"}>
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
@@ -520,7 +520,7 @@ export default function ManageScreen() {
 
 function InviteSuccess({ invitation, onClose }: { invitation: RegistrationInvite; onClose: () => void }) {
   const styles = useThemedStyles(stylesheet);
-  const role = invitation.kind === 'parent' ? 'parent' : invitation.kind === 'manager' ? 'manager' : 'player';
+  const role = invitation.kind === 'parent' ? 'parent' : invitation.kind === 'coach' ? 'coach' : 'player';
   const message = `You’re invited to join AIMZ as a ${role}. Use code ${invitation.code} or open ${invitation.share_url}`;
   return <Modal animationType="fade" onRequestClose={onClose} transparent visible><View style={styles.modalBackdrop}><Pressable accessibilityLabel="Close invitation" accessibilityRole="button" onPress={onClose} style={StyleSheet.absoluteFill} /><View accessibilityRole="alert" style={styles.inviteModal}><Text style={styles.modalTitle}>Invitation created</Text><Text selectable style={styles.inviteCode}>{invitation.code}</Text><Text selectable style={styles.inviteLink}>{invitation.share_url}</Text><Text style={styles.pickerNote}>Copy this now. AIMZ stores only its secure hash, so the readable code cannot be recovered later.</Text><AppButton label="Copy code" onPress={async () => { await Clipboard.setStringAsync(invitation.code!); showToast('Invitation code copied'); }} /><AppButton label="Share on WhatsApp" onPress={() => void Linking.openURL(`https://wa.me/?text=${encodeURIComponent(message)}`)} variant="secondary" /><AppButton label="Done" onPress={onClose} variant="ghost" /></View></View></Modal>;
 }
@@ -533,12 +533,12 @@ function InviteSuccess({ invitation, onClose }: { invitation: RegistrationInvite
  */
 function InviteSubject({ control, players, setValue, teams }: { control: any; players: Player[]; setValue: any; teams: Team[] }) {
   const kind = useWatch({ control, name: 'inviteKind' }) as InviteKind;
-  if (kind === 'manager') return <InviteSquads control={control} setValue={setValue} teams={teams} />;
+  if (kind === 'coach') return <InviteSquads control={control} setValue={setValue} teams={teams} />;
   return <InvitePlayers control={control} players={players} setValue={setValue} />;
 }
 
 /**
- * The squads a manager invitation hands over.
+ * The squads a coach invitation hands over.
  *
  * Several, because a coach at a small academy takes two age groups as often as
  * one, and because the account is the same either way — the API stores a row
@@ -556,7 +556,7 @@ function InviteSquads({ control, setValue, teams }: { control: any; setValue: an
     setValue('inviteTeamIds', next.join(','));
   };
   return <>
-    <Text style={styles.pickerNote}>{squads.length ? 'The squads this manager will run.' : 'Add an AIMZ squad first — a manager account is an account for a squad.'}</Text>
+    <Text style={styles.pickerNote}>{squads.length ? 'The squads this coach will run.' : 'Add an AIMZ squad first — a coach account is an account for a squad.'}</Text>
     <View style={styles.chips}>{squads.map((squad) => <View key={squad.id} style={styles.chipCell}>
       <AnimatedTabPill accessibilityLabel={squad.name} compact label={squad.name} onPress={() => toggle(squad.id)} selected={chosen.includes(squad.id)} style={styles.chip} />
     </View>)}</View>
@@ -569,7 +569,7 @@ function InvitePlayers({ control, players, setValue }: { control: any; players: 
   const styles = useThemedStyles(stylesheet);
   const chosen = raw.split(',').filter(Boolean);
   const parent = kind === 'parent';
-  if (kind === 'manager') return null;
+  if (kind === 'coach') return null;
   return <>
     <PlayerPickerField
       label={parent ? 'Children' : 'Player'}
@@ -608,7 +608,7 @@ function ResourceFields({ control, resource, setValue, teams, competitions, edit
   if (resource === 'competitions') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Competition name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="season" render={({ field }) => <FormField label="Season" onChangeText={field.onChange} placeholder="2026/27" value={field.value} />} /><Controller control={control} name="type" render={({ field }) => <ChoiceField label="Format" onChange={field.onChange} options={[{ label: 'League', value: 'league' }, { label: 'Knockout (groups and a bracket)', value: 'tournament' }, { label: 'Friendly', value: 'friendly' }]} value={field.value} />} /><KnockoutSize competitionId={editingId} control={control} teams={teams} /></>;
   if (resource === 'players') return <><Controller control={control} name="name" render={({ field }) => <FormField label="Player name" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="teamId" render={({ field }) => <ChoiceField label="Squad" onChange={field.onChange} options={teams.filter((item) => item.is_aimz && item.is_active).map((item) => ({ label: item.name, value: item.id }))} value={field.value} />} /><Controller control={control} name="position" render={({ field }) => <PositionField hint="Type the first letters — “l” finds LB, LWB, LM and LW" onChange={field.onChange} value={field.value} />} /><Controller control={control} name="jersey" render={({ field }) => <FormField keyboardType="number-pad" label="Number" onChangeText={field.onChange} value={field.value} />} /></>;
   if (resource === 'matches') return <><Controller control={control} name="competitionId" render={({ field }) => <ChoiceField label="Competition" onChange={field.onChange} options={competitions.map((item) => ({ label: `${item.name} · ${item.season}`, value: item.id }))} value={field.value} />} />{!selectedCompetition ? <Text style={styles.pickerNote}>Choose a competition to pick its teams.</Text> : entered.length < 2 ? <Text style={styles.pickerNote}>{entered.length === 0 ? 'No teams assigned to this competition yet' : 'Only one team is assigned to this competition'} — assign them under Squads or Opponents.</Text> : null}<Controller control={control} name="homeTeamId" render={({ field }) => <ChoiceField label="Home team" onChange={field.onChange} options={teamOptions} value={field.value} />} /><Controller control={control} name="awayTeamId" render={({ field }) => <ChoiceField label="Away team" onChange={field.onChange} options={teamOptions} value={field.value} />} /><Controller control={control} name="kickoff" render={({ field }) => <DateTimeField label="Kickoff (Egypt time)" onChange={field.onChange} value={field.value} />} />{opponentOnly ? <Text style={styles.pickerNote}>Opponent-only fixture: enter the final score after the match. Live clock, events, lineup and player stats are disabled.</Text> : <><Controller control={control} name="halfLength" render={({ field }) => <FormField hint="Minutes per half" inputMode="numeric" keyboardType="number-pad" label="Half length (minutes)" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="numHalves" render={({ field }) => <FormField hint="Two for standard football" inputMode="numeric" keyboardType="number-pad" label="Number of halves" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="halfTimeBreak" render={({ field }) => <FormField inputMode="numeric" keyboardType="number-pad" label="Half-time break (minutes)" onChangeText={field.onChange} value={field.value} />} /><Controller control={control} name="hasExtraTime" render={({ field }) => <ChoiceField label="Extra time" onChange={field.onChange} options={[{ label: 'No extra time', value: 'false' }, { label: `Yes, ${EXTRA_TIME_PERIODS} periods`, value: 'true' }]} value={field.value} />} /><ExtraTimeLength control={control} /><MatchLengthSummary control={control} /></>}<Controller control={control} name="venue" render={({ field }) => <FormField label="Venue" onChangeText={field.onChange} value={field.value} />} /></>;
-  return <><Controller control={control} name="label" render={({ field }) => <FormField label="Invite label" onChangeText={field.onChange} placeholder="Autumn intake" value={field.value} />} /><Pressable accessibilityHint="Creates the invitation after the required details are filled" accessibilityLabel="Generate secure invite code" accessibilityRole="button" onPress={onGenerateInvite}><View pointerEvents="none"><FormField editable={false} hint="Press to generate securely" label="Invite code" onChangeText={() => undefined} placeholder="XXXX-XXXX-XX" value="" /></View></Pressable><Controller control={control} name="inviteKind" render={({ field }) => <ChoiceField label="Invite type" onChange={(kind) => { field.onChange(kind); setValue('invitePlayerIds', ''); setValue('inviteTeamIds', ''); }} options={[{ label: 'Player', value: 'player' }, { label: 'Parent', value: 'parent' }, { label: 'Manager', value: 'manager' }]} value={field.value} />} /><InviteSubject control={control} players={players} setValue={setValue} teams={teams} /></>;
+  return <><Controller control={control} name="label" render={({ field }) => <FormField label="Invite label" onChangeText={field.onChange} placeholder="Autumn intake" value={field.value} />} /><Pressable accessibilityHint="Creates the invitation after the required details are filled" accessibilityLabel="Generate secure invite code" accessibilityRole="button" onPress={onGenerateInvite}><View pointerEvents="none"><FormField editable={false} hint="Press to generate securely" label="Invite code" onChangeText={() => undefined} placeholder="XXXX-XXXX-XX" value="" /></View></Pressable><Controller control={control} name="inviteKind" render={({ field }) => <ChoiceField label="Invite type" onChange={(kind) => { field.onChange(kind); setValue('invitePlayerIds', ''); setValue('inviteTeamIds', ''); }} options={[{ label: 'Player', value: 'player' }, { label: 'Parent', value: 'parent' }, { label: 'Coach', value: 'coach' }]} value={field.value} />} /><InviteSubject control={control} players={players} setValue={setValue} teams={teams} /></>;
 }
 
 function entityTitle(item: Entity) { if ('home_team_id' in item) return `${item.home_team?.name ?? 'Home'} vs ${item.away_team?.name ?? 'Away'}`; if ('position' in item) return item.name; if ('use_count' in item) return item.label; return item.name; }
@@ -634,4 +634,4 @@ function entityMeta(item: Entity) { if ('home_team_id' in item) return `${item.s
 
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({ content: { gap: theme.spacing.lg }, modalBackdrop: { alignItems: 'center', backgroundColor: 'rgba(8, 8, 12, 0.72)', flex: 1, justifyContent: 'center', padding: theme.spacing.lg }, inviteModal: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, maxWidth: 440, padding: theme.size.cardPadding, width: '100%' }, modalTitle: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, inviteCode: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.heading, letterSpacing: 2, textAlign: 'center' }, inviteLink: { color: colors.textSecondary, fontSize: theme.type.label, textAlign: 'center' }, groupList: { gap: theme.spacing.md }, groupsHeading: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' }, groupCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md }, groupHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, groupTitle: { color: colors.textPrimary, fontWeight: '900' }, groupCount: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800' }, groupCountFull: { color: colors.accentSoft }, groupTeam: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.sm, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 44, paddingLeft: theme.spacing.md, paddingRight: theme.spacing.xs }, groupTeamName: { color: colors.textPrimary, flex: 1, fontWeight: '700' }, lockedField: { gap: theme.spacing.xs }, lockedLabel: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' }, lockedValue: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: colors.textMuted, minHeight: 52, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md }, pickerNote: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, color: colors.textSecondary, fontSize: theme.type.label, lineHeight: 20, padding: theme.spacing.md }, editingBanner: { alignItems: 'center', backgroundColor: colors.highlightedSurface, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs }, editingText: { color: colors.textPrimary, flex: 1, fontWeight: '800' }, summary: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, /* The grid reaches past the page's own padding, for the width it buys the
      longest of the labels. */
-  chips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -theme.spacing.md }, chipCell: { flexBasis: '33.333%', flexShrink: 1, minWidth: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.xs }, chip: { flex: 1, paddingVertical: theme.spacing.xs }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, /* The card gaps its fields by `md`; the extra `sm` sets the submit row apart from the last field. Kept in step with `formActions` on the hub managers. */ actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs } });
+  chips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -theme.spacing.md }, chipCell: { flexBasis: '33.333%', flexShrink: 1, minWidth: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.xs }, chip: { flex: 1, paddingVertical: theme.spacing.xs }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, /* The card gaps its fields by `md`; the extra `sm` sets the submit row apart from the last field. Kept in step with `formActions` on the hub coaches. */ actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs } });

@@ -382,7 +382,7 @@ export const api = {
   deleteTrainingAssignment: (trainingId: string, id: string) => request<void>(`/api/v1/training-sessions/${trainingId}/assignments/${id}`, { method: 'DELETE' }),
   playerRosterDetails: (id: string) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`),
   // The sensitive pair, on routes of their own: an administrator, the player
-  // herself, or her parent. A manager is refused both.
+  // herself, or her parent. A coach is refused both.
   playerPersonalDetails: (id: string) => request<PlayerPersonalDetails>(`/api/v1/players/${id}/personal-details`),
   playerFinancials: (id: string) => request<PlayerFinancials>(`/api/v1/players/${id}/financials`),
   savePlayerRosterDetails: (id: string, payload: { date_of_birth: string | null; contacts: { name: string; relationship: string | null; email: string | null; phone: string | null }[] }) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`, { method: 'PUT', body: payload }),

@@ -1,7 +1,7 @@
 import type { AttendanceStatus } from "./attendance";
-export type UserRole = "player" | "admin" | "parent" | "manager";
+export type UserRole = "player" | "admin" | "parent" | "coach";
 /** What an invitation creates when it is redeemed. */
-export type InviteKind = "player" | "parent" | "manager";
+export type InviteKind = "player" | "parent" | "coach";
 export type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
 export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";

@@ -151,7 +151,7 @@ function ChargeRow({ charge }: { charge: FeeCharge }) {
  * The academy's fees: what each squad is charged monthly, and who has paid.
  *
  * Its own file rather than the shared Manage form scaffold, the way the
- * schedule and announcement managers are: a plan, a month, a generate action, a
+ * schedule and announcement coaches are: a plan, a month, a generate action, a
  * ledger and a nested payment history are not a flat form over a list, and
  * forcing them in would make six other sections carry the fields.
  */

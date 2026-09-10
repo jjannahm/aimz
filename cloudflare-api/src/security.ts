@@ -84,7 +84,7 @@ async function importHmacKey(secret: string, usages: KeyUsage[]): Promise<Crypto
  * a role added to the schema and forgotten here signs in and is then refused
  * on every request, which reads as a broken account rather than a missing case.
  */
-const ROLES = new Set<string>(["admin", "player", "parent", "manager"]);
+const ROLES = new Set<string>(["admin", "player", "parent", "coach"]);
 
 export async function createAccessToken(
   userId: string,

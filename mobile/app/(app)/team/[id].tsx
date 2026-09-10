@@ -184,7 +184,7 @@ function HeadToHeadSection({ team, table }: { team: Team; table: StandingRow[] }
 /**
  * A squad's profile: who they are, how they are doing, who plays for them.
  *
- * Named as well as routed, so the manager's own Team tab renders exactly this
+ * Named as well as routed, so the coach's own Team tab renders exactly this
  * rather than a second version of it. The tab passes `asTab`, which drops the
  * close button — there is nothing to close when the screen is the destination
  * rather than something opened over another.
