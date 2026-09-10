@@ -28,7 +28,7 @@ export default function RegisterScreen() {
   const [invite, setInvite] = useState<InviteContext | null>(null);
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
-  const needsApplication = invite?.kind === 'player' && invite.requires_application;
+  const needsApplication = invite?.kind === 'newcomer';
   const steps = useMemo(() => needsApplication ? playerSteps : ['Invitation', 'Account'], [needsApplication]);
   const set = (field: keyof Values, value: string | boolean) => setValues((current) => ({ ...current, [field]: value }));
 
