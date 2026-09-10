@@ -22,7 +22,7 @@ export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole; expires_
  */
 export type CalendarFeed = { url: string | null; subscribed_at: string | null };
 /** What redeeming an invitation creates: one player, or a parent of several. */
-export type InviteKind = 'player' | 'parent' | 'coach';
+export type InviteKind = 'player' | 'parent' | 'coach' | 'newcomer';
 /** A roster player an account speaks for: itself for a player, a child for a parent. */
 export type LinkedChild = { id: string; name: string; team_id: string; team_name: string | null };
 export type MatchStatus = Schema['MatchStatus'];

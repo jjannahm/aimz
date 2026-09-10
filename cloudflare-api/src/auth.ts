@@ -145,7 +145,7 @@ export function registerAuthRoutes(app: App): void {
     const players = await c.env.DB.prepare(`SELECT p.id,p.name FROM players p JOIN invite_players ip ON ip.player_id=p.id WHERE ip.invite_id=?`)
       .bind(invite.id).all<{ id: string; name: string }>();
     const team = invite.team_id ? await c.env.DB.prepare("SELECT name FROM teams WHERE id=?").bind(invite.team_id).first<{ name: string }>() : null;
-    return c.json({ kind: invite.kind, label: invite.label, team_id: invite.team_id ?? null, team_name: team?.name ?? null, players: players.results, requires_application: invite.kind === "player" && !invite.application_id });
+    return c.json({ kind: invite.kind, label: invite.label, team_id: invite.team_id ?? null, team_name: team?.name ?? null, players: players.results, requires_application: invite.kind === "newcomer" });
   });
 
   app.post("/api/v1/auth/register", async (c) => {
@@ -177,14 +177,16 @@ export function registerAuthRoutes(app: App): void {
     const invitedTeams = isCoach ? await inviteTeamIds(c.env, invite) : [];
     if (isCoach && !invitedTeams.length) throw new ApiProblem(409, "invalid_invite", "This invitation is not linked to a squad. Ask an AIMZ administrator for a new one.");
 
-    const invitedPlayers = isCoach ? [] : await invitePlayerIds(c.env, invite);
+    const isNewcomer = invite.kind === "newcomer";
+    const invitedPlayers = isCoach || isNewcomer ? [] : await invitePlayerIds(c.env, invite);
     const isParent = invite.kind === "parent";
-    // A player invitation cut from a newcomer application names no roster player
-    // yet — the application is what it carries instead.
-    if (!isCoach && !invitedPlayers.length && !(invite.kind === "player" && body.application)) throw new ApiProblem(409, "invalid_invite", "This invitation is not linked to a player. Ask an AIMZ administrator for a new one.");
+    // A newcomer names nobody on the roster — the application is what it
+    // carries instead, and the player record comes later, on approval.
+    if (!isCoach && !isNewcomer && !invitedPlayers.length) throw new ApiProblem(409, "invalid_invite", "This invitation is not linked to a player. Ask an AIMZ administrator for a new one.");
     const application = body.application && typeof body.application === "object" && !Array.isArray(body.application)
       ? body.application as Record<string, unknown> : null;
-    if (invite.kind === "player" && application) {
+    if (isNewcomer) {
+      if (!application) throw new ApiProblem(422, "application_required", "Complete the application to join AIMZ.");
       if (application.full_name !== name || String(application.email).toLowerCase() !== email || application.consent !== true) {
         throw new ApiProblem(422, "application_mismatch", "Account name and email must match the completed application.");
       }
@@ -197,10 +199,12 @@ export function registerAuthRoutes(app: App): void {
       password_hash: await hashPassword(password),
       role: isCoach ? "coach" : isParent ? "parent" : "player",
       // A personal invitation carries the roster player it was cut for, so the
-      // account knows whose stats are its own the moment it is created. An
-      // invitation cut from an application has none until somebody confirms it.
-      player_id: isParent || isCoach ? null : (invitedPlayers[0] ?? null),
-      onboarding_status: invite.kind === "player" && body.application && !invite.application_id ? "pending" : "approved",
+      // account knows whose stats are its own the moment it is created. A
+      // newcomer has none until somebody confirms them.
+      player_id: isParent || isCoach || isNewcomer ? null : invitedPlayers[0]!,
+      // The only account that waits. Everybody else was invited by name and is
+      // let in on the spot.
+      onboarding_status: isNewcomer ? "pending" : "approved",
       is_active: 1,
       created_at: now,
       updated_at: now,
@@ -426,7 +430,9 @@ export function registerAuthRoutes(app: App): void {
     const label = stringField(body, "label", { min: 2, max: 120 });
     const suppliedCode = stringField(body, "code", { min: 4, max: 128, optional: true });
     const expiresAt = typeof body.expires_at === "string" ? body.expires_at : null;
-    const kind: InviteKind = body.kind === "parent" ? "parent" : body.kind === "coach" ? "coach" : "player";
+    const kind: InviteKind = body.kind === "parent" ? "parent"
+      : body.kind === "coach" ? "coach"
+        : body.kind === "newcomer" ? "newcomer" : "player";
     // Hashed the same way whatever kind of invitation this is, so one lookup on
     // registration finds any of them, and a code left unsaid is generated.
     const generated = suppliedCode
@@ -435,10 +441,12 @@ export function registerAuthRoutes(app: App): void {
     // A coach invitation names AIMZ squads, and nothing else about it looks
     // like the roster invitations below, so it is built and returned here.
     if (kind === "coach") return c.json(await createManagerInvite(c, body, label!, generated, expiresAt, admin.id), 201);
-    // Every invitation names who it is for; there is no unlinked intake code.
-    const requested = playerIdList(body);
+    // Every invitation but a newcomer's names who it is for. A newcomer is the
+    // one AIMZ does not know yet: there is nobody on the roster to name, which
+    // is the whole reason it waits for approval.
+    const requested = kind === "newcomer" ? [] : playerIdList(body);
     if (kind === "parent" && !requested.length) throw new ApiProblem(422, "validation_error", "Choose at least one child from the roster.");
-    if (kind === "player" && requested.length > 1) throw new ApiProblem(422, "validation_error", "A player invitation is for one player.");
+    if (kind === "player" && requested.length !== 1) throw new ApiProblem(422, "validation_error", "A player invitation is for one player on the roster.");
     // A player may only ever hold one account of their own, so a player
     // invitation is refused up front when that roster record is taken. A parent
     // does not claim the record, so several parents of one child are fine.
@@ -447,7 +455,7 @@ export function registerAuthRoutes(app: App): void {
     // An invitation cut for named people is for them, whatever the caller asks
     // for: a second claim would find the roster record taken.
     const requestedUses = typeof body.max_uses === "number" && body.max_uses >= 1 ? Math.floor(body.max_uses) : null;
-    const maxUses = kind === "player" ? 1 : requestedUses;
+    const maxUses = kind === "player" || kind === "newcomer" ? 1 : requestedUses;
     const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: generated.hash, kind, player_id: kind === "player" ? (playerIds[0] ?? null) : null, team_id: null, application_id: typeof body.application_id === "string" ? body.application_id : null, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
     try {
       await c.env.DB.batch([
