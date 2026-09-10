@@ -419,6 +419,35 @@ export type PlayerContact = {
 
 export type PlayerRosterDetails = { player_id: string; date_of_birth: string | null; contacts: PlayerContact[] };
 
+/**
+ * What the academy holds about who a player is.
+ *
+ * Gathered from the records that already exist — the roster record, the
+ * contacts, and the account where she has one — rather than a profile table of
+ * its own. A field the app does not collect yet simply is not here.
+ */
+export type PlayerPersonalDetails = {
+  player: Player | null;
+  team: Team | null;
+  date_of_birth: string | null;
+  age: number | null;
+  account: { name: string; email: string } | null;
+  contacts: PlayerContact[];
+};
+
+/** One charge on a family's record, with what has been paid against it. */
+export type PlayerFeeCharge = FeeCharge & { payments: FeePayment[] };
+
+/**
+ * A family's money, as a view of the academy's ledger. Voided charges are
+ * listed and excluded from every total.
+ */
+export type PlayerFinancials = {
+  player: Player | null;
+  summary: { charged_piastres: number; paid_piastres: number; outstanding_piastres: number; overdue: number };
+  items: PlayerFeeCharge[];
+};
+
 // Mirrors backend PlayerLeaderRow; move to the generated schema after the next `npm run api:types`.
 export type PlayerLeaderRow = {
   rank: number;

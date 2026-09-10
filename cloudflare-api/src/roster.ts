@@ -1,7 +1,6 @@
 import type { Hono } from "hono";
-import { ApiProblem, jsonObject, nowIso, stringField } from "./helpers";
+import { ApiProblem, adminUser, jsonObject, nowIso, stringField } from "./helpers";
 import type { PlayerContactRow, PlayerRow } from "./types";
-import { assertCanManageTeam, managingUser } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -18,18 +17,16 @@ async function privateRoster(env: Env, player: PlayerRow): Promise<Record<string
 
 export function registerRosterRoutes(app: App): void {
   app.get("/api/v1/players/:id/contacts", async (c) => {
-    const { scope } = await managingUser(c);
+    await adminUser(c);
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>();
     if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
-    assertCanManageTeam(scope, player.team_id);
     return c.json(await privateRoster(c.env, player));
   });
 
   app.put("/api/v1/players/:id/contacts", async (c) => {
-    const { scope } = await managingUser(c);
+    await adminUser(c);
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=?").bind(c.req.param("id")).first<PlayerRow>();
     if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
-    assertCanManageTeam(scope, player.team_id);
     const body = await jsonObject(c);
     const date = stringField(body, "date_of_birth", { optional: true, nullable: true, max: 10 }) ?? null;
     if (date && !validDateOnly(date)) throw new ApiProblem(422, "validation_error", "Enter a real birth date as YYYY-MM-DD.", [{ field: "date_of_birth", message: "Use a valid YYYY-MM-DD date." }]);

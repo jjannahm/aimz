@@ -18,14 +18,8 @@ import { confirmAction, showMessage, showToast } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { FeeCharge, FeeStatus, PaymentMethod, Player, Team } from '@/src/types/api';
+import { FEE_STANDING, FEE_TONE } from '@/src/lib/feeStatus';
 
-/** The colour each standing carries, from the palette the rest of the app uses. */
-const TONE: Record<FeeStatus, 'live' | 'warning' | 'error' | 'textMuted'> = {
-  paid: 'live', partial: 'warning', overdue: 'error', unpaid: 'textMuted', void: 'textMuted',
-};
-const STANDING: Record<FeeStatus, string> = {
-  paid: 'Paid', partial: 'Part paid', overdue: 'Overdue', unpaid: 'Unpaid', void: 'Cancelled',
-};
 
 const METHODS: { label: string; value: PaymentMethod }[] = [
   { label: 'Cash', value: 'cash' },
@@ -49,8 +43,8 @@ function recentPeriods(): { label: string; value: string }[] {
 function Standing({ status }: { status: FeeStatus }) {
   const styles = useThemedStyles(stylesheet);
   const colors = useColors();
-  return <View style={[styles.chip, { borderColor: colors[TONE[status]] }]}>
-    <Text style={[styles.chipText, { color: colors[TONE[status]] }]}>{STANDING[status]}</Text>
+  return <View style={[styles.chip, { borderColor: colors[FEE_TONE[status]] }]}>
+    <Text style={[styles.chipText, { color: colors[FEE_TONE[status]] }]}>{FEE_STANDING[status]}</Text>
   </View>;
 }
 
@@ -69,7 +63,7 @@ function PlayerLedger({ playerId, name, outstanding, status }: { playerId: strin
   });
   return <View style={styles.card}>
     <Pressable
-      accessibilityLabel={`${name}, ${STANDING[status].toLowerCase()}, ${formatEgp(outstanding)} outstanding`}
+      accessibilityLabel={`${name}, ${FEE_STANDING[status].toLowerCase()}, ${formatEgp(outstanding)} outstanding`}
       accessibilityRole="button"
       accessibilityState={{ expanded: open }}
       onPress={() => setOpen((current) => !current)}
@@ -220,7 +214,7 @@ export function FeesManager({ teams }: { teams: Team[] }) {
   if (!teams.length) return <Text style={styles.empty}>Add a squad before charging anybody fees.</Text>;
 
   const rows = summary.data?.players ?? [];
-  const shown = narrowBySearch(rows, search, (row) => `${row.player?.name ?? ''} ${STANDING[row.status]}`);
+  const shown = narrowBySearch(rows, search, (row) => `${row.player?.name ?? ''} ${FEE_STANDING[row.status]}`);
   const totals = summary.data?.totals;
 
   return <View style={styles.stack}>
