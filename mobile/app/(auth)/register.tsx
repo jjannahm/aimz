@@ -18,6 +18,8 @@ type Values = Omit<NewcomerApplicationPayload, 'full_name' | 'email' | 'consent'
 const empty: Values = { inviteCode: '', name: '', email: '', password: '', branch: '', mobile: '', whatsapp_mobile: '', date_of_birth: '', nationality: '', address: '', previous_academy: '', school_university: '', father_name: '', father_mobile: '', mother_name: '', mother_mobile: '', medical_concerns: '', medications: '', consent: false };
 const branches = ['AUC (East)', 'Gardenia (Agyal Park) (East)', 'Palm Hills Sporting Club (West)', "King’s School The Crown (West)"];
 const playerSteps = ['Invitation', 'Account', 'Player', 'Family', 'Health'];
+/** The fields that make the account itself, as against the application. */
+const ACCOUNT_FIELDS: string[] = ['inviteCode', 'name', 'email', 'password'];
 
 export default function RegisterScreen() {
   const styles = useThemedStyles(stylesheet);
@@ -32,11 +34,24 @@ export default function RegisterScreen() {
   const steps = useMemo(() => needsApplication ? playerSteps : ['Invitation', 'Account'], [needsApplication]);
   const set = (field: keyof Values, value: string | boolean) => setValues((current) => ({ ...current, [field]: value }));
 
+  /**
+   * What a field says when it is not filled in.
+   *
+   * "Enter None if it does not apply" is advice for the application questions,
+   * where a player with no previous academy still has to answer something. It
+   * is nonsense on the account fields, and on a password it was advice nobody
+   * should follow — which is what somebody eight characters in was being told.
+   */
+  const complaint = (field: keyof Values) => {
+    if (field === 'consent') return 'Consent is required.';
+    if (field === 'password') return 'Use at least 10 characters.';
+    return ACCOUNT_FIELDS.includes(field) ? 'This field is required.' : 'This field is required. Enter None if it does not apply.';
+  };
   const checkFields = (fields: (keyof Values)[]) => {
     const next: typeof errors = {};
     for (const field of fields) {
       const value = values[field];
-      if (value === false || String(value).trim().length < (field === 'password' ? 10 : 2)) next[field] = field === 'consent' ? 'Consent is required.' : 'This field is required. Enter None if it does not apply.';
+      if (value === false || String(value).trim().length < (field === 'password' ? 10 : 2)) next[field] = complaint(field);
     }
     if (fields.includes('email') && !/^\S+@\S+\.\S+$/.test(values.email)) next.email = 'Enter a valid email.';
     if (fields.includes('date_of_birth') && !/^\d{4}-\d{2}-\d{2}$/.test(values.date_of_birth)) next.date_of_birth = 'Use YYYY-MM-DD.';
