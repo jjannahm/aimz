@@ -104,7 +104,7 @@ class PublicNewcomerCreate(NewcomerApplicationInput):
 class RegisterRequest(BaseModel):
     name: str = Field(min_length=2, max_length=120)
     email: EmailStr
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=8, max_length=128)
     invite_code: str = Field(min_length=4, max_length=128)
     application: NewcomerApplicationInput | None = None
 
@@ -133,12 +133,12 @@ class PasswordResetRequest(BaseModel):
 class PasswordResetConfirm(BaseModel):
     email: EmailStr
     code: str = Field(pattern=r"^\d{6}$")
-    new_password: str = Field(min_length=10, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class PasswordChange(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=10, max_length=128)
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class UserUpdate(BaseModel):
