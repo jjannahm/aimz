@@ -8,12 +8,18 @@ import { showToast } from '@/src/lib/platformAlert';
 import type { FeeCharge, FeePlan, FeeSummary, Player, Team } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
+const mockShareInvoice = jest.fn();
+jest.mock('@/src/lib/invoiceLink', () => ({
+  ...jest.requireActual('@/src/lib/invoiceLink'),
+  shareInvoice: (...args: unknown[]) => mockShareInvoice(...args),
+}));
 jest.mock('@/src/lib/api', () => ({
   ApiError: class extends Error {},
   api: {
     feePlans: jest.fn(), createFeePlan: jest.fn(), updateFeePlan: jest.fn(), generateFees: jest.fn(),
     feeCharges: jest.fn(), feeCharge: jest.fn(), createFeeCharge: jest.fn(), voidFeeCharge: jest.fn(),
     recordFeePayment: jest.fn(), teamFeeSummary: jest.fn(), players: jest.fn(),
+    createInvoice: jest.fn(), createSquadInvoices: jest.fn(),
   },
 }));
 jest.mock('@/src/lib/platformAlert', () => ({
@@ -145,5 +151,82 @@ describe('FeesManager', () => {
   it('says so plainly when there are no squads at all', async () => {
     const screen = await render(<FeesManager teams={[]} />, { wrapper });
     expect(screen.getByText('Add a squad before charging anybody fees.')).toBeTruthy();
+  });
+});
+
+describe('invoicing what the ledger says is owed', () => {
+  const invoice = (over: Record<string, unknown> = {}) => ({
+    id: 'inv-1', reference: 'AIMZ-202609-7QK4TP', player_id: 'p-1', player_name: 'Amina Adel',
+    period: '2026-09', share_token: 'a-private-address', issued_at: '2026-09-10T09:00:00.000Z',
+    issued_by_name: 'Academy Office', first_opened_at: null,
+    snapshot: {
+      version: 1, reference: 'AIMZ-202609-7QK4TP', issued_on: '2026-09-10',
+      player: { name: 'Amina Adel' }, squad: { name: 'AIMZ U14', branch: null },
+      lines: [], totals: { charged_piastres: 120000, paid_piastres: 0, outstanding_piastres: 120000, overdue: 1 },
+      payment_instructions: null, not_due_yet: 0, generated_at: '2026-09-10T09:00:00.000Z',
+    },
+    ...over,
+  });
+
+  beforeEach(() => {
+    jest.mocked(api.feePlans).mockResolvedValue(page([plan]) as never);
+    jest.mocked(api.teamFeeSummary).mockResolvedValue(summary());
+    jest.mocked(api.players).mockResolvedValue(page([player('p-1', 'Amina Adel')]) as never);
+    jest.mocked(api.feeCharges).mockResolvedValue(page([charge()]) as never);
+    jest.mocked(api.createInvoice).mockResolvedValue(invoice() as never);
+    jest.mocked(api.createSquadInvoices).mockResolvedValue({ items: [invoice()], skipped: 2 } as never);
+  });
+  afterEach(() => jest.clearAllMocks());
+
+  // Making one and sending it are the same gesture: an invoice nobody was
+  // handed is not a thing anybody wanted.
+  it('makes and sends one family an invoice in a single press', async () => {
+    const screen = await render(<FeesManager teams={[team]} />, { wrapper });
+    await fireEvent.press(await screen.findByRole('button', { name: /Amina Adel, overdue/ }));
+    await fireEvent.press(await screen.findByText('Send invoice'));
+
+    await waitFor(() => expect(api.createInvoice).toHaveBeenCalledWith('p-1', { payment_instructions: null }));
+    expect(mockShareInvoice).toHaveBeenCalledWith('a-private-address', 'Amina Adel', 120000);
+    // The address is shown once it exists, so it can be copied if the share
+    // sheet is not where somebody wants to send it from.
+    expect(await screen.findByText(/AIMZ-202609-7QK4TP/)).toBeTruthy();
+  });
+
+  // An invoice for nothing is not a thing to send anybody.
+  it('offers nothing to send to a family who owes nothing', async () => {
+    const screen = await render(<FeesManager teams={[team]} />, { wrapper });
+    await fireEvent.press(await screen.findByRole('button', { name: /Salma Rashad, paid/ }));
+
+    await screen.findByText('Monthly subscription · 2026-09');
+    expect(screen.queryByText('Send invoice')).toBeNull();
+  });
+
+  /**
+   * The monthly run. Whoever owes nothing is skipped rather than sent an
+   * invoice for nothing, and the count is said out loud — silence looks like
+   * the button did not work.
+   */
+  it('invoices the whole squad and says who it had nothing to ask', async () => {
+    const screen = await render(<FeesManager teams={[team]} />, { wrapper });
+    await fireEvent.press(await screen.findByRole('button', { name: 'Show invoice the squad form' }));
+    await fireEvent.press(await screen.findByText(/Invoice AIMZ U14 for/));
+
+    await waitFor(() => expect(api.createSquadInvoices).toHaveBeenCalledWith('team-1', { period: '2026-09', payment_instructions: null }));
+    expect(showToast).toHaveBeenCalledWith('1 invoice made, 2 owed nothing');
+    // Each result carries its own Send: an invoice names one child and what
+    // they owe, so there is nothing here to post to a group.
+    expect(await screen.findByText('Send')).toBeTruthy();
+  });
+
+  // Typed once, and used by the run and by every single invoice below it.
+  it('carries the payment details typed once into what it sends', async () => {
+    const screen = await render(<FeesManager teams={[team]} />, { wrapper });
+    await fireEvent.press(await screen.findByRole('button', { name: 'Show invoice the squad form' }));
+    await fireEvent.changeText(await screen.findByLabelText('How to pay'), 'InstaPay to aimz@bank');
+
+    await fireEvent.press(await screen.findByRole('button', { name: /Amina Adel, overdue/ }));
+    await fireEvent.press(await screen.findByText('Send invoice'));
+
+    await waitFor(() => expect(api.createInvoice).toHaveBeenCalledWith('p-1', { payment_instructions: 'InstaPay to aimz@bank' }));
   });
 });

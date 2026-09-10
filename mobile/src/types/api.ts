@@ -509,6 +509,48 @@ export type SharedMatchReport = {
   snapshot: MatchReportSnapshot;
 };
 
+/**
+ * An invoice, as it stood when it was sent.
+ *
+ * Nothing new about the money: the charges and payments already exist, and
+ * where each stands is worked out by the same rule the ledger reads. This is
+ * the ask, frozen — so a parent who pays the next day can still open what they
+ * were given and see what it asked for.
+ */
+export type InvoiceSnapshot = {
+  version: 1;
+  reference: string;
+  issued_on: string;
+  player: { name: string };
+  squad: { name: string | null; branch: string | null };
+  lines: { label: string; period: string | null; due_on: string; amount_piastres: number; paid_piastres: number; balance_piastres: number; status: FeeStatus }[];
+  totals: { charged_piastres: number; paid_piastres: number; outstanding_piastres: number; overdue: number };
+  payment_instructions: string | null;
+  /** Months left off because the academy has not earned them yet. */
+  not_due_yet: number;
+  generated_at: string;
+};
+
+/** An invoice in the app, with the address for sending it. */
+export type FeeInvoice = {
+  id: string;
+  reference: string;
+  player_id: string;
+  player_name: string | null;
+  period: string | null;
+  snapshot: InvoiceSnapshot;
+  share_token: string | null;
+  issued_at: string;
+  issued_by_name: string;
+  first_opened_at: string | null;
+};
+
+/** What the address hands whoever opens it. Carries no identifiers at all. */
+export type SharedInvoice = { issued_at: string; issued_by_name: string; snapshot: InvoiceSnapshot };
+
+/** What a squad's invoice run did, and who it had nothing to ask. */
+export type InvoiceRun = { items: FeeInvoice[]; skipped: number };
+
 export type PlayerContact = {
   id: string;
   player_id: string;

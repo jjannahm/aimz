@@ -12,6 +12,7 @@ import { registerKnockoutRoutes } from "./knockout";
 import { registerMatchRoutes } from "./matches";
 import { registerMediaRoutes } from "./media";
 import { registerNewcomerRoutes } from "./newcomers";
+import { registerInvoiceRoutes } from "./invoices";
 import { registerMatchReportRoutes } from "./match-reports";
 import { registerReportRoutes } from "./reports";
 import { purgeExpiredAudit } from "./retention";
@@ -57,6 +58,8 @@ const PUBLIC_ROUTES: { method: string; path: RegExp }[] = [
   { method: "GET", path: /^\/api\/v1\/reports\/[^/]+$/u },
   // And the same bargain for a match report sent to a parents' group.
   { method: "GET", path: /^\/api\/v1\/match-reports\/[^/]+$/u },
+  // And for an invoice sent to one family.
+  { method: "GET", path: /^\/api\/v1\/invoices\/[^/]+$/u },
   // Badges and photos are fetched by <img>, which sends no Authorization; and
   // an upload authorises itself with the signed token in its own body.
   { method: "GET", path: /^\/api\/v1\/media\/.+$/u },
@@ -108,6 +111,7 @@ registerCalendarRoutes(app);
 registerFeeRoutes(app);
 registerReportRoutes(app);
 registerMatchReportRoutes(app);
+registerInvoiceRoutes(app);
 
 app.notFound((c) => errorResponse(c, new ApiProblem(404, "not_found", "The requested endpoint was not found.")));
 app.onError((error, c) => {

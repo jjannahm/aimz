@@ -27,6 +27,7 @@ export const cacheKeys = {
   /** Requests to correct a register, which a decision writes through to it. */
   attendanceRequests: ['attendance-requests'] as const,
   fees: ['fees'] as const,
+  invoices: ['fee-invoices'] as const,
   reports: ['player-reports'] as const,
   matchReport: (id: string) => ['match-report', id] as const,
   allMatchReports: ['match-report'] as const,
@@ -74,7 +75,7 @@ const affects: Record<Entity, (readonly string[])[]> = {
   'attendance-request': [cacheKeys.attendanceRequests, cacheKeys.attendance, cacheKeys.playerStats, cacheKeys.trainingStats],
   // Plans, charges, payments and the squad ledger are all read back from the
   // same rows, so any one of them changing clears the lot.
-  fee: [cacheKeys.fees, cacheKeys.financials],
+  fee: [cacheKeys.fees, cacheKeys.financials, cacheKeys.invoices],
   report: [cacheKeys.reports],
   'match-report': [cacheKeys.allMatchReports],
   // A reading changes the session's sheet and every total built on it.
