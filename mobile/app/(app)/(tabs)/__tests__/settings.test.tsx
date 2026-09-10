@@ -6,10 +6,11 @@ import type { ReactNode } from 'react';
 import SettingsScreen from '@/app/(app)/(tabs)/settings';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
+let mockRole = 'player';
 jest.mock('@/src/auth/AuthProvider', () => ({
   useAuth: () => ({
     signOut: jest.fn(),
-    user: { email: 'player@example.com', name: 'AIMZ Player', role: 'player' },
+    user: { email: 'player@example.com', name: 'AIMZ Player', role: mockRole },
   }),
 }));
 jest.mock('@/src/components/CalendarSubscription', () => {
@@ -30,7 +31,7 @@ function wrapper({ children }: { children: ReactNode }) {
 }
 
 describe('SettingsScreen header', () => {
-  afterEach(() => { jest.clearAllMocks(); mockParams = {}; });
+  afterEach(() => { jest.clearAllMocks(); mockParams = {}; mockRole = 'player'; });
 
   it('shows a close control instead of another settings control', async () => {
     const screen = await render(<SettingsScreen />, { wrapper });
@@ -38,6 +39,15 @@ describe('SettingsScreen header', () => {
     expect(screen.getByLabelText('Close')).toBeTruthy();
     expect(screen.queryByLabelText('Settings')).toBeNull();
     expect(screen.getByText('Calendar subscription card')).toBeTruthy();
+  });
+
+  /** The audit log lives under Manage · Activity now, not folded in here. */
+  it('no longer carries the admin activity feed', async () => {
+    mockRole = 'admin';
+    const screen = await render(<SettingsScreen />, { wrapper });
+
+    expect(screen.queryByText('Admin activity')).toBeNull();
+    expect(screen.queryByText('See the full log')).toBeNull();
   });
 
   it('returns to the screen that opened settings', async () => {

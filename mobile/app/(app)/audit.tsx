@@ -8,7 +8,7 @@ import { Screen } from '@/src/components/Screen';
 export default function AuditLogScreen() {
   const { user } = useAuth();
   // Reachable per match as well as whole-academy, so a disputed match can be
-  // read on its own. Settings is the only place that links here.
+  // read on its own. Manage · Activity is the only place that links here.
   const { matchId } = useLocalSearchParams<{ matchId?: string }>();
   if (user?.role !== 'admin') return <Redirect href="/(app)/(tabs)" />;
   return <Screen action={<CloseButton />} title="Admin activity">

@@ -13,6 +13,7 @@ import { TeamAvatar } from '@/src/components/TeamAvatar';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
+import { byPosition } from '@/src/lib/positions';
 import type { PressState } from '@/src/lib/pressState';
 import { oneDecimal, ordinal, percent, playedMatches, summarise, upcomingMatches, type PlayedMatch } from '@/src/lib/teamRecord';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -88,7 +89,10 @@ export function Squad({ teamId }: { teamId: string }) {
   const stats = useQuery({ queryKey: ['squad-stats', teamId], queryFn: () => api.squadStats(teamId) });
   if (players.isLoading) return <LoadingState label="Loading squad" />;
   if (players.isError) return <ErrorState message={(players.error as ApiError).message} onRetry={() => players.refetch()} />;
-  const roster = players.data?.items ?? [];
+  // Read the way a team sheet is: keepers, defenders, midfield, then attack,
+  // and alphabetical within each line. The API answers in its own order, which
+  // is nobody's idea of a squad list.
+  const roster = byPosition(players.data?.items ?? []);
   if (!roster.length) return <Text style={styles.empty}>No players are on this squad yet.</Text>;
   const byPlayer = new Map(stats.data?.map((row) => [row.player_id, row]));
   return <View style={styles.card}>
