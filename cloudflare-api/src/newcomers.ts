@@ -77,7 +77,7 @@ export function registerNewcomerRoutes(app: App): void {
     const submissionId = stringField(body, "client_submission_id", { min: 8, max: 64 })!;
     const existing = await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE client_submission_id=?")
       .bind(submissionId).first<Record<string, string>>();
-    if (existing) return c.json({ id: existing.id, stage: existing.stage, duplicate_likely: await duplicate(c.env, existing.id, existing.email, existing.mobile, existing.whatsapp_mobile) });
+    if (existing) return c.json({ id: existing.id, stage: existing.stage });
     const token = stringField(body, "turnstile_token", { min: 1, max: 2048 })!;
     if (body.consent !== true) throw new ApiProblem(422, "validation_error", "Consent is required.");
     const values: Record<string, string> = {};
@@ -95,7 +95,10 @@ export function registerNewcomerRoutes(app: App): void {
       (id,source,stage,client_submission_id,${columns.join(",")},consented_at,created_at,updated_at)
       VALUES(?,'public_link','new',?,${columns.map(() => "?").join(",")},?,?,?)`)
       .bind(id, submissionId, ...columns.map((field) => values[field]), now, now, now).run();
-    return c.json({ id, stage: "new", duplicate_likely: await duplicate(c.env, id, values.email, values.mobile, values.whatsapp_mobile) }, 201);
+    // Whether somebody else has already applied with this number is the
+    // academy's to see, not the sender's: the answer is about a third party and
+    // a stranger who guessed a mobile could read it. The queue still flags it.
+    return c.json({ id, stage: "new" }, 201);
   });
 
   app.get("/api/v1/admin/newcomers", async (c) => {
@@ -141,12 +144,38 @@ export function registerNewcomerRoutes(app: App): void {
     if (stage && !["new", "contacted", "follow_up", "trial_booked", "closed"].includes(stage)) throw new ApiProblem(422, "validation_error", "Choose a valid stage.");
     if (outcome && !["joined", "not_interested", "declined"].includes(outcome)) throw new ApiProblem(422, "validation_error", "Choose a valid outcome.");
     if (stage === "closed" && !outcome) throw new ApiProblem(422, "outcome_required", "Choose a closed outcome.");
+    // A PATCH says only what it is changing, and absent is not the same as null:
+    // the app clears a follow-up by sending null and marks somebody contacted by
+    // sending no follow-up at all. Writing the column either way threw the
+    // reminder away at the moment it began to matter, and blanked the reason a
+    // closed application was closed. So each of these is written only when the
+    // body carries it.
+    const given = (field: string) => Object.hasOwn(body, field);
+    const instant = (field: string) => {
+      const value = body[field];
+      if (value === null || value === undefined) return null;
+      if (typeof value !== "string" || Number.isNaN(Date.parse(value))) {
+        throw new ApiProblem(422, "validation_error", `Enter a date and time for ${field.replaceAll("_", " ")}.`);
+      }
+      return value;
+    };
     const now = nowIso();
     const result = await c.env.DB.prepare(`UPDATE newcomer_applications SET
-      stage=coalesce(?,stage), outcome=?, last_contacted_at=coalesce(?,last_contacted_at),
-      next_follow_up_at=?, closed_at=CASE WHEN coalesce(?,stage)='closed' THEN ? ELSE NULL END,
+      stage=coalesce(?,stage),
+      outcome=CASE WHEN ?=1 THEN ? ELSE outcome END,
+      last_contacted_at=coalesce(?,last_contacted_at),
+      next_follow_up_at=CASE WHEN ?=1 THEN ? ELSE next_follow_up_at END,
+      -- Closed once: a later edit of a closed record keeps the hour it closed,
+      -- and reopening it drops the stamp rather than leaving a stale one.
+      closed_at=CASE WHEN coalesce(?,stage)='closed' THEN coalesce(closed_at,?) ELSE NULL END,
       reviewed_by_id=?,updated_at=? WHERE id=?`)
-      .bind(stage ?? null, outcome ?? null, body.last_contacted_at ?? null, body.next_follow_up_at ?? null, stage ?? null, now, admin.id, now, c.req.param("id")).run();
+      .bind(
+        stage ?? null,
+        given("outcome") ? 1 : 0, outcome ?? null,
+        instant("last_contacted_at"),
+        given("next_follow_up_at") ? 1 : 0, instant("next_follow_up_at"),
+        stage ?? null, now, admin.id, now, c.req.param("id"),
+      ).run();
     if (!result.meta.changes) throw new ApiProblem(404, "newcomer_not_found", "Newcomer application not found.");
     return c.json(await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE id=?").bind(c.req.param("id")).first());
   });

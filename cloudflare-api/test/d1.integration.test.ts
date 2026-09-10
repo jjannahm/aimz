@@ -1607,3 +1607,56 @@ describe('a player read against their own squad', () => {
     expect(stats.attendance).toMatchObject({ pct: null, team_pct: null });
   });
 });
+
+describe('the newcomer pipeline', () => {
+  async function application(admin: { token: string }, name = 'Yara Hossam') {
+    const id = crypto.randomUUID();
+    await testEnv.DB.prepare(`INSERT INTO newcomer_applications
+      (id,source,stage,branch,full_name,mobile,email,whatsapp_mobile,date_of_birth,nationality,address,
+       previous_academy,school_university,father_name,father_mobile,mother_name,mother_mobile,
+       medical_concerns,medications,consent_version,consented_at,created_at,updated_at)
+      VALUES(?,'public_link','new','Maadi',?,'0100','y@aimz.test','0100','2014-05-02','Egyptian','Cairo',
+             'None','School','Hossam','0101','Mona','0102','None','None','2026-09',?,?,?)`)
+      .bind(id, name, now, now, now).run();
+    return id;
+  }
+
+  /**
+   * A follow-up is the only thing in this pipeline somebody has to remember to
+   * come back to, and the app marks people contacted with a call that names no
+   * date. Overwriting the column on every PATCH quietly threw the reminder away
+   * at exactly the moment it started to matter.
+   */
+  it('keeps a scheduled follow-up when the stage moves on', async () => {
+    const admin = await seedUser('admin');
+    const id = await application(admin);
+    const due = '2026-10-01T09:00:00.000Z';
+
+    await request(`/api/v1/admin/newcomers/${id}`, json('PATCH', { next_follow_up_at: due }, admin.token));
+    const marked = await (await request(`/api/v1/admin/newcomers/${id}`, json('PATCH', { stage: 'contacted', last_contacted_at: now }, admin.token)))
+      .json<{ stage: string; next_follow_up_at: string | null }>();
+
+    expect(marked.stage).toBe('contacted');
+    expect(marked.next_follow_up_at).toBe(due);
+  });
+
+  it('still clears a follow-up when asked to', async () => {
+    const admin = await seedUser('admin');
+    const id = await application(admin, 'Malak Adel');
+    await request(`/api/v1/admin/newcomers/${id}`, json('PATCH', { next_follow_up_at: '2026-10-01T09:00:00.000Z' }, admin.token));
+    const cleared = await (await request(`/api/v1/admin/newcomers/${id}`, json('PATCH', { next_follow_up_at: null }, admin.token)))
+      .json<{ next_follow_up_at: string | null }>();
+    expect(cleared.next_follow_up_at).toBeNull();
+  });
+
+  // Closing records why. A later edit that says nothing about the outcome must
+  // not leave the record closed with no reason on it.
+  it('keeps the outcome of a closed application through a later edit', async () => {
+    const admin = await seedUser('admin');
+    const id = await application(admin, 'Habiba Tarek');
+    await request(`/api/v1/admin/newcomers/${id}`, json('PATCH', { stage: 'closed', outcome: 'not_interested' }, admin.token));
+    const edited = await (await request(`/api/v1/admin/newcomers/${id}`, json('PATCH', { last_contacted_at: now }, admin.token)))
+      .json<{ stage: string; outcome: string | null }>();
+    expect(edited).toMatchObject({ stage: 'closed', outcome: 'not_interested' });
+  });
+});
