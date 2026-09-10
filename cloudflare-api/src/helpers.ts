@@ -4,7 +4,7 @@ import { verifyAccessToken } from "./security";
 
 export class ApiProblem extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 422 | 503,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503,
     readonly code: string,
     message: string,
     readonly fieldErrors?: { field: string; message: string }[],

@@ -20,7 +20,7 @@ jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'a
 jest.mock('@/src/components/manage/FeesManager', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
-  return { FeesManager: () => React.createElement(Text, null, 'Fees manager content') };
+  return { FeesManager: () => React.createElement(Text, null, 'Fees coach content') };
 });
 jest.mock('@/src/components/manage/TrainingStatsManager', () => {
   const React = jest.requireActual('react');
@@ -30,14 +30,14 @@ jest.mock('@/src/components/manage/TrainingStatsManager', () => {
 jest.mock('@/src/components/manage/ReportsManager', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
-  return { ReportsManager: () => React.createElement(Text, null, 'Reports manager content') };
+  return { ReportsManager: () => React.createElement(Text, null, 'Reports coach content') };
 });
 jest.mock('@/src/components/manage/HubManagers', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
   return {
-    AnnouncementsManager: () => React.createElement(Text, null, 'Announcements manager content'),
-    ScheduleManager: () => React.createElement(Text, null, 'Schedule manager content'),
+    AnnouncementsManager: () => React.createElement(Text, null, 'Announcements coach content'),
+    ScheduleManager: () => React.createElement(Text, null, 'Schedule coach content'),
   };
 });
 jest.mock('@/src/lib/api', () => ({
@@ -114,6 +114,8 @@ describe('ManageScreen navigation', () => {
       'Invites',
       'Fees',
       'Reports',
+      'Newcomers',
+      'Kit',
     ]);
     // The two that were merged away are reachable, but underneath their pill.
     expect(screen.queryByTestId('manage-tab-opponents')).toBeNull();
@@ -135,19 +137,19 @@ describe('ManageScreen navigation', () => {
   it('opens the Schedule pill on training, with matches alongside', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(screen.getByTestId('manage-tab-schedule'));
-    expect(await screen.findByText('Schedule manager content')).toBeTruthy();
+    expect(await screen.findByText('Schedule coach content')).toBeTruthy();
     expect(screen.getByRole('tab', { name: 'Training Sessions' }).props.accessibilityState.selected).toBe(true);
 
     await subTab(screen, 'Matches');
     expect(await screen.findByText('Add matches')).toBeTruthy();
-    expect(screen.queryByText('Schedule manager content')).toBeNull();
+    expect(screen.queryByText('Schedule coach content')).toBeNull();
   });
 
   // Each pill keeps its own half; leaving and coming back starts over.
   it('reaches the fees ledger from its own pill', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(screen.getByTestId('manage-tab-fees'));
-    expect(await screen.findByText('Fees manager content')).toBeTruthy();
+    expect(await screen.findByText('Fees coach content')).toBeTruthy();
     // Fees manages itself, so the shared Add form is not on the page at all.
     expect(screen.queryByText('Add squads')).toBeNull();
   });
@@ -155,11 +157,11 @@ describe('ManageScreen navigation', () => {
   it('reaches the reports from their own pill, with the training numbers alongside', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(screen.getByTestId('manage-tab-reports'));
-    expect(await screen.findByText('Reports manager content')).toBeTruthy();
+    expect(await screen.findByText('Reports coach content')).toBeTruthy();
 
     await subTab(screen, 'Training Stats');
     expect(await screen.findByText('Training stats content')).toBeTruthy();
-    expect(screen.queryByText('Reports manager content')).toBeNull();
+    expect(screen.queryByText('Reports coach content')).toBeNull();
   });
 
   it('starts a pill back on its first half when it is left and returned to', async () => {
@@ -190,9 +192,9 @@ describe('ManageScreen navigation', () => {
     await waitFor(() => expect(screen.getByLabelText('Team or squad name').props.value).toBe(''));
 
     await fireEvent.press(screen.getByTestId('manage-tab-schedule'));
-    expect(await screen.findByText('Schedule manager content')).toBeTruthy();
+    expect(await screen.findByText('Schedule coach content')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('manage-tab-announcements'));
-    expect(await screen.findByText('Announcements manager content')).toBeTruthy();
+    expect(await screen.findByText('Announcements coach content')).toBeTruthy();
   });
 
   it('opens every section with its form folded away', async () => {
@@ -378,19 +380,15 @@ describe('ManageScreen invite player picker', () => {
     await waitFor(() => expect(screen.queryByTestId('player-picker-menu')).toBeNull());
   });
 
-  it('keeps the existing player and parent selection validation', async () => {
+  it('allows an unassigned player intake and still requires a parent child', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(await screen.findByRole('tab', { name: 'Invites' }));
     await openForm(screen, 'invites');
     await fireEvent.changeText(await screen.findByLabelText('Invite label'), 'Family invite');
-    await fireEvent.changeText(screen.getByLabelText('Invite code'), 'FAMILY-26');
-
-    await fireEvent.press(screen.getByText('Add item'));
-    expect(await screen.findByText('Choose a player.')).toBeTruthy();
-
     fireEvent.press(screen.getByRole('button', { name: 'Invite type' }));
     await fireEvent.press(await screen.findByRole('button', { name: 'Parent' }));
-    await fireEvent.press(screen.getByText('Add item'));
+    // An invitation is generated rather than added, and says so on its button.
+    await fireEvent.press(screen.getByText('Generate invitation'));
     expect(await screen.findByText('Choose at least one child.')).toBeTruthy();
     expect(api.createInvite).not.toHaveBeenCalled();
   });

@@ -109,7 +109,7 @@ export function registerAttendanceRequestRoutes(app: App): void {
    * The requests this account can see.
    *
    * A family sees their own, whatever their state, because seeing what came of
-   * one is the point. An administrator sees the academy's and a manager their
+   * one is the point. An administrator sees the academy's and a coach their
    * own squads', and both usually want `?status=pending` — the queue.
    */
   app.get("/api/v1/attendance-requests", async (c) => {
@@ -121,7 +121,7 @@ export function registerAttendanceRequestRoutes(app: App): void {
 
     if (user.role === "admin") {
       // Everything, filtered only by what was asked for.
-    } else if (user.role === "manager") {
+    } else if (user.role === "coach") {
       const squads = await managedTeamIds(c.env, user);
       conditions.push(`r.player_id IN (SELECT id FROM players WHERE team_id IN (${squads.map(() => "?").join(",")}))`);
       values.push(...squads);

@@ -26,7 +26,7 @@ type Half = 'match' | 'training';
  * The two halves of a profile: what she has done, and who she is.
  *
  * Information is drawn only for an account that may open it — an
- * administrator, the player herself, or her parent. A manager gets no tab at
+ * administrator, the player herself, or her parent. A coach gets no tab at
  * all rather than one that refuses her, which is both the instruction and the
  * kinder screen.
  */

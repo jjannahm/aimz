@@ -13,7 +13,7 @@ const NO_SQUAD = "Ask an AIMZ administrator to assign a squad to your account.";
  *
  *     player   → users.player_id  → that player's squad
  *     parent   → user_children    → each child's squad
- *     manager  → user_teams       → each squad assigned to them
+ *     coach  → user_teams       → each squad assigned to them
  *
  * Everything else in this file is built on that one answer, so a route that
  * scopes itself through here cannot be talked out of it by a query string.
@@ -32,7 +32,7 @@ export async function linkedPlayerIds(env: Env, user: UserRow): Promise<string[]
   return [user.player_id];
 }
 
-/** The squads assigned to a manager. */
+/** The squads assigned to a coach. */
 export async function managedTeamIds(env: Env, user: UserRow): Promise<string[]> {
   const result = await env.DB.prepare("SELECT team_id FROM user_teams WHERE user_id=?").bind(user.id).all<{ team_id: string }>();
   const ids = result.results.map((row) => row.team_id);
@@ -45,7 +45,7 @@ export async function managedTeamIds(env: Env, user: UserRow): Promise<string[]>
  * both, which is why this is a list rather than the single id it started as.
  */
 export async function linkedTeamIds(env: Env, user: UserRow): Promise<string[]> {
-  if (user.role === "manager") return managedTeamIds(env, user);
+  if (user.role === "coach") return managedTeamIds(env, user);
   const playerIds = await linkedPlayerIds(env, user);
   const placeholders = playerIds.map(() => "?").join(",");
   const result = await env.DB.prepare(`SELECT DISTINCT team_id FROM players WHERE id IN (${placeholders})`).bind(...playerIds).all<{ team_id: string }>();
@@ -71,7 +71,7 @@ export async function teamScope(env: Env, user: UserRow): Promise<TeamScope> {
  *
  * For places that describe an account rather than guard a resource — the
  * navigation the app draws from `/users/me`, which has to render something for
- * a manager whose squads have not been assigned yet.
+ * a coach whose squads have not been assigned yet.
  */
 export async function quietTeamScope(env: Env, user: UserRow): Promise<TeamScope> {
   try {
@@ -85,7 +85,7 @@ export async function quietTeamScope(env: Env, user: UserRow): Promise<TeamScope
  * The scope for the caller of a list, resolving the session on the way.
  *
  * Quiet rather than loud: an account waiting to be linked to a player, or a
- * manager waiting to be given a squad, gets empty lists and the app's own
+ * coach waiting to be given a squad, gets empty lists and the app's own
  * empty states. A 403 on the opening screen reads as a broken app rather than
  * as an account that is not finished. The guards on individual resources stay
  * loud, because there the caller has named something specific.
@@ -229,7 +229,7 @@ export async function visibleCompetitionIds(env: Env, scope: TeamScope): Promise
  * ------------------------------------------------------------------------ */
 
 /**
- * An account that may change things: an administrator anywhere, a manager
+ * An account that may change things: an administrator anywhere, a coach
  * within their own squads.
  *
  * Returns the scope alongside the user so a handler can say which squads the
@@ -238,7 +238,7 @@ export async function visibleCompetitionIds(env: Env, scope: TeamScope): Promise
 export async function managingUser(c: Context<{ Bindings: Env }>): Promise<{ user: UserRow; scope: TeamScope }> {
   const user = await currentUser(c);
   if (user.role === "admin") return { user, scope: null };
-  if (user.role === "manager") return { user, scope: await managedTeamIds(c.env, user) };
+  if (user.role === "coach") return { user, scope: await managedTeamIds(c.env, user) };
   throw new ApiProblem(403, "admin_required", "Administrator access is required.");
 }
 
@@ -248,7 +248,7 @@ export function assertCanManageTeam(scope: TeamScope, teamId: string): void {
   throw new ApiProblem(403, "team_access_denied", "You can only manage your own squad.");
 }
 
-/** Refuses a manager an action that belongs to the academy rather than a squad. */
+/** Refuses a coach an action that belongs to the academy rather than a squad. */
 export function assertAdminOnly(user: UserRow, what: string): void {
   if (user.role === "admin") return;
   throw new ApiProblem(403, "admin_required", `${what} is managed by an AIMZ administrator.`);
@@ -287,11 +287,11 @@ export async function guardCompetition(c: Context<{ Bindings: Env }>, competitio
 }
 
 /**
- * The manager or administrator who may change this fixture.
+ * The coach or administrator who may change this fixture.
  *
  * The same rule as seeing it — one of the two teams is theirs — so the clock,
  * the events, the lineup and the player statistics all answer alike, and a
- * manager cannot run somebody else's match by naming its id.
+ * coach cannot run somebody else's match by naming its id.
  */
 export async function manageMatch(c: Context<{ Bindings: Env }>, matchId: string): Promise<UserRow> {
   const { user, scope } = await managingUser(c);
@@ -304,7 +304,7 @@ export async function manageMatch(c: Context<{ Bindings: Env }>, matchId: string
   return user;
 }
 
-/** The manager or administrator who may change this player's records. */
+/** The coach or administrator who may change this player's records. */
 export async function managePlayer(c: Context<{ Bindings: Env }>, playerId: string): Promise<UserRow> {
   const { user, scope } = await managingUser(c);
   if (scope === null) return user;
@@ -314,7 +314,7 @@ export async function managePlayer(c: Context<{ Bindings: Env }>, playerId: stri
   return user;
 }
 
-/** The manager or administrator who may change this training session. */
+/** The coach or administrator who may change this training session. */
 export async function manageTrainingSession(c: Context<{ Bindings: Env }>, sessionId: string): Promise<UserRow> {
   const { user, scope } = await managingUser(c);
   if (scope === null) return user;
@@ -327,7 +327,7 @@ export async function manageTrainingSession(c: Context<{ Bindings: Env }>, sessi
 /**
  * Who answers a request to correct a register.
  *
- * An administrator anywhere, or the manager of that player's squad — the same
+ * An administrator anywhere, or the coach of that player's squad — the same
  * pair who may mark the register in the first place, which is the point: a
  * correction is a change to the register, so it is decided by whoever could
  * have made that change directly.
@@ -348,13 +348,13 @@ export async function decidesForPlayer(c: Context<{ Bindings: Env }>, playerId: 
  * Who may raise one: the family whose record it is.
  *
  * The other way round from `decidesForPlayer`, and deliberately closed to an
- * administrator and a manager — they change the register directly, and a
+ * administrator and a coach — they change the register directly, and a
  * request from the person who would approve it is a round trip with nobody
  * else in it.
  */
 export async function requestsForPlayer(c: Context<{ Bindings: Env }>, playerId: string): Promise<UserRow> {
   const user = await currentUser(c);
-  if (user.role === "admin" || user.role === "manager") {
+  if (user.role === "admin" || user.role === "coach") {
     throw new ApiProblem(403, "mark_directly", "You can change this register yourself rather than requesting a change.");
   }
   if (!(await linkedPlayerIds(c.env, user)).includes(playerId)) {
@@ -374,16 +374,16 @@ export async function requestsForPlayer(c: Context<{ Bindings: Env }>, playerId:
  *     admin   → any player in the academy
  *     player  → herself, and nobody else
  *     parent  → her own children
- *     manager → nobody, including on her own squad
+ *     coach → nobody, including on her own squad
  *
- * A manager runs a squad's football. She picks the team, takes the register
+ * A coach runs a squad's football. She picks the team, takes the register
  * and marks training; none of that needs a family's phone number or what they
  * have paid, and holding them is a liability rather than a convenience.
  */
 export async function guardPersonalData(c: Context<{ Bindings: Env }>, playerId: string): Promise<UserRow> {
   const user = await currentUser(c);
   if (user.role === "admin") return user;
-  if (user.role === "manager") {
+  if (user.role === "coach") {
     throw new ApiProblem(403, "personal_data_denied", "Personal details and fees are not part of squad management.");
   }
   // A player and a parent arrive the same way: through the roster records their
@@ -391,5 +391,19 @@ export async function guardPersonalData(c: Context<{ Bindings: Env }>, playerId:
   if (!(await linkedPlayerIds(c.env, user)).includes(playerId)) {
     throw new ApiProblem(403, "player_access_denied", "You can only open your own family's details.");
   }
+  return user;
+}
+
+/**
+ * A write boundary for an administrator, or for staff assigned to this squad.
+ *
+ * Kept as its own name because training, announcements, reports and
+ * assignments all ask this one question, and it reads better at those call
+ * sites than the scope machinery it is built from.
+ */
+export async function requireTeamOperator(c: Context<{ Bindings: Env }>, teamId: string): Promise<UserRow> {
+  const { user, scope } = await managingUser(c);
+  await requireAimzTeam(c.env, teamId);
+  assertCanManageTeam(scope, teamId);
   return user;
 }

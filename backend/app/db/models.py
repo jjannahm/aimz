@@ -32,6 +32,13 @@ class UserRole(StrEnum):
     # A guardian who follows several children rather than a roster record of
     # their own; their squads fan out over ``user_children``.
     parent = "parent"
+    coach = "coach"
+
+
+class OnboardingStatus(StrEnum):
+    approved = "approved"
+    pending = "pending"
+    declined = "declined"
 
 
 class InviteKind(StrEnum):
@@ -39,6 +46,26 @@ class InviteKind(StrEnum):
     player = "player"
     # Names one or more children, attached to the account via ``user_children``.
     parent = "parent"
+    coach = "coach"
+
+
+class NewcomerSource(StrEnum):
+    public_link = "public_link"
+    account_registration = "account_registration"
+
+
+class NewcomerStage(StrEnum):
+    new = "new"
+    contacted = "contacted"
+    follow_up = "follow_up"
+    trial_booked = "trial_booked"
+    closed = "closed"
+
+
+class NewcomerOutcome(StrEnum):
+    joined = "joined"
+    not_interested = "not_interested"
+    declined = "declined"
 
 
 class CompetitionType(StrEnum):
@@ -120,6 +147,12 @@ class User(TimestampMixin, Base):
         ForeignKey("players.id", ondelete="SET NULL"), unique=True, nullable=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    onboarding_status: Mapped[OnboardingStatus] = mapped_column(
+        Enum(OnboardingStatus, native_enum=False),
+        default=OnboardingStatus.approved,
+        server_default=OnboardingStatus.approved.value,
+        index=True,
+    )
 
     sessions: Mapped[list[RefreshSession]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -209,6 +242,12 @@ class RegistrationInvite(Base):
     player_id: Mapped[str | None] = mapped_column(
         ForeignKey("players.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    team_id: Mapped[str | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    application_id: Mapped[str | None] = mapped_column(
+        ForeignKey("newcomer_applications.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     max_uses: Mapped[int | None] = mapped_column(Integer)
     use_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
@@ -295,6 +334,22 @@ class Team(TimestampMixin, Base):
     )
 
     players: Mapped[list[Player]] = relationship(back_populates="team")
+
+
+class TeamStaff(Base):
+    """A coach's squad boundary; the join also supports multi-squad staff."""
+
+    __tablename__ = "team_staff"
+
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    team_id: Mapped[str] = mapped_column(
+        ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
 
 
 class Competition(TimestampMixin, Base):
@@ -385,9 +440,7 @@ class Match(TimestampMixin, Base):
     num_halves: Mapped[int] = mapped_column(Integer, default=2, server_default="2")
     half_time_break_minutes: Mapped[int] = mapped_column(Integer, default=15, server_default="15")
     # Knockout ties can run two further periods; length is per period.
-    has_extra_time: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
+    has_extra_time: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     extra_time_half_length_minutes: Mapped[int] = mapped_column(
         Integer, default=15, server_default="15"
     )
@@ -532,9 +585,7 @@ class PlayerContact(TimestampMixin, Base):
     __tablename__ = "player_contacts"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    player_id: Mapped[str] = mapped_column(
-        ForeignKey("players.id", ondelete="CASCADE"), index=True
-    )
+    player_id: Mapped[str] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"), index=True)
     # Defined before the ``relationship`` column below, whose name would
     # otherwise shadow the ``relationship()`` function inside this class body.
     player: Mapped[Player] = relationship(back_populates="contacts")
@@ -543,6 +594,92 @@ class PlayerContact(TimestampMixin, Base):
     relationship: Mapped[str | None] = mapped_column(String(80))
     email: Mapped[str | None] = mapped_column(String(320))
     phone: Mapped[str | None] = mapped_column(String(60))
+
+
+class NewcomerApplication(TimestampMixin, Base):
+    """One durable intake record, whether submitted publicly or at signup."""
+
+    __tablename__ = "newcomer_applications"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    source: Mapped[NewcomerSource] = mapped_column(
+        Enum(NewcomerSource, native_enum=False), index=True
+    )
+    stage: Mapped[NewcomerStage] = mapped_column(
+        Enum(NewcomerStage, native_enum=False),
+        default=NewcomerStage.new,
+        server_default=NewcomerStage.new.value,
+        index=True,
+    )
+    outcome: Mapped[NewcomerOutcome | None] = mapped_column(
+        Enum(NewcomerOutcome, native_enum=False), nullable=True, index=True
+    )
+    client_submission_id: Mapped[str | None] = mapped_column(
+        String(64), unique=True, nullable=True, index=True
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    player_id: Mapped[str | None] = mapped_column(
+        ForeignKey("players.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    invite_id: Mapped[str | None] = mapped_column(
+        ForeignKey("registration_invites.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    suggested_team_id: Mapped[str | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    branch: Mapped[str] = mapped_column(String(120))
+    full_name: Mapped[str] = mapped_column(String(160), index=True)
+    mobile: Mapped[str] = mapped_column(String(60), index=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    whatsapp_mobile: Mapped[str] = mapped_column(String(60), index=True)
+    date_of_birth: Mapped[str] = mapped_column(String(10))
+    nationality: Mapped[str] = mapped_column(String(100))
+    address: Mapped[str] = mapped_column(String(500))
+    previous_academy: Mapped[str] = mapped_column(String(200))
+    school_university: Mapped[str] = mapped_column(String(200))
+    father_name: Mapped[str] = mapped_column(String(160))
+    father_mobile: Mapped[str] = mapped_column(String(60))
+    mother_name: Mapped[str] = mapped_column(String(160))
+    mother_mobile: Mapped[str] = mapped_column(String(60))
+    medical_concerns: Mapped[str] = mapped_column(Text)
+    medications: Mapped[str] = mapped_column(Text)
+    consent_version: Mapped[str] = mapped_column(String(40))
+    consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_contacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    next_follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    reviewed_by_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    redacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (Index("ix_newcomers_queue", "stage", "next_follow_up_at", "created_at"),)
+
+
+class NewcomerNote(Base):
+    __tablename__ = "newcomer_notes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    application_id: Mapped[str] = mapped_column(
+        ForeignKey("newcomer_applications.id", ondelete="CASCADE"), index=True
+    )
+    author_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class NewcomerRateLimit(Base):
+    __tablename__ = "newcomer_rate_limits"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
 
 
 class Announcement(TimestampMixin, Base):
@@ -576,13 +713,9 @@ class TrainingSession(TimestampMixin, Base):
     __tablename__ = "training_sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
-    team_id: Mapped[str] = mapped_column(
-        ForeignKey("teams.id", ondelete="CASCADE"), index=True
-    )
+    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    duration_minutes: Mapped[int] = mapped_column(
-        Integer, default=90, server_default="90"
-    )
+    duration_minutes: Mapped[int] = mapped_column(Integer, default=90, server_default="90")
     venue: Mapped[str] = mapped_column(String(200))
     notes: Mapped[str | None] = mapped_column(Text)
     # Null for a one-off; shared across every occurrence of a recurring block.
@@ -594,9 +727,7 @@ class TrainingSession(TimestampMixin, Base):
     )
 
     __table_args__ = (
-        CheckConstraint(
-            "duration_minutes BETWEEN 15 AND 300", name="ck_training_duration"
-        ),
+        CheckConstraint("duration_minutes BETWEEN 15 AND 300", name="ck_training_duration"),
         Index("ix_training_team_start", "team_id", "starts_at"),
     )
 
@@ -610,21 +741,15 @@ class TrainingAvailability(TimestampMixin, Base):
     training_session_id: Mapped[str] = mapped_column(
         ForeignKey("training_sessions.id", ondelete="CASCADE"), index=True
     )
-    player_id: Mapped[str] = mapped_column(
-        ForeignKey("players.id", ondelete="CASCADE"), index=True
-    )
-    status: Mapped[AvailabilityStatus] = mapped_column(
-        Enum(AvailabilityStatus, native_enum=False)
-    )
+    player_id: Mapped[str] = mapped_column(ForeignKey("players.id", ondelete="CASCADE"), index=True)
+    status: Mapped[AvailabilityStatus] = mapped_column(Enum(AvailabilityStatus, native_enum=False))
     note: Mapped[str | None] = mapped_column(Text)
 
     session: Mapped[TrainingSession] = relationship(back_populates="availability")
     player: Mapped[Player] = relationship()
 
     __table_args__ = (
-        UniqueConstraint(
-            "training_session_id", "player_id", name="uq_availability_session_player"
-        ),
+        UniqueConstraint("training_session_id", "player_id", name="uq_availability_session_player"),
     )
 
 
@@ -687,18 +812,10 @@ class BracketSlot(Base):
     )
     round: Mapped[int] = mapped_column(Integer)
     position: Mapped[int] = mapped_column(Integer)
-    home_team_id: Mapped[str | None] = mapped_column(
-        ForeignKey("teams.id", ondelete="SET NULL")
-    )
-    away_team_id: Mapped[str | None] = mapped_column(
-        ForeignKey("teams.id", ondelete="SET NULL")
-    )
-    winner_team_id: Mapped[str | None] = mapped_column(
-        ForeignKey("teams.id", ondelete="SET NULL")
-    )
-    match_id: Mapped[str | None] = mapped_column(
-        ForeignKey("matches.id", ondelete="SET NULL")
-    )
+    home_team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))
+    away_team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))
+    winner_team_id: Mapped[str | None] = mapped_column(ForeignKey("teams.id", ondelete="SET NULL"))
+    match_id: Mapped[str | None] = mapped_column(ForeignKey("matches.id", ondelete="SET NULL"))
 
     __table_args__ = (
         UniqueConstraint(

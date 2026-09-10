@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import api_error
 from app.core.security import decode_access_token
-from app.db.models import User, UserRole
+from app.db.models import OnboardingStatus, User, UserRole
 from app.db.session import get_db_session
 from app.services.accounts import assert_not_expired
 
@@ -37,13 +37,33 @@ async def get_current_user(
     return assert_not_expired(user)
 
 
-CurrentUser = Annotated[User, Depends(get_current_user)]
+SessionUser = Annotated[User, Depends(get_current_user)]
 
 
-async def get_admin(current_user: CurrentUser) -> User:
+async def get_approved_user(current_user: SessionUser) -> User:
+    if current_user.onboarding_status == OnboardingStatus.pending:
+        raise api_error(403, "approval_pending", "Your player application is awaiting approval.")
+    if current_user.onboarding_status == OnboardingStatus.declined:
+        raise api_error(403, "application_declined", "This player application was declined.")
+    return current_user
+
+
+CurrentUser = Annotated[User, Depends(get_approved_user)]
+
+
+async def get_admin(current_user: SessionUser) -> User:
     if current_user.role != UserRole.admin:
         raise api_error(403, "admin_required", "Administrator access is required.")
     return current_user
 
 
 AdminUser = Annotated[User, Depends(get_admin)]
+
+
+async def get_team_operator(current_user: CurrentUser) -> User:
+    if current_user.role not in {UserRole.admin, UserRole.coach}:
+        raise api_error(403, "staff_required", "Coach or administrator access is required.")
+    return current_user
+
+
+TeamOperator = Annotated[User, Depends(get_team_operator)]

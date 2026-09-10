@@ -51,7 +51,7 @@ async function planById(env: Env, id: string): Promise<FeePlanRow> {
 /**
  * The squad a charge belongs to, by way of the player it was raised against.
  *
- * Every fee route past the plan reaches a team through this, so a manager's
+ * Every fee route past the plan reaches a team through this, so a coach's
  * reach over money is exactly their reach over the roster.
  */
 async function chargeTeamId(env: Env, charge: FeeChargeRow): Promise<string> {

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import AdminUser, CurrentUser, SessionDep
+from app.api.deps import CurrentUser, SessionDep, TeamOperator
 from app.core.errors import api_error
 from app.db.models import (
     Player,
@@ -26,7 +26,7 @@ from app.schemas import (
 )
 from app.services.team_access import (
     can_open_team,
-    require_aimz_team,
+    require_team_operator,
     scoped_teams,
 )
 
@@ -54,9 +54,7 @@ async def _session_or_404(session: SessionDep, training_id: str) -> TrainingSess
     return row
 
 
-async def _require_access(
-    session: SessionDep, user: User, row: TrainingSession
-) -> None:
+async def _require_access(session: SessionDep, user: User, row: TrainingSession) -> None:
     if user.role == UserRole.admin:
         return
     if not await can_open_team(session, user, row.team_id):
@@ -91,13 +89,9 @@ async def list_training(
             query, count_query = query.where(condition), count_query.where(condition)
     total = await session.scalar(count_query) or 0
     rows = (
-        await session.scalars(
-            query.order_by(TrainingSession.starts_at).limit(limit).offset(offset)
-        )
+        await session.scalars(query.order_by(TrainingSession.starts_at).limit(limit).offset(offset))
     ).all()
-    return Page(
-        items=[_serialize(row) for row in rows], total=total, limit=limit, offset=offset
-    )
+    return Page(items=[_serialize(row) for row in rows], total=total, limit=limit, offset=offset)
 
 
 @router.get("/training-sessions/{training_id}", response_model=TrainingSessionRead)
@@ -109,13 +103,11 @@ async def get_training(
     return _serialize(row)
 
 
-@router.post(
-    "/training-sessions", response_model=list[TrainingSessionRead], status_code=201
-)
+@router.post("/training-sessions", response_model=list[TrainingSessionRead], status_code=201)
 async def create_training(
-    payload: TrainingCreate, _: AdminUser, session: SessionDep
+    payload: TrainingCreate, actor: TeamOperator, session: SessionDep
 ) -> list[TrainingSessionRead]:
-    await require_aimz_team(session, payload.team_id)
+    await require_team_operator(session, actor, payload.team_id)
     # Dedupe and order the occurrences; a recurring block shares one series id.
     occurrences = sorted(set(payload.occurrences))
     series_id = new_id() if len(occurrences) > 1 else None
@@ -146,9 +138,10 @@ async def create_training(
 
 @router.patch("/training-sessions/{training_id}", response_model=TrainingSessionRead)
 async def update_training(
-    training_id: str, payload: TrainingUpdate, _: AdminUser, session: SessionDep
+    training_id: str, payload: TrainingUpdate, actor: TeamOperator, session: SessionDep
 ) -> TrainingSessionRead:
     row = await _session_or_404(session, training_id)
+    await require_team_operator(session, actor, row.team_id)
     provided = payload.model_fields_set
     if "starts_at" in provided and payload.starts_at is not None:
         row.starts_at = payload.starts_at
@@ -165,15 +158,14 @@ async def update_training(
 @router.delete("/training-sessions/{training_id}", status_code=204)
 async def delete_training(
     training_id: str,
-    _: AdminUser,
+    actor: TeamOperator,
     session: SessionDep,
     scope: str = "one",
 ) -> Response:
     if scope not in {"one", "series"}:
-        raise api_error(
-            422, "validation_error", "Delete one session or its whole series."
-        )
+        raise api_error(422, "validation_error", "Delete one session or its whole series.")
     row = await _session_or_404(session, training_id)
+    await require_team_operator(session, actor, row.team_id)
     if scope == "series" and row.series_id:
         await session.execute(
             delete(TrainingSession).where(TrainingSession.series_id == row.series_id)
@@ -252,9 +244,7 @@ async def set_availability(
         )
     )
     if entry is None:
-        entry = TrainingAvailability(
-            training_session_id=training_id, player_id=player_id
-        )
+        entry = TrainingAvailability(training_session_id=training_id, player_id=player_id)
         session.add(entry)
     entry.status = payload.status
     entry.note = payload.note

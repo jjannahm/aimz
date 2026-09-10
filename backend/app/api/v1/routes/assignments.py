@@ -2,7 +2,7 @@ from fastapi import APIRouter, Response
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.orm import selectinload
 
-from app.api.deps import AdminUser, CurrentUser, SessionDep
+from app.api.deps import CurrentUser, SessionDep, TeamOperator
 from app.core.errors import api_error
 from app.db.models import (
     EventAssignment,
@@ -18,7 +18,7 @@ from app.schemas import (
     AssignmentUpdate,
     PlayerRead,
 )
-from app.services.team_access import can_open_team
+from app.services.team_access import can_open_team, require_team_operator
 
 router = APIRouter()
 
@@ -68,6 +68,22 @@ async def _training_or_404(session: SessionDep, training_id: str) -> TrainingSes
     if row is None:
         raise api_error(404, "training_not_found", "Training session not found.")
     return row
+
+
+async def _require_match_operator(session: SessionDep, user: User, match: Match) -> None:
+    if user.role == UserRole.admin:
+        return
+    if user.role != UserRole.coach:
+        raise api_error(
+            403,
+            "team_access_denied",
+            "Only administrators and coaches can manage assignments.",
+        )
+    if (match.home_team.is_aimz and await can_open_team(session, user, match.home_team_id)) or (
+        match.away_team.is_aimz and await can_open_team(session, user, match.away_team_id)
+    ):
+        return
+    raise api_error(403, "team_access_denied", "You can only operate your assigned squad.")
 
 
 async def _eligible_player(
@@ -164,8 +180,9 @@ async def list_match_assignments(
     status_code=201,
 )
 async def create_match_assignment(
-    match_id: str, payload: AssignmentCreate, _: AdminUser, session: SessionDep
+    match_id: str, payload: AssignmentCreate, actor: TeamOperator, session: SessionDep
 ) -> AssignmentRead:
+    await _require_match_operator(session, actor, await _match_or_404(session, match_id))
     return await _create(session, payload, match_id=match_id, training_session_id=None)
 
 
@@ -173,8 +190,9 @@ async def create_match_assignment(
     "/matches/{match_id}/assignments/{assignment_id}", status_code=204
 )
 async def delete_match_assignment(
-    match_id: str, assignment_id: str, _: AdminUser, session: SessionDep
+    match_id: str, assignment_id: str, actor: TeamOperator, session: SessionDep
 ) -> Response:
+    await _require_match_operator(session, actor, await _match_or_404(session, match_id))
     row = await session.scalar(
         select(EventAssignment).where(
             EventAssignment.id == assignment_id,
@@ -230,8 +248,10 @@ async def list_training_assignments(
     status_code=201,
 )
 async def create_training_assignment(
-    training_id: str, payload: AssignmentCreate, _: AdminUser, session: SessionDep
+    training_id: str, payload: AssignmentCreate, actor: TeamOperator, session: SessionDep
 ) -> AssignmentRead:
+    training = await _training_or_404(session, training_id)
+    await require_team_operator(session, actor, training.team_id)
     return await _create(
         session, payload, match_id=None, training_session_id=training_id
     )
@@ -242,8 +262,10 @@ async def create_training_assignment(
     status_code=204,
 )
 async def delete_training_assignment(
-    training_id: str, assignment_id: str, _: AdminUser, session: SessionDep
+    training_id: str, assignment_id: str, actor: TeamOperator, session: SessionDep
 ) -> Response:
+    training = await _training_or_404(session, training_id)
+    await require_team_operator(session, actor, training.team_id)
     row = await session.scalar(
         select(EventAssignment).where(
             EventAssignment.id == assignment_id,
@@ -263,9 +285,17 @@ async def delete_training_assignment(
 async def _access_assignment(
     session: SessionDep, user: User, row: EventAssignment
 ) -> None:
-    if user.role == UserRole.admin or not row.training_session_id:
+    if user.role == UserRole.admin:
         return
-    await _require_training_access(session, user, row.training_session_id)
+    if row.training_session_id:
+        await _require_training_access(session, user, row.training_session_id)
+        return
+    if row.match_id and user.role == UserRole.coach:
+        await _require_match_operator(session, user, await _match_or_404(session, row.match_id))
+        return
+    if row.match_id and user.role != UserRole.coach:
+        return
+    raise api_error(403, "team_access_denied", "You can only operate your assigned squad.")
 
 
 @router.patch("/event-assignments/{assignment_id}", response_model=AssignmentRead)
@@ -279,7 +309,7 @@ async def update_assignment(
     await _access_assignment(session, current_user, row)
     requested = payload.assigned_player_id
 
-    if current_user.role == UserRole.admin:
+    if current_user.role in {UserRole.admin, UserRole.coach}:
         if requested:
             await _eligible_player(
                 session,

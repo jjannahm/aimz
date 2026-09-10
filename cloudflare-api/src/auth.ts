@@ -12,6 +12,32 @@ import { linkedPlayerIds, quietTeamScope, requireAimzTeam } from "./team-access"
 import type { InviteKind, InviteRow, UserRole, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
+const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+function normalizeInviteCode(value: string): string {
+  return value.toUpperCase().replace(/[^A-Z0-9]/gu, "");
+}
+
+function displayInviteCode(value: string): string {
+  const code = normalizeInviteCode(value);
+  return `${code.slice(0, 4)}-${code.slice(4, 8)}-${code.slice(8)}`;
+}
+
+async function inviteHashes(value: string): Promise<string[]> {
+  return [...new Set(await Promise.all([value, value.toUpperCase(), normalizeInviteCode(value)].map(hashSecret)))];
+}
+
+async function generatedCode(env: Env): Promise<{ code: string; hash: string }> {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const bytes = crypto.getRandomValues(new Uint8Array(10));
+    const compact = [...bytes].map((byte) => INVITE_ALPHABET[byte % INVITE_ALPHABET.length]).join("");
+    const hash = await hashSecret(compact);
+    if (!await env.DB.prepare("SELECT id FROM registration_invites WHERE code_hash=?").bind(hash).first()) {
+      return { code: displayInviteCode(compact), hash };
+    }
+  }
+  throw new ApiProblem(503, "invite_generation_failed", "Could not generate an invitation code.");
+}
 
 /**
  * The deadline named on a request, as an instant, or null for no deadline.
@@ -107,6 +133,21 @@ async function passwordLogin(c: Context<{ Bindings: Env }>): Promise<Response> {
 }
 
 export function registerAuthRoutes(app: App): void {
+  app.post("/api/v1/auth/invitations/resolve", async (c) => {
+    const body = await jsonObject(c);
+    const code = stringField(body, "code", { min: 4, max: 128 })!;
+    const hashes = await inviteHashes(code);
+    const now = nowIso();
+    const invite = await c.env.DB.prepare(`SELECT * FROM registration_invites WHERE code_hash IN (${hashes.map(() => "?").join(",")})
+      AND is_active=1 AND (expires_at IS NULL OR expires_at>?) AND (max_uses IS NULL OR use_count<max_uses)`)
+      .bind(...hashes, now).first<InviteRow>();
+    if (!invite) throw new ApiProblem(422, "invalid_invite", "That academy invitation code is invalid.");
+    const players = await c.env.DB.prepare(`SELECT p.id,p.name FROM players p JOIN invite_players ip ON ip.player_id=p.id WHERE ip.invite_id=?`)
+      .bind(invite.id).all<{ id: string; name: string }>();
+    const team = invite.team_id ? await c.env.DB.prepare("SELECT name FROM teams WHERE id=?").bind(invite.team_id).first<{ name: string }>() : null;
+    return c.json({ kind: invite.kind, label: invite.label, team_id: invite.team_id ?? null, team_name: team?.name ?? null, players: players.results, requires_application: invite.kind === "player" && !invite.application_id });
+  });
+
   app.post("/api/v1/auth/register", async (c) => {
     await ensureSeeded(c.env);
     const body = await jsonObject(c);
@@ -119,8 +160,9 @@ export function registerAuthRoutes(app: App): void {
     const duplicate = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
     if (duplicate) throw new ApiProblem(409, "email_exists", "An account already uses this email address.");
 
-    const inviteHash = await hashSecret(inviteCode);
-    const invite = await c.env.DB.prepare("SELECT * FROM registration_invites WHERE code_hash = ?").bind(inviteHash).first<InviteRow>();
+    const inviteHashValues = await inviteHashes(inviteCode);
+    const invite = await c.env.DB.prepare(`SELECT * FROM registration_invites WHERE code_hash IN (${inviteHashValues.map(() => "?").join(",")})`)
+      .bind(...inviteHashValues).first<InviteRow>();
     const now = nowIso();
     if (!invite || !invite.is_active || (invite.expires_at && invite.expires_at <= now) || (invite.max_uses !== null && invite.use_count >= invite.max_uses)) {
       throw new ApiProblem(409, "invalid_invite", "This invitation code is invalid, expired, or already used.");
@@ -129,30 +171,48 @@ export function registerAuthRoutes(app: App): void {
     // Which roster players this invitation was cut for. A player invitation
     // names one and the account carries it on `users.player_id`; a parent
     // invitation names their children, who hang off `user_children` instead.
-    // A manager invitation names squads rather than players, so it is settled
+    // A coach invitation names squads rather than players, so it is settled
     // first and skips the roster entirely.
-    const isManager = invite.kind === "manager";
-    const invitedTeams = isManager ? await inviteTeamIds(c.env, invite) : [];
-    if (isManager && !invitedTeams.length) throw new ApiProblem(409, "invalid_invite", "This invitation is not linked to a squad. Ask an AIMZ administrator for a new one.");
+    const isCoach = invite.kind === "coach";
+    const invitedTeams = isCoach ? await inviteTeamIds(c.env, invite) : [];
+    if (isCoach && !invitedTeams.length) throw new ApiProblem(409, "invalid_invite", "This invitation is not linked to a squad. Ask an AIMZ administrator for a new one.");
 
-    const invitedPlayers = isManager ? [] : await invitePlayerIds(c.env, invite);
+    const invitedPlayers = isCoach ? [] : await invitePlayerIds(c.env, invite);
     const isParent = invite.kind === "parent";
-    if (!isManager && !invitedPlayers.length) throw new ApiProblem(409, "invalid_invite", "This invitation is not linked to a player. Ask an AIMZ administrator for a new one.");
+    // A player invitation cut from a newcomer application names no roster player
+    // yet — the application is what it carries instead.
+    if (!isCoach && !invitedPlayers.length && !(invite.kind === "player" && body.application)) throw new ApiProblem(409, "invalid_invite", "This invitation is not linked to a player. Ask an AIMZ administrator for a new one.");
+    const application = body.application && typeof body.application === "object" && !Array.isArray(body.application)
+      ? body.application as Record<string, unknown> : null;
+    if (invite.kind === "player" && application) {
+      if (application.full_name !== name || String(application.email).toLowerCase() !== email || application.consent !== true) {
+        throw new ApiProblem(422, "application_mismatch", "Account name and email must match the completed application.");
+      }
+    }
 
     const user: UserRow = {
       id: crypto.randomUUID(),
       name,
       email,
       password_hash: await hashPassword(password),
-      role: isManager ? "manager" : isParent ? "parent" : "player",
+      role: isCoach ? "coach" : isParent ? "parent" : "player",
       // A personal invitation carries the roster player it was cut for, so the
-      // account knows whose stats are its own the moment it is created.
-      player_id: isParent || isManager ? null : invitedPlayers[0]!,
+      // account knows whose stats are its own the moment it is created. An
+      // invitation cut from an application has none until somebody confirms it.
+      player_id: isParent || isCoach ? null : (invitedPlayers[0] ?? null),
+      onboarding_status: invite.kind === "player" && body.application && !invite.application_id ? "pending" : "approved",
       is_active: 1,
       created_at: now,
       updated_at: now,
     };
     const claimId = crypto.randomUUID();
+    const applicationId = application ? crypto.randomUUID() : null;
+    const applicationFields = ["branch", "full_name", "mobile", "email", "whatsapp_mobile", "date_of_birth", "nationality", "address", "previous_academy", "school_university", "father_name", "father_mobile", "mother_name", "mother_mobile", "medical_concerns", "medications"];
+    const applicationValues = application ? applicationFields.map((field) => {
+      const value = application[field];
+      if (typeof value !== "string" || value.trim().length < 2) throw new ApiProblem(422, "validation_error", `Complete ${field.replaceAll("_", " ")}. Enter None if it does not apply.`);
+      return value.trim();
+    }) : [];
     let results;
     try {
       results = await c.env.DB.batch([
@@ -160,8 +220,8 @@ export function registerAuthRoutes(app: App): void {
           "INSERT INTO invite_claims (id, invite_id, user_id, created_at) SELECT ?, id, ?, ? FROM registration_invites WHERE id = ? AND is_active = 1 AND (expires_at IS NULL OR expires_at > ?) AND (max_uses IS NULL OR use_count < max_uses)",
         ).bind(claimId, user.id, now, invite.id, now),
         c.env.DB.prepare(
-          "INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
-        ).bind(user.id, user.name, user.email, user.password_hash, user.role, user.player_id, now, now, claimId, user.id),
+          "INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, onboarding_status, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 1, ?, ?, ? WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
+        ).bind(user.id, user.name, user.email, user.password_hash, user.role, user.player_id, user.onboarding_status, now, now, claimId, user.id),
         c.env.DB.prepare(
           "UPDATE registration_invites SET use_count = use_count + 1 WHERE id = ? AND EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
         ).bind(invite.id, claimId, user.id),
@@ -170,15 +230,22 @@ export function registerAuthRoutes(app: App): void {
         ...(isParent ? invitedPlayers.map((playerId) => c.env.DB.prepare(
           "INSERT INTO user_children (user_id, player_id, created_at) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
         ).bind(user.id, playerId, now, claimId, user.id)) : []),
-        // Every squad a manager was invited to run, on the same terms.
+        // Every squad a coach was invited to run, on the same terms.
         ...invitedTeams.map((teamId) => c.env.DB.prepare(
           "INSERT INTO user_teams (user_id, team_id, created_at) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id = ? AND user_id = ?)",
         ).bind(user.id, teamId, now, claimId, user.id)),
+        ...(application && applicationId ? [c.env.DB.prepare(`INSERT INTO newcomer_applications
+          (id,source,stage,user_id,player_id,invite_id,suggested_team_id,${applicationFields.join(",")},consent_version,consented_at,created_at,updated_at)
+          SELECT ?,'account_registration','new',?,?,?,?,${applicationFields.map(() => "?").join(",")},?,?,?,?
+          WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id=? AND user_id=?)`)
+          .bind(applicationId, user.id, user.player_id, invite.id, invite.team_id ?? null,
+            ...applicationValues, typeof application.consent_version === "string" ? application.consent_version : "2026-09",
+            now, now, now, claimId, user.id)] : []),
       ]);
     } catch (error) {
       // users.player_id is unique, so two people racing one personal invitation
       // fail here rather than quietly sharing a roster record.
-      const taken = isParent || isManager
+      const taken = isParent || isCoach
         ? null
         : await c.env.DB.prepare("SELECT id FROM users WHERE player_id = ?").bind(user.player_id).first();
       if (taken) throw new ApiProblem(409, "player_already_linked", "That player already has an account. Ask an AIMZ administrator for a new invitation.");
@@ -357,15 +424,20 @@ export function registerAuthRoutes(app: App): void {
     const admin = await adminUser(c);
     const body = await jsonObject(c);
     const label = stringField(body, "label", { min: 2, max: 120 });
-    const code = stringField(body, "code", { min: 4, max: 128 });
+    const suppliedCode = stringField(body, "code", { min: 4, max: 128, optional: true });
     const expiresAt = typeof body.expires_at === "string" ? body.expires_at : null;
-    const kind: InviteKind = body.kind === "parent" ? "parent" : body.kind === "manager" ? "manager" : "player";
-    // A manager invitation names AIMZ squads, and nothing else about it looks
+    const kind: InviteKind = body.kind === "parent" ? "parent" : body.kind === "coach" ? "coach" : "player";
+    // Hashed the same way whatever kind of invitation this is, so one lookup on
+    // registration finds any of them, and a code left unsaid is generated.
+    const generated = suppliedCode
+      ? { code: suppliedCode.toUpperCase(), hash: await hashSecret(normalizeInviteCode(suppliedCode)) }
+      : await generatedCode(c.env);
+    // A coach invitation names AIMZ squads, and nothing else about it looks
     // like the roster invitations below, so it is built and returned here.
-    if (kind === "manager") return c.json(await createManagerInvite(c, body, label!, code!, expiresAt, admin.id), 201);
+    if (kind === "coach") return c.json(await createManagerInvite(c, body, label!, generated, expiresAt, admin.id), 201);
     // Every invitation names who it is for; there is no unlinked intake code.
     const requested = playerIdList(body);
-    if (!requested.length) throw new ApiProblem(422, "validation_error", kind === "parent" ? "Choose at least one child from the roster." : "Choose a player from the roster.");
+    if (kind === "parent" && !requested.length) throw new ApiProblem(422, "validation_error", "Choose at least one child from the roster.");
     if (kind === "player" && requested.length > 1) throw new ApiProblem(422, "validation_error", "A player invitation is for one player.");
     // A player may only ever hold one account of their own, so a player
     // invitation is refused up front when that roster record is taken. A parent
@@ -376,16 +448,17 @@ export function registerAuthRoutes(app: App): void {
     // for: a second claim would find the roster record taken.
     const requestedUses = typeof body.max_uses === "number" && body.max_uses >= 1 ? Math.floor(body.max_uses) : null;
     const maxUses = kind === "player" ? 1 : requestedUses;
-    const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: await hashSecret(code!), kind, player_id: kind === "player" ? playerIds[0]! : null, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
+    const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: generated.hash, kind, player_id: kind === "player" ? (playerIds[0] ?? null) : null, team_id: null, application_id: typeof body.application_id === "string" ? body.application_id : null, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
     try {
       await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO registration_invites (id, label, code_hash, kind, player_id, expires_at, max_uses, use_count, is_active, created_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)").bind(invite.id, invite.label, invite.code_hash, invite.kind, invite.player_id, invite.expires_at, invite.max_uses, admin.id, invite.created_at),
+        c.env.DB.prepare("INSERT INTO registration_invites (id, label, code_hash, kind, player_id, team_id, application_id, expires_at, max_uses, use_count, is_active, created_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)").bind(invite.id, invite.label, invite.code_hash, invite.kind, invite.player_id, invite.team_id, invite.application_id, invite.expires_at, invite.max_uses, admin.id, invite.created_at),
         ...playerIds.map((playerId) => c.env.DB.prepare("INSERT INTO invite_players (invite_id, player_id) VALUES (?, ?)").bind(invite.id, playerId)),
       ]);
     } catch {
       throw new ApiProblem(409, "invite_exists", "That invitation code already exists.");
     }
-    return c.json({ ...publicInvite(invite), player_ids: playerIds }, 201);
+    const compact = normalizeInviteCode(generated.code);
+    return c.json({ ...publicInvite(invite), player_ids: playerIds, code: displayInviteCode(compact), share_url: `${c.env.PUBLIC_FORM_ORIGIN}/join/${compact}` }, 201);
   });
   app.delete("/api/v1/admin/registration-invites/:id", async (c) => {
     await adminUser(c);
@@ -423,33 +496,33 @@ async function invitePlayerIds(env: Env, invite: InviteRow): Promise<string[]> {
   return ids.length ? ids : invite.player_id ? [invite.player_id] : [];
 }
 
-/** The squads a manager invitation was cut for. */
+/** The squads a coach invitation was cut for. */
 async function inviteTeamIds(env: Env, invite: InviteRow): Promise<string[]> {
   const result = await env.DB.prepare("SELECT team_id FROM invite_teams WHERE invite_id = ?").bind(invite.id).all<{ team_id: string }>();
   return result.results.map((row) => row.team_id);
 }
 
 /**
- * A manager invitation: named squads instead of named players.
+ * A coach invitation: named squads instead of named players.
  *
  * Written apart from the roster invitations because almost nothing about it is
  * shared — no roster record to claim, no unique player link to race over, and
- * a squad list rather than a child list. Reusable for several managers of one
+ * a squad list rather than a child list. Reusable for several coaches of one
  * squad, so the caller's max_uses stands.
  */
 async function createManagerInvite(
   c: Context<{ Bindings: Env }>,
   body: Record<string, unknown>,
   label: string,
-  code: string,
+  generated: { code: string; hash: string },
   expiresAt: string | null,
   adminId: string,
 ): Promise<Record<string, unknown>> {
   const requested = [...new Set((Array.isArray(body.team_ids) ? body.team_ids : []).filter((id): id is string => typeof id === "string" && id.length > 0))];
-  if (!requested.length) throw new ApiProblem(422, "validation_error", "Choose at least one squad for this manager.");
+  if (!requested.length) throw new ApiProblem(422, "validation_error", "Choose at least one squad for this coach.");
   for (const teamId of requested) await requireAimzTeam(c.env, teamId);
   const maxUses = typeof body.max_uses === "number" && body.max_uses >= 1 ? Math.floor(body.max_uses) : null;
-  const invite: InviteRow = { id: crypto.randomUUID(), label, code_hash: await hashSecret(code), kind: "manager", player_id: null, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: adminId, created_at: nowIso() };
+  const invite: InviteRow = { id: crypto.randomUUID(), label, code_hash: generated.hash, kind: "coach", player_id: null, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: adminId, created_at: nowIso() };
   try {
     await c.env.DB.batch([
       c.env.DB.prepare("INSERT INTO registration_invites (id, label, code_hash, kind, player_id, expires_at, max_uses, use_count, is_active, created_by_id, created_at) VALUES (?, ?, ?, ?, NULL, ?, ?, 0, 1, ?, ?)").bind(invite.id, invite.label, invite.code_hash, invite.kind, invite.expires_at, invite.max_uses, adminId, invite.created_at),
@@ -458,7 +531,8 @@ async function createManagerInvite(
   } catch {
     throw new ApiProblem(409, "invite_exists", "That invitation code already exists.");
   }
-  return { ...publicInvite(invite), team_ids: requested };
+  const compact = normalizeInviteCode(generated.code);
+  return { ...publicInvite(invite), team_ids: requested, code: displayInviteCode(compact), share_url: `${c.env.PUBLIC_FORM_ORIGIN}/join/${compact}` };
 }
 
 async function claimablePlayer(env: Env, playerId: string | null, exceptUserId?: string): Promise<string | null> {
@@ -476,6 +550,8 @@ function publicInvite(invite: InviteRow): Record<string, unknown> {
     label: invite.label,
     kind: invite.kind,
     player_id: invite.player_id,
+    team_id: invite.team_id ?? null,
+    application_id: invite.application_id ?? null,
     expires_at: invite.expires_at,
     max_uses: invite.max_uses,
     use_count: invite.use_count,
