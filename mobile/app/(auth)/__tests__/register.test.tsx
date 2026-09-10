@@ -41,11 +41,11 @@ describe('creating an account', () => {
     const screen = await openAccountStep();
     await fireEvent.changeText(screen.getByLabelText('Full name'), 'Sami Farid');
     await fireEvent.changeText(screen.getByLabelText('Email'), 'sami@aimz.test');
-    await fireEvent.changeText(screen.getByLabelText('Password'), 'short123');
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'seven77');
 
     await fireEvent.press(screen.getByRole('button', { name: 'Create account' }));
 
-    expect(await screen.findByText('Use at least 10 characters.')).toBeTruthy();
+    expect(await screen.findByText('Use at least 8 characters.')).toBeTruthy();
     expect(screen.queryByText(/Enter None/u)).toBeNull();
   });
 
@@ -62,14 +62,16 @@ describe('creating an account', () => {
     expect(screen.queryByText(/Enter None/u)).toBeNull();
   });
 
-  it('lets a long enough password through', async () => {
+  // Eight exactly, which is the rule rather than one past it: a boundary read
+  // as "more than eight" would turn every legitimate password away.
+  it('lets a password of exactly eight through', async () => {
     const screen = await openAccountStep();
     await fireEvent.changeText(screen.getByLabelText('Full name'), 'Sami Farid');
     await fireEvent.changeText(screen.getByLabelText('Email'), 'sami@aimz.test');
-    await fireEvent.changeText(screen.getByLabelText('Password'), 'long-enough-password');
+    await fireEvent.changeText(screen.getByLabelText('Password'), 'eight888');
 
     await fireEvent.press(screen.getByRole('button', { name: 'Create account' }));
 
-    expect(screen.queryByText('Use at least 10 characters.')).toBeNull();
+    expect(screen.queryByText('Use at least 8 characters.')).toBeNull();
   });
 });

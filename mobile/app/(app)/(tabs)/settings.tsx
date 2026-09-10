@@ -22,7 +22,7 @@ import { useAppTheme, useThemedStyles } from '@/src/theme/ThemeProvider';
 const themeOptions = [{ label: 'Match system', value: 'system' }, { label: 'Light', value: 'light' }, { label: 'Dark', value: 'dark' }];
 
 const profileSchema = z.object({ name: z.string().min(2, 'Enter your name.') });
-const passwordSchema = z.object({ current: z.string().min(1, 'Enter your current password.'), next: z.string().min(10, 'Use at least 10 characters.') });
+const passwordSchema = z.object({ current: z.string().min(1, 'Enter your current password.'), next: z.string().min(8, 'Use at least 8 characters.') });
 
 export default function SettingsScreen() {
   const { from } = useLocalSearchParams<{ from?: string }>();

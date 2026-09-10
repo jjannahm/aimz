@@ -44,14 +44,14 @@ export default function RegisterScreen() {
    */
   const complaint = (field: keyof Values) => {
     if (field === 'consent') return 'Consent is required.';
-    if (field === 'password') return 'Use at least 10 characters.';
+    if (field === 'password') return 'Use at least 8 characters.';
     return ACCOUNT_FIELDS.includes(field) ? 'This field is required.' : 'This field is required. Enter None if it does not apply.';
   };
   const checkFields = (fields: (keyof Values)[]) => {
     const next: typeof errors = {};
     for (const field of fields) {
       const value = values[field];
-      if (value === false || String(value).trim().length < (field === 'password' ? 10 : 2)) next[field] = complaint(field);
+      if (value === false || String(value).trim().length < (field === 'password' ? 8 : 2)) next[field] = complaint(field);
     }
     if (fields.includes('email') && !/^\S+@\S+\.\S+$/.test(values.email)) next.email = 'Enter a valid email.';
     if (fields.includes('date_of_birth') && !/^\d{4}-\d{2}-\d{2}$/.test(values.date_of_birth)) next.date_of_birth = 'Use YYYY-MM-DD.';
@@ -93,7 +93,7 @@ export default function RegisterScreen() {
     <View style={styles.form}>
       {errors.root ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{errors.root}</Text> : null}
       {step === 0 ? <><Input field="inviteCode" label="Academy invite code" values={values} errors={errors} set={set} editable={!params.code} /><AppButton label="Continue" loading={busy} onPress={() => void resolve()} /></> : null}
-      {step === 1 ? <><Input field="name" label="Full name" values={values} errors={errors} set={set} /><Input field="email" label="Email" values={values} errors={errors} set={set} keyboardType="email-address" autoCapitalize="none" /><Input field="password" label="Password" hint="At least 10 characters" values={values} errors={errors} set={set} secureTextEntry /></> : null}
+      {step === 1 ? <><Input field="name" label="Full name" values={values} errors={errors} set={set} /><Input field="email" label="Email" values={values} errors={errors} set={set} keyboardType="email-address" autoCapitalize="none" /><Input field="password" label="Password" hint="At least 8 characters" values={values} errors={errors} set={set} secureTextEntry /></> : null}
       {step === 2 ? <><ChoiceField error={errors.branch} label="Branch" onChange={(value) => set('branch', value)} options={branches.map((value) => ({ label: value, value }))} placeholder="Choose a branch" value={values.branch} /><Input field="mobile" label="Mobile" values={values} errors={errors} set={set} keyboardType="phone-pad" /><Input field="whatsapp_mobile" label="WhatsApp mobile" values={values} errors={errors} set={set} keyboardType="phone-pad" /><Input field="date_of_birth" label="Date of birth" hint="YYYY-MM-DD" values={values} errors={errors} set={set} /><Input field="nationality" label="Nationality" values={values} errors={errors} set={set} /><Input field="address" label="Address" values={values} errors={errors} set={set} /><Input field="previous_academy" label="Previous club or academy" hint="Enter None if not applicable" values={values} errors={errors} set={set} /><Input field="school_university" label="School or university" values={values} errors={errors} set={set} /></> : null}
       {step === 3 ? <><Input field="father_name" label="Father’s name" values={values} errors={errors} set={set} /><Input field="father_mobile" label="Father’s mobile" values={values} errors={errors} set={set} keyboardType="phone-pad" /><Input field="mother_name" label="Mother’s name" values={values} errors={errors} set={set} /><Input field="mother_mobile" label="Mother’s mobile" values={values} errors={errors} set={set} keyboardType="phone-pad" /></> : null}
       {step === 4 ? <><Input field="medical_concerns" label="Medical concerns" hint="Enter None if there are none" values={values} errors={errors} set={set} multiline /><Input field="medications" label="Medications" hint="Enter None if there are none" values={values} errors={errors} set={set} multiline /><Pressable accessibilityRole="checkbox" accessibilityState={{ checked: values.consent }} onPress={() => set('consent', !values.consent)} style={styles.consent}><View style={[styles.checkbox, values.consent && styles.checkboxChecked]} /><Text style={styles.consentText}>I consent to AIMZ storing and using this information to contact me and process this application.</Text></Pressable>{errors.consent ? <Text style={styles.error}>{errors.consent}</Text> : null}</> : null}
