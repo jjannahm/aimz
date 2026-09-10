@@ -22,6 +22,7 @@ import { FormField } from '@/src/components/FormField';
 import { PlayerPickerField } from '@/src/components/PlayerPickerField';
 import { PositionField } from '@/src/components/PositionField';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
+import { AuditTrail } from '@/src/components/AuditTrail';
 import { AccountsSection } from '@/src/components/manage/AccountsSection';
 import { BulkPlayerImport } from '@/src/components/manage/BulkPlayerImport';
 import { FeesManager } from '@/src/components/manage/FeesManager';
@@ -45,20 +46,20 @@ import { ADVANCE_PER_GROUP, describeCustomDraw, EXTRA_TIME_PERIODS, GROUP_SIZE, 
 import type { BadgeStyle, Competition, InviteKind, Match, MatchTimeStructure, Player, RegistrationInvite, Team } from '@/src/types/api';
 
 type LegacyResource = 'teams' | 'competitions' | 'opponents' | 'players' | 'matches' | 'invites';
-type HubResource = 'schedule' | 'announcements' | 'fees' | 'reports' | 'training-stats' | 'newcomers' | 'kit';
+type HubResource = 'schedule' | 'announcements' | 'fees' | 'reports' | 'training-stats' | 'newcomers' | 'kit' | 'activity';
 type Resource = LegacyResource | HubResource;
 type Entity = Team | Competition | Player | Match | RegistrationInvite;
 
 /**
- * The pills across the top. Fewer than the sections behind them: an opposing
- * club is a squad with `is_aimz` off, and a match and a training session are
- * both something in the diary, so each pair shares a pill and separates
- * underneath it.
+ * The pills across the top. Two of the sections behind them do not get one of
+ * their own: an opposing club is a squad with `is_aimz` off, and the training
+ * numbers are what a report is written from, so each pair shares a pill and
+ * separates underneath it. Everything else is a pill.
  */
-type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'announcements' | 'invites' | 'fees' | 'reports' | 'newcomers' | 'kit';
+type Tab = 'teams' | 'competitions' | 'players' | 'schedule' | 'matches' | 'announcements' | 'invites' | 'fees' | 'reports' | 'newcomers' | 'kit' | 'activity';
 /** `short`, where it is given, is the wording the navigation pill uses: a
  * quarter of a phone's width does not hold every label at the pill's type size. */
-const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }, { label: 'Fees', value: 'fees' }, { label: 'Reports', value: 'reports' }, { label: 'Newcomers', value: 'newcomers' }, { label: 'Kit', value: 'kit' }];
+const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Squads', value: 'teams' }, { label: 'Competitions', value: 'competitions' }, { label: 'Players', value: 'players' }, { label: 'Schedule', value: 'schedule' }, { label: 'Matches', value: 'matches' }, { label: 'Announcements', short: 'Announce', value: 'announcements' }, { label: 'Invites', value: 'invites' }, { label: 'Fees', value: 'fees' }, { label: 'Reports', value: 'reports' }, { label: 'Newcomers', value: 'newcomers' }, { label: 'Kit', value: 'kit' }, { label: 'Activity', value: 'activity' }];
 /**
  * The pills a coach does not get.
  *
@@ -69,6 +70,10 @@ const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Sq
  * Newcomers is people who have not joined yet, which is the academy's intake
  * rather than any squad's football.
  *
+ * Activity is the audit log, which was only ever an administrator's to read:
+ * the screen behind it turns everybody else away, and it says what every
+ * administrator did across the academy rather than anything about a squad.
+ *
  * Fees are here for a different reason. A coach runs a squad's football — she
  * picks the team, takes the register, marks training — and what a family has
  * paid is not that. The player profile keeps her out of it, and this is the
@@ -78,15 +83,12 @@ const resources: { label: string; short?: string; value: Tab }[] = [{ label: 'Sq
  * be a way to find that out the hard way. What is left is the squad's own
  * week: its schedule, its notices, its reports and its kit.
  */
-const ACADEMY_ONLY: Tab[] = ['teams', 'competitions', 'players', 'invites', 'fees', 'newcomers'];
+const ACADEMY_ONLY: Tab[] = ['teams', 'competitions', 'players', 'invites', 'fees', 'newcomers', 'activity'];
 /** Whose squads the Squads pill is showing. */
 const squadKinds = [{ label: 'AIMZ Squads', value: 'teams' }, { label: 'Opponent Squads', value: 'opponents' }] as const;
-/** Which half of the diary the Schedule pill is showing. */
-const scheduleKinds = [{ label: 'Training Sessions', value: 'schedule' }, { label: 'Matches', value: 'matches' }] as const;
 /** What the Reports pill is showing: a written report, or the numbers behind one. */
 const reportKinds = [{ label: 'Player Reports', value: 'reports' }, { label: 'Training Stats', value: 'training-stats' }] as const;
 type SquadKind = (typeof squadKinds)[number]['value'];
-type ScheduleKind = (typeof scheduleKinds)[number]['value'];
 type ReportKind = (typeof reportKinds)[number]['value'];
 const formSummary: Record<LegacyResource, string> = {
   teams: 'A squad’s name, branch, age group, competition and coaches.',
@@ -272,7 +274,6 @@ export default function ManageScreen() {
   const [tab, setTab] = React.useState<Tab>('teams');
   /** Each shared pill remembers which half of itself is showing. */
   const [squadKind, setSquadKind] = React.useState<SquadKind>('teams');
-  const [scheduleKind, setScheduleKind] = React.useState<ScheduleKind>('schedule');
   const [reportKind, setReportKind] = React.useState<ReportKind>('reports');
   const [editing, setEditing] = React.useState<Entity | null>(null);
   const [formError, setFormError] = React.useState<string | null>(null);
@@ -312,9 +313,8 @@ export default function ManageScreen() {
   // A pill always reopens on its first half. Coming back to Squads and landing
   // on the opposing clubs, because that is where you were twenty minutes ago,
   // reads as the app having lost your place rather than kept it.
-  const switchResource = (next: Tab) => { setTab(next); setSquadKind('teams'); setScheduleKind('schedule'); setReportKind('reports'); leaveSection(); };
+  const switchResource = (next: Tab) => { setTab(next); setSquadKind('teams'); setReportKind('reports'); leaveSection(); };
   const switchSquadKind = (next: SquadKind) => { setSquadKind(next); leaveSection(); };
-  const switchScheduleKind = (next: ScheduleKind) => { setScheduleKind(next); leaveSection(); };
   const switchReportKind = (next: ReportKind) => { setReportKind(next); leaveSection(); };
   // Every cell keeps its quarter of the width whatever it holds, so the rows
   // line up and the cells stretch their pills to an even row height.
@@ -324,25 +324,24 @@ export default function ManageScreen() {
   // The section actually being managed, which for two of the pills depends on
   // which half of it is showing. Everything below reads this rather than the
   // pill, so the sections themselves did not have to change.
-  const resource: Resource = openTab === 'teams' ? squadKind : openTab === 'schedule' ? scheduleKind : openTab === 'reports' ? reportKind : openTab;
+  const resource: Resource = openTab === 'teams' ? squadKind : openTab === 'reports' ? reportKind : openTab;
   const subTabs = openTab === 'teams'
     ? (isCoach ? null : <SegmentedControl label="Squad kind" onChange={switchSquadKind} options={squadKinds} value={squadKind} />)
-    : openTab === 'schedule'
-      ? <SegmentedControl label="Schedule kind" onChange={switchScheduleKind} options={scheduleKinds} value={scheduleKind} />
-      : openTab === 'reports'
-        ? <SegmentedControl label="Report kind" onChange={switchReportKind} options={reportKinds} value={reportKind} />
-        : null;
+    : openTab === 'reports'
+      ? <SegmentedControl label="Report kind" onChange={switchReportKind} options={reportKinds} value={reportKind} />
+      : null;
   // The academy's own age squads, which is what a session or a notice is for.
   // `is_aimz` alone would name the league's clubs too: they carry it so that
   // players, lineups and live scoring work for them, and they have no age group.
   const aimzTeams = teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [];
   // The sections that manage themselves rather than through the shared form
   // scaffold below: each is a screen of its own shape.
-  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats' || resource === 'newcomers' || resource === 'kit') return <Screen scrollRef={pageRef} title={isCoach ? "Manage Squad" : "Manage Academy"}>
+  if (resource === 'schedule' || resource === 'announcements' || resource === 'fees' || resource === 'reports' || resource === 'training-stats' || resource === 'newcomers' || resource === 'kit' || resource === 'activity') return <Screen scrollRef={pageRef} title={isCoach ? "Manage Squad" : "Manage Academy"}>
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
       {resource === 'schedule' ? <ScheduleManager teams={aimzTeams} />
+        : resource === 'activity' ? <ActivityManager />
         : resource === 'announcements' ? <AnnouncementsManager teams={aimzTeams} />
           : resource === 'fees' ? <FeesManager teams={aimzTeams} />
             : resource === 'kit' ? <KitOrdersManager />
@@ -553,6 +552,23 @@ function AppStatus({ on }: { on: boolean }) {
   </View>;
 }
 
+/**
+ * The audit log, where an administrator now finds it.
+ *
+ * The same feed that used to sit folded inside Settings, unchanged: the latest
+ * twenty here, and the whole thing on its own screen behind the button. The
+ * screen is still the one place that reads it in full, and still turns away
+ * anybody who is not an administrator.
+ */
+function ActivityManager() {
+  const styles = useThemedStyles(stylesheet);
+  return <View style={styles.activity}>
+    <Text style={styles.pickerNote}>Every change an admin made to a match.</Text>
+    <AuditTrail limit={20} />
+    <AppButton label="See the full log" onPress={() => router.push('/audit')} variant="secondary" />
+  </View>;
+}
+
 function ManagedEntityList({ items, resource, onEdit, onRemove, onUploadPhoto }: { items: Entity[]; resource: LegacyResource; onEdit: (item: Entity) => void; onRemove: (item: Entity) => void; onUploadPhoto: (item: Team | Player, entity: 'team' | 'player') => Promise<void> }) {
   const styles = useThemedStyles(stylesheet);
   const onTheApp = useOnTheApp(resource === 'players');
@@ -706,4 +722,4 @@ function entityMeta(item: Entity) { if ('home_team_id' in item) return `${item.s
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   inviteNote: { color: colors.textMuted, lineHeight: 21 }, content: { gap: theme.spacing.lg }, branchList: { gap: theme.spacing.xl }, branchGroup: { gap: theme.spacing.sm }, branchHeader: { alignItems: 'baseline', borderBottomColor: colors.border, borderBottomWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingBottom: theme.spacing.sm }, branchTitle: { color: colors.accentSoft, flex: 1, fontFamily: theme.font.bold, fontSize: theme.type.body }, branchCount: { color: colors.textMuted, fontSize: theme.type.label, fontWeight: '700' }, modalBackdrop: { alignItems: 'center', backgroundColor: 'rgba(8, 8, 12, 0.72)', flex: 1, justifyContent: 'center', padding: theme.spacing.lg }, inviteModal: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.lg, borderWidth: 1, gap: theme.spacing.md, maxWidth: 440, padding: theme.size.cardPadding, width: '100%' }, modalTitle: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, inviteCode: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.heading, letterSpacing: 2, textAlign: 'center' }, inviteLink: { color: colors.textSecondary, fontSize: theme.type.label, textAlign: 'center' }, groupList: { gap: theme.spacing.md }, groupsHeading: { color: colors.textPrimary, fontSize: theme.type.body, fontWeight: '900' }, groupCard: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.sm, padding: theme.spacing.md }, groupHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, groupTitle: { color: colors.textPrimary, fontWeight: '900' }, groupCount: { color: colors.textMuted, fontSize: theme.type.caption, fontWeight: '800' }, groupCountFull: { color: colors.accentSoft }, groupTeam: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.sm, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', minHeight: 44, paddingLeft: theme.spacing.md, paddingRight: theme.spacing.xs }, groupTeamName: { color: colors.textPrimary, flex: 1, fontWeight: '700' }, lockedField: { gap: theme.spacing.xs }, lockedLabel: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' }, lockedValue: { backgroundColor: colors.surfaceRaised, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, color: colors.textMuted, minHeight: 52, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.md }, pickerNote: { backgroundColor: colors.surfaceRaised, borderRadius: theme.radius.md, color: colors.textSecondary, fontSize: theme.type.label, lineHeight: 20, padding: theme.spacing.md }, editingBanner: { alignItems: 'center', backgroundColor: colors.highlightedSurface, borderColor: colors.accent, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between', paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.xs }, editingText: { color: colors.textPrimary, flex: 1, fontWeight: '800' }, summary: { color: colors.accentSoft, fontSize: theme.type.label, fontWeight: '700', lineHeight: 20, marginTop: -theme.spacing.xs }, summaryInvalid: { color: colors.textMuted, fontSize: theme.type.label, lineHeight: 20, marginTop: -theme.spacing.xs }, /* The grid reaches past the page's own padding, for the width it buys the
      longest of the labels. */
-  chips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -theme.spacing.md }, chipCell: { flexBasis: '25%', flexShrink: 1, minWidth: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.xs }, chip: { flex: 1, paddingVertical: theme.spacing.xs }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, /* The card gaps its fields by `md`; the extra `sm` sets the submit row apart from the last field. Kept in step with `formActions` on the hub coaches. */ actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs }, appStatus: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs, marginTop: 4 }, appDot: { borderRadius: 4, height: 8, width: 8 }, appDotOn: { backgroundColor: colors.live }, appDotOff: { backgroundColor: colors.error }, appStatusText: { fontSize: theme.type.caption }, appStatusOn: { color: colors.liveText }, appStatusOff: { color: colors.errorText } });
+  chips: { flexDirection: 'row', flexWrap: 'wrap', marginHorizontal: -theme.spacing.md }, chipCell: { flexBasis: '25%', flexShrink: 1, minWidth: 0, paddingBottom: theme.spacing.sm, paddingHorizontal: theme.spacing.xs }, chip: { flex: 1, paddingVertical: theme.spacing.xs }, pressed: { opacity: 0.7 }, previewNote: { backgroundColor: colors.warningSurface, borderColor: colors.warning, borderRadius: theme.radius.md, borderWidth: 1, gap: theme.spacing.xs, padding: theme.spacing.md }, previewNoteTitle: { color: colors.warningText, fontWeight: '900' }, previewNoteCopy: { color: colors.textPrimary, lineHeight: 22 }, error: { color: colors.errorText }, two: { flexDirection: 'row', gap: theme.spacing.sm }, /* The card gaps its fields by `md`; the extra `sm` sets the submit row apart from the last field. Kept in step with `formActions` on the hub coaches. */ actions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm }, flexButton: { flex: 1 }, empty: { color: colors.textMuted, textAlign: 'center' }, list: { gap: theme.spacing.sm }, item: { alignItems: 'center', backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, itemCopy: { flex: 1 }, itemTitle: { color: colors.textPrimary, fontWeight: '900' }, itemMeta: { color: colors.textMuted, marginTop: 4 }, rowActions: { flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs }, activity: { gap: theme.spacing.md }, appStatus: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.xs, marginTop: 4 }, appDot: { borderRadius: 4, height: 8, width: 8 }, appDotOn: { backgroundColor: colors.live }, appDotOff: { backgroundColor: colors.error }, appStatusText: { fontSize: theme.type.caption }, appStatusOn: { color: colors.liveText }, appStatusOff: { color: colors.errorText } });

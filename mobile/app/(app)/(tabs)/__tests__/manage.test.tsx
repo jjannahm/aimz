@@ -16,7 +16,13 @@ jest.mock('expo-router', () => ({
 jest.mock('expo-haptics', () => ({ notificationAsync: jest.fn(), NotificationFeedbackType: { Success: 'success' } }));
 jest.mock('expo-image-manipulator', () => ({ manipulateAsync: jest.fn(), SaveFormat: { JPEG: 'jpeg' } }));
 jest.mock('expo-image-picker', () => ({ launchImageLibraryAsync: jest.fn(), requestMediaLibraryPermissionsAsync: jest.fn() }));
-jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: 'admin' } }) }));
+let mockRole = 'admin';
+jest.mock('@/src/auth/AuthProvider', () => ({ useAuth: () => ({ user: { role: mockRole } }) }));
+jest.mock('@/src/components/AuditTrail', () => {
+  const React = jest.requireActual('react');
+  const { Text } = jest.requireActual('react-native');
+  return { AuditTrail: () => React.createElement(Text, null, 'Audit trail content') };
+});
 jest.mock('@/src/components/manage/FeesManager', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
@@ -90,6 +96,7 @@ const subTab = async (screen: Awaited<ReturnType<typeof render>>, name: string) 
 
 describe('ManageScreen navigation', () => {
   beforeEach(() => {
+    mockRole = 'admin';
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
     jest.mocked(api.teams).mockResolvedValue(emptyPage);
     jest.mocked(api.competitions).mockResolvedValue(emptyPage);
@@ -104,7 +111,7 @@ describe('ManageScreen navigation', () => {
     jest.restoreAllMocks();
   });
 
-  it('offers a pill for each section, with opponents and matches folded into their pair', async () => {
+  it('offers a pill for each section, with opponents folded into its pair', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await screen.findByText('Add squads');
 
@@ -113,18 +120,35 @@ describe('ManageScreen navigation', () => {
       'Competitions',
       'Players',
       'Schedule',
+      'Matches',
       'Announcements',
       'Invites',
       'Fees',
       'Reports',
       'Newcomers',
       'Kit',
+      'Activity',
     ]);
-    // The two that were merged away are reachable, but underneath their pill.
+    // The one still merged away is reachable, but underneath its pill.
     expect(screen.queryByTestId('manage-tab-opponents')).toBeNull();
-    expect(screen.queryByTestId('manage-tab-matches')).toBeNull();
     expect(screen.getByTestId('manage-tab-teams-fill')).toBeTruthy();
     expect(screen.getByTestId('manage-content')).toBeTruthy();
+  });
+
+  /**
+   * The audit log was only ever an administrator's to read, and moving it out
+   * of Settings must not have handed it to anybody else. Matches, which a coach
+   * could always reach under Schedule, must not have been taken away either.
+   */
+  it('keeps Activity to administrators and leaves a coach her matches', async () => {
+    mockRole = 'coach';
+    const screen = await render(<ManageScreen />, { wrapper });
+    await screen.findByTestId('manage-tab-schedule');
+
+    expect(pills(screen)).toEqual(['Schedule', 'Matches', 'Announcements', 'Reports', 'Kit']);
+    await fireEvent.press(screen.getByTestId('manage-tab-matches'));
+    expect(await screen.findByText('Add matches')).toBeTruthy();
+    expect(screen.queryByTestId('manage-tab-activity')).toBeNull();
   });
 
   it('opens the Squads pill on our own squads, with opponents alongside', async () => {
@@ -137,15 +161,24 @@ describe('ManageScreen navigation', () => {
     expect(await screen.findByText('Add opponents')).toBeTruthy();
   });
 
-  it('opens the Schedule pill on training, with matches alongside', async () => {
+  it('opens Schedule straight onto training, with matches on their own pill', async () => {
     const screen = await render(<ManageScreen />, { wrapper });
     await fireEvent.press(screen.getByTestId('manage-tab-schedule'));
     expect(await screen.findByText('Schedule coach content')).toBeTruthy();
-    expect(screen.getByRole('tab', { name: 'Training Sessions' }).props.accessibilityState.selected).toBe(true);
+    // The mode selector that used to sit here is gone: Schedule is training now.
+    expect(screen.queryByRole('tab', { name: 'Training Sessions' })).toBeNull();
 
-    await subTab(screen, 'Matches');
+    await fireEvent.press(screen.getByTestId('manage-tab-matches'));
     expect(await screen.findByText('Add matches')).toBeTruthy();
     expect(screen.queryByText('Schedule coach content')).toBeNull();
+  });
+
+  it('reaches the audit log from the Activity pill', async () => {
+    const screen = await render(<ManageScreen />, { wrapper });
+    await fireEvent.press(screen.getByTestId('manage-tab-activity'));
+
+    expect(await screen.findByText('Audit trail content')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'See the full log' })).toBeTruthy();
   });
 
   // Each pill keeps its own half; leaving and coming back starts over.
@@ -306,6 +339,7 @@ describe('ManageScreen navigation', () => {
 
 describe('ManageScreen confirmations', () => {
   beforeEach(() => {
+    mockRole = 'admin';
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
     jest.mocked(api.teams).mockResolvedValue(emptyPage);
     jest.mocked(api.competitions).mockResolvedValue(emptyPage);
@@ -391,6 +425,7 @@ describe('ManageScreen invite player picker', () => {
   };
 
   beforeEach(() => {
+    mockRole = 'admin';
     jest.spyOn(AccessibilityInfo, 'isReduceMotionEnabled').mockResolvedValue(true);
     jest.mocked(api.teams).mockResolvedValue(emptyPage);
     jest.mocked(api.competitions).mockResolvedValue(emptyPage);
