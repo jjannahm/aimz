@@ -34,7 +34,7 @@ export default function LoginScreen() {
         : <Text style={styles.disabledNote}>Password reset is unavailable in this staging preview.</Text>}
       <AppButton label="Sign in" loading={isSubmitting} onPress={submit} />
     </View>
-    <Text style={styles.footer}>New to AIMZ? <Link href="/(auth)/register" style={styles.link}>Create a player account</Link></Text>
+    <Text style={styles.footer}>New to AIMZ? <Link href="/(auth)/register" style={styles.link}>Create an account</Link></Text>
   </AuthShell>;
 }
 
