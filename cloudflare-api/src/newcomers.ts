@@ -128,30 +128,6 @@ export function registerNewcomerRoutes(app: App): void {
     return c.json({ items: rows.results.map((row) => ({ ...row, duplicate_likely: Boolean(row.duplicate_likely), notes: [] })), total: count?.total ?? 0, limit, offset });
   });
 
-  /**
-   * Where the academy trains, for the filter above the intake queue.
-   *
-   * The branches themselves, in the order the academy lists them — and beside
-   * them any branch an application already records that is not one of them.
-   * A branch that closes stops being offered for new applications while the
-   * ones made from it stay findable, which a list read only from the table
-   * would lose and a list read only from the applications never had.
-   */
-  app.get("/api/v1/admin/newcomers/branches", async (c) => {
-    await adminUser(c);
-    const [branches, used] = await Promise.all([
-      c.env.DB.prepare("SELECT name, area FROM branches WHERE is_active=1 ORDER BY sort_order, name").all<{ name: string; area: string }>(),
-      c.env.DB.prepare("SELECT DISTINCT branch FROM newcomer_applications WHERE branch <> '' ORDER BY branch COLLATE NOCASE").all<{ branch: string }>(),
-    ]);
-    const known = new Set(branches.results.map((row) => row.name));
-    return c.json({
-      items: [
-        ...branches.results.map((row) => ({ name: row.name, area: row.area })),
-        ...used.results.filter((row) => !known.has(row.branch)).map((row) => ({ name: row.branch, area: null })),
-      ],
-    });
-  });
-
   app.get("/api/v1/admin/newcomers/:id", async (c) => {
     await adminUser(c);
     const item = await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE id=?").bind(c.req.param("id")).first<Record<string, string>>();

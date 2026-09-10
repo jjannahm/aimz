@@ -37,7 +37,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0039_branches.sql');
+    expect(applied.results.at(-1)?.name).toBe('0040_branches.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -2371,7 +2371,7 @@ describe('who waits at the door and who walks in', () => {
 describe('where the academy trains', () => {
   it('offers the branches themselves, with the side of the city', async () => {
     const admin = await seedUser('admin');
-    const branches = await (await request('/api/v1/admin/newcomers/branches', json('GET', undefined, admin.token)))
+    const branches = await (await request('/api/v1/branches', json('GET', undefined, admin.token)))
       .json<{ items: { name: string; area: string | null }[] }>();
     // The four the academy runs, in the order it lists them.
     expect(branches.items.slice(0, 4)).toEqual([
@@ -2395,16 +2395,20 @@ describe('where the academy trains', () => {
        'None', 'None', 'v1', ?, ?, ?)`)
       .bind(crypto.randomUUID(), now, now, now).run();
 
-    const branches = await (await request('/api/v1/admin/newcomers/branches', json('GET', undefined, admin.token)))
+    const branches = await (await request('/api/v1/branches', json('GET', undefined, admin.token)))
       .json<{ items: { name: string; area: string | null }[] }>();
     // Listed after the four, with no area, so the queue can still be filtered
     // down to it.
     expect(branches.items).toContainEqual({ name: 'A Closed Pitch', area: null });
   });
 
-  it('is the academy own business, not a coach one', async () => {
+  it('is readable by anybody signed in, and by nobody who is not', async () => {
+    // Where the academy trains is on its public application form; a coach
+    // naming her squad's branch needs it too. Only the intake behind it is
+    // the academy's own business.
     const coach = await seedUser('coach');
-    expect((await request('/api/v1/admin/newcomers/branches', json('GET', undefined, coach.token))).status).toBe(403);
+    expect((await request('/api/v1/branches', json('GET', undefined, coach.token))).status).toBe(200);
+    expect((await request('/api/v1/branches')).status).toBe(401);
   });
 });
 

@@ -23,7 +23,7 @@ export function NewcomersManager({ teams }: { teams: Team[] }) {
   const list = useQuery({ queryKey: ['newcomers', queue, search, branch, source, stage], queryFn: () => api.newcomers(`?${params}`) });
   // Read from the branches themselves rather than typed in: a text box could
   // say which branch was chosen and never which ones there are.
-  const branches = useQuery({ queryKey: ['newcomers', 'branches'], queryFn: () => api.newcomerBranches() });
+  const branches = useQuery({ queryKey: ['branches'], queryFn: () => api.branches() });
   const detail = useQuery({ queryKey: ['newcomer', selected], queryFn: () => api.newcomer(selected!), enabled: Boolean(selected) });
   if (selected) return <Detail item={detail.data} loading={detail.isLoading} teams={teams} onBack={() => setSelected(null)} onChanged={async () => { await client.invalidateQueries({ queryKey: ['newcomers'] }); await client.invalidateQueries({ queryKey: ['newcomer', selected] }); }} />;
   const due = list.data?.items.filter((item) => item.next_follow_up_at && new Date(item.next_follow_up_at) <= new Date()).length ?? 0;

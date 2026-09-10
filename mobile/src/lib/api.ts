@@ -301,7 +301,7 @@ export const api = {
   resolveInvite: (code: string) => request<InviteContext>('/api/v1/auth/invitations/resolve', { method: 'POST', authenticated: false, body: { code } }),
   // Where the academy trains, with the side of the city each is on, plus any
   // branch an older application recorded that is no longer offered.
-  newcomerBranches: () => request<{ items: { name: string; area: string | null }[] }>('/api/v1/admin/newcomers/branches'),
+  branches: () => request<{ items: { name: string; area: string | null }[] }>('/api/v1/branches'),
   newcomers: (query = '?queue=active') => request<Page<Newcomer>>(`/api/v1/admin/newcomers${query}`),
   newcomer: (id: string) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`),
   updateNewcomer: (id: string, body: Partial<{ stage: NewcomerStage; outcome: NewcomerOutcome; last_contacted_at: string | null; next_follow_up_at: string | null }>) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`, { method: 'PATCH', body }),
