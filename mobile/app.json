@@ -36,7 +36,7 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.aimzegypt.scores",
       "buildNumber": "1",
-      "associatedDomains": ["applinks:aimzegypt-73b85.web.app"],
+      "associatedDomains": ["applinks:aimz-egypt-staging.pages.dev"],
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
@@ -46,7 +46,7 @@
       "intentFilters": [{
         "action": "VIEW",
         "autoVerify": true,
-        "data": [{ "scheme": "https", "host": "aimzegypt-73b85.web.app", "pathPrefix": "/join" }],
+        "data": [{ "scheme": "https", "host": "aimz-egypt-staging.pages.dev", "pathPrefix": "/join" }],
         "category": ["BROWSABLE", "DEFAULT"]
       }]
     },

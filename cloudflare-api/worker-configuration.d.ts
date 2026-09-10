@@ -5,8 +5,8 @@ interface __BaseEnv_Env {
 	DB: D1Database;
 	ENVIRONMENT: "staging";
 	FRONTEND_ORIGIN: "https://aimz-egypt-staging.pages.dev";
-	PUBLIC_FORM_ORIGIN: "https://aimzegypt-73b85.web.app";
-	TURNSTILE_HOSTNAMES: "aimzegypt-73b85.web.app";
+	PUBLIC_FORM_ORIGIN: "https://aimz-egypt-staging.pages.dev";
+	TURNSTILE_HOSTNAMES: "aimz-egypt-staging.pages.dev";
 	ADMIN_NAME: "AIMZ Staging Admin";
 	ACCESS_TOKEN_SECONDS: "900";
 	REFRESH_TOKEN_DAYS: "30";
