@@ -9,7 +9,12 @@ import { cacheKeys } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { TrainingMetric } from '@/src/types/api';
+import type { AttendanceStatus, TrainingMetric } from '@/src/types/api';
+
+/** What each answer on the register is called, and the colour it wears. */
+const STATUS_LABEL: Record<AttendanceStatus, string> = { present: 'Present', late: 'Late', absent: 'Absent' };
+const statusTone = (status: AttendanceStatus, colors: ThemeColors) =>
+  status === 'present' ? colors.live : status === 'late' ? colors.warning : colors.error;
 
 /** How a total reads: a mark carries its scale, a count stands alone. */
 const readTotal = (metric: TrainingMetric, value: number) =>
@@ -69,6 +74,10 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
     ...(attendance.expected > 0 ? [
       { key: 'attended', label: 'Attended', value: `${attendance.attended} of ${attendance.expected}` },
       { key: 'attendance', label: 'Attendance', value: `${attendance.pct}%`, tone: colors.accentSoft },
+      // Inside the attendance figure, and shown again on its own: she turned
+      // up, and this is how often she missed the start. Left out when there
+      // are none rather than shown as a nought nobody needs to read.
+      ...(attendance.late > 0 ? [{ key: 'late', label: 'Late', value: String(attendance.late), tone: colors.warning }] : []),
       // Her own percentage says nothing on its own — 80% in a squad averaging
       // 95 is not 80% in one averaging 60 — so the squad's figure sits beside
       // it with where she falls against it underneath. Inside this block on
@@ -107,8 +116,8 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
         return <FlatCard key={session.id} radius={theme.radius.md} style={styles.session}>
           <View style={styles.sessionHead}>
             <Text style={styles.sessionTitle}>{session.venue}</Text>
-            {session.status ? <View style={[styles.chip, { borderColor: session.status === 'present' ? colors.live : colors.error }]}>
-              <Text style={[styles.chipText, { color: session.status === 'present' ? colors.live : colors.error }]}>{session.status === 'present' ? 'Present' : 'Absent'}</Text>
+            {session.status ? <View style={[styles.chip, { borderColor: statusTone(session.status, colors) }]}>
+              <Text style={[styles.chipText, { color: statusTone(session.status, colors) }]}>{STATUS_LABEL[session.status]}</Text>
             </View> : null}
           </View>
           <Text style={styles.sessionDate}>{formatEgyptDateTime(session.starts_at)}</Text>

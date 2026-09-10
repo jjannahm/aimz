@@ -12,14 +12,17 @@ import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AttendanceStatus, TrainingSession } from '@/src/types/api';
 
 /**
- * Present and absent, in the same green and red the availability answers use.
+ * Present, late and absent, in the same green and red the availability answers
+ * use with amber between them.
  *
  * A register and a set of replies are different questions about the same
  * session — what was said beforehand against what happened — so reading one
- * should not mean learning a second colour scheme.
+ * should not mean learning a second colour scheme. Late sits in the middle
+ * because that is what it is: she came, but not at the start.
  */
-const CHOICES: { label: string; tone: 'live' | 'error'; value: AttendanceStatus }[] = [
+const CHOICES: { label: string; tone: 'live' | 'warning' | 'error'; value: AttendanceStatus }[] = [
   { label: 'Present', tone: 'live', value: 'present' },
+  { label: 'Late', tone: 'warning', value: 'late' },
   { label: 'Absent', tone: 'error', value: 'absent' },
 ];
 
@@ -66,6 +69,7 @@ export function AttendancePanel({ session }: { session: TrainingSession }) {
   if (register.isError) return <ErrorState message={(register.error as ApiError).message} onRetry={() => register.refetch()} />;
   const items = register.data?.items ?? [];
   const present = register.data?.present ?? 0;
+  const late = register.data?.late ?? 0;
   const absent = register.data?.absent ?? 0;
   const unmarked = register.data?.unmarked ?? 0;
 
@@ -84,8 +88,9 @@ export function AttendancePanel({ session }: { session: TrainingSession }) {
 
     {/* The tally first, because it is what a coach standing on the pitch wants
       * and the list below is only how it is arrived at. */}
-    <View accessibilityLabel={`Present ${present}, absent ${absent}${unmarked > 0 ? `, ${unmarked} not marked` : ''}`} style={styles.summary}>
+    <View accessibilityLabel={`Present ${present}, late ${late}, absent ${absent}${unmarked > 0 ? `, ${unmarked} not marked` : ''}`} style={styles.summary}>
       <View style={styles.tally}><Text style={[styles.count, { color: colors.live }]}>{present}</Text><Text style={styles.countLabel}>Present</Text></View>
+      <View style={styles.tally}><Text style={[styles.count, { color: colors.warning }]}>{late}</Text><Text style={styles.countLabel}>Late</Text></View>
       <View style={styles.tally}><Text style={[styles.count, { color: colors.error }]}>{absent}</Text><Text style={styles.countLabel}>Absent</Text></View>
       {unmarked > 0 ? <View style={styles.tally}><Text style={[styles.count, { color: colors.textMuted }]}>{unmarked}</Text><Text style={styles.countLabel}>Not marked</Text></View> : null}
     </View>

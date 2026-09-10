@@ -3,6 +3,7 @@ import { ApiProblem, currentUser, enumField, jsonObject, nowIso, numberField, pa
 import { canOpenTeam, requireAimzTeam, scopedTeams } from "./team-access";
 import type { AttendanceRow, AvailabilityRow, PlayerRow, TeamRow, TrainingRow, UserRow } from "./types";
 import { assertCanManageTeam, managingUser } from "./team-access";
+import { ATTENDANCE_STATUSES } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -56,6 +57,7 @@ async function attendanceFor(env: Env, session: TrainingRow): Promise<Record<str
   return {
     items,
     present: items.filter((row) => row.status === "present").length,
+    late: items.filter((row) => row.status === "late").length,
     absent: items.filter((row) => row.status === "absent").length,
     unmarked: items.filter((row) => row.status === null).length,
   };
@@ -177,7 +179,7 @@ export function registerTrainingRoutes(app: App): void {
     const entries = body.entries.map((raw) => {
       const entry = (raw ?? {}) as Record<string, unknown>;
       const playerId = stringField(entry, "player_id", { min: 1, max: 36 })!;
-      const status = entry.status === null || entry.status === undefined ? null : enumField(entry, "status", ["present", "absent"] as const);
+      const status = entry.status === null || entry.status === undefined ? null : enumField(entry, "status", ATTENDANCE_STATUSES);
       return { playerId, status };
     });
     // Every name has to be on this squad, so a register cannot quietly collect

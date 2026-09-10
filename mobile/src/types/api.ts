@@ -199,7 +199,37 @@ export type Announcement = {
 export type AvailabilityStatus = 'going' | 'not_going';
 
 /** Whether a player turned up, or null while nobody has said either way. */
-export type AttendanceStatus = 'present' | 'absent';
+/**
+ * What the register can say. Late counts as having turned up wherever a
+ * percentage is worked out, and is counted on its own wherever a figure is
+ * shown, so the attendance number stays honest and the lateness stays visible.
+ */
+export type AttendanceStatus = 'present' | 'late' | 'absent';
+
+/** Where a request to correct a register has got to. */
+export type AttendanceRequestStatus = 'pending' | 'approved' | 'rejected';
+
+/**
+ * A request to correct one player's mark at one session.
+ *
+ * `current_status` is what the register said when it was raised, which is not
+ * necessarily what it says now: a coach reading this a week later needs to
+ * know what it was answering.
+ */
+export type AttendanceRequest = {
+  id: string;
+  training_session_id: string;
+  player_id: string;
+  current_status: AttendanceStatus | null;
+  requested_status: AttendanceStatus;
+  reason: string | null;
+  status: AttendanceRequestStatus;
+  decided_at: string | null;
+  decision_reason: string | null;
+  created_at: string;
+  player: Player | null;
+  session: { id: string; starts_at: string; venue: string; team_id: string } | null;
+};
 
 /** One thing a coach records about how a player trained. */
 export type TrainingMetric = {
@@ -226,7 +256,7 @@ export type PlayerTrainingStats = {
   player: Player;
   metrics: TrainingMetric[];
   /** `team_pct` is the whole squad's ratio, for this player to be read against. */
-  attendance: { attended: number; expected: number; pct: number | null; team_pct: number | null };
+  attendance: { attended: number; late: number; expected: number; pct: number | null; team_pct: number | null };
   totals: { metric: TrainingMetric; value: number | null; sessions: number }[];
   sessions: { id: string; starts_at: string; venue: string; status: 'present' | 'absent' | null; values: Record<string, number> }[];
 };
@@ -236,7 +266,8 @@ export type ReportSnapshot = {
   /** Two adds the training marks; one is a report published before them. */
   version: 1 | 2;
   player: { name: string; team_name: string | null; position: string | null; jersey_number: number | null };
-  attendance: { attended: number; expected: number; pct: number | null };
+  /** `late` arrives with report snapshot version 3; an older one has none. */
+  attendance: { attended: number; expected: number; pct: number | null; late?: number };
   /** How the player was marked at training. Absent on a version-one report. */
   training?: { key: string; label: string; kind: 'rating' | 'count'; max_value: number | null; value: number; sessions: number }[];
   /** Marks the player has that fall outside the period this report covers. */
@@ -352,7 +383,7 @@ export type FeeSummary = {
 export type FeeGeneration = { period: string; created: number; skipped: number; squad_size: number };
 export type AttendanceMark = { player: Player; status: AttendanceStatus | null; marked_at: string | null };
 /** One session's register, with the tallies worked out server-side. */
-export type TrainingRegister = { items: AttendanceMark[]; present: number; absent: number; unmarked: number };
+export type TrainingRegister = { items: AttendanceMark[]; present: number; late: number; absent: number; unmarked: number };
 export type TrainingAvailability = {
   id: string;
   training_session_id: string;

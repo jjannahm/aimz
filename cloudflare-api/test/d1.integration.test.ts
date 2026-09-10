@@ -37,7 +37,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0032_manager_role.sql');
+    expect(applied.results.at(-1)?.name).toBe('0034_attendance_requests.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
 
     const admin = await seedUser('admin');
@@ -1212,7 +1212,7 @@ describe('player reports', () => {
     expect(await shared.json()).toMatchObject({
       title: 'Autumn term',
       coach_feedback: 'Reads the game well.',
-      snapshot: { version: 2, player: { name: 'Layla' } },
+      snapshot: { version: 3, player: { name: 'Layla' } },
     });
   });
 
@@ -1246,7 +1246,7 @@ describe('player reports', () => {
     const published = await (await publish(report.id, admin.token)).json<{ share_token: string }>();
     const body = await (await request(`/api/v1/reports/${published.share_token}`, json('GET'))).json<{ snapshot: { version: number; training: { key: string; value: number; sessions: number }[] } }>();
 
-    expect(body.snapshot.version).toBe(2);
+    expect(body.snapshot.version).toBe(3);
     // A rating averages, a count adds up.
     expect(body.snapshot.training.find((row) => row.key === 'dribbling')).toMatchObject({ value: 7.5, sessions: 2 });
     expect(body.snapshot.training.find((row) => row.key === 'minutes_trained')).toMatchObject({ value: 180, sessions: 2 });
@@ -1752,5 +1752,165 @@ describe('role scope', () => {
     const auth = { Authorization: `Bearer ${session.access_token}` };
     const matches = await (await request('/api/v1/matches', { headers: auth })).json<{ items: { id: string }[] }>();
     expect(matches.items.map((item) => item.id)).toEqual([world.myMatch.id]);
+  });
+});
+
+describe('late marks and register corrections', () => {
+  /**
+   * A squad, a session, and two players on it — one who will be marked late
+   * and one who will ask to be.
+   */
+  async function session() {
+    const admin = await seedUser('admin');
+    const unique = crypto.randomUUID().slice(0, 8);
+    const post = async <T>(path: string, body: unknown): Promise<T> => (await request(path, json('POST', body, admin.token))).json<T>();
+    const squad = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ Late ${unique}`, is_aimz: true });
+    const other = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ Other ${unique}`, is_aimz: true });
+    const player = await post<{ id: string }>('/api/v1/players', { name: 'Layla Hassan', team_id: squad.id, position: 'CM' });
+    const mate = await post<{ id: string }>('/api/v1/players', { name: 'Nour Adel', team_id: squad.id, position: 'ST' });
+    const stranger = await post<{ id: string }>('/api/v1/players', { name: 'Not Hers', team_id: other.id, position: 'GK' });
+    const sessions = await post<{ id: string }[]>('/api/v1/training-sessions', {
+      team_id: squad.id, venue: 'Cairo pitch', duration_minutes: 90, occurrences: ['2027-04-01T15:00:00.000Z'],
+    });
+    return { admin, unique, squad, other, player, mate, stranger, sessionId: sessions[0]!.id };
+  }
+
+  const mark = (sessionId: string, playerId: string, status: string | null, token: string) =>
+    request(`/api/v1/training-sessions/${sessionId}/attendance`, json('PUT', { entries: [{ player_id: playerId, status }] }, token));
+
+  it('takes a late mark and counts it as having turned up', async () => {
+    const world = await session();
+    const register = await mark(world.sessionId, world.player.id, 'late', world.admin.token);
+    expect(register.status).toBe(200);
+    // The register keeps the three answers apart.
+    expect(await register.json()).toMatchObject({ present: 0, late: 1, absent: 0 });
+
+    await mark(world.sessionId, world.mate.id, 'absent', world.admin.token);
+
+    // One late and one absent: she turned up, so her own figure is 100% of the
+    // one session she was marked for, and the lateness is reported separately.
+    const stats = await (await request(`/api/v1/players/${world.player.id}/training-stats`, json('GET', undefined, world.admin.token)))
+      .json<{ attendance: { attended: number; late: number; expected: number; pct: number | null } }>();
+    expect(stats.attendance).toMatchObject({ attended: 1, late: 1, expected: 1, pct: 100 });
+
+    // And the profile figure agrees, because both read the same rule.
+    // The profile spreads its training figures at the top level.
+    const profile = await (await request(`/api/v1/players/${world.player.id}/stats`, json('GET', undefined, world.admin.token)))
+      .json<{ trainings_attended: number; trainings_late: number; training_attendance_pct: number | null }>();
+    expect(profile).toMatchObject({ trainings_attended: 1, trainings_late: 1, training_attendance_pct: 100 });
+  });
+
+  it('lets a player ask, and a manager approve, which rewrites the register', async () => {
+    const world = await session();
+    await mark(world.sessionId, world.player.id, 'absent', world.admin.token);
+    const player = await seedUser('player', world.player.id);
+
+    const asked = await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { requested_status: 'late', reason: 'I was there, twenty minutes in' }, player.token));
+    expect(asked.status).toBe(201);
+    const pending = await asked.json<{ id: string; status: string; current_status: string }>();
+    // It records what the register said at the time, not only what was asked.
+    expect(pending).toMatchObject({ status: 'pending', current_status: 'absent', requested_status: 'late' });
+
+    // Asking does not change anything on its own.
+    const before = await (await request(`/api/v1/players/${world.player.id}/training-stats`, json('GET', undefined, world.admin.token)))
+      .json<{ attendance: { attended: number } }>();
+    expect(before.attendance.attended).toBe(0);
+
+    // She can see it waiting.
+    const mine = await (await request('/api/v1/attendance-requests', json('GET', undefined, player.token))).json<{ items: { id: string }[] }>();
+    expect(mine.items.map((item) => item.id)).toEqual([pending.id]);
+
+    // The manager of her squad answers it.
+    const manager = await seedUser('manager');
+    await assignSquad(manager.id, world.squad.id);
+    const approved = await request(`/api/v1/attendance-requests/${pending.id}/approve`, json('POST', {}, manager.token));
+    expect(approved.status).toBe(200);
+    expect(await approved.json()).toMatchObject({ status: 'approved' });
+
+    // The register moved, and every figure built on it moved with it.
+    const after = await (await request(`/api/v1/players/${world.player.id}/training-stats`, json('GET', undefined, world.admin.token)))
+      .json<{ attendance: { attended: number; late: number; pct: number | null } }>();
+    expect(after.attendance).toMatchObject({ attended: 1, late: 1, pct: 100 });
+  });
+
+  it('leaves the register alone when a request is rejected', async () => {
+    const world = await session();
+    await mark(world.sessionId, world.player.id, 'absent', world.admin.token);
+    const player = await seedUser('player', world.player.id);
+    const asked = await (await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { requested_status: 'present' }, player.token))).json<{ id: string }>();
+
+    const rejected = await request(`/api/v1/attendance-requests/${asked.id}/reject`,
+      json('POST', { reason: 'You were not at this one' }, world.admin.token));
+    expect(rejected.status).toBe(200);
+    expect(await rejected.json()).toMatchObject({ status: 'rejected', decision_reason: 'You were not at this one' });
+
+    const after = await (await request(`/api/v1/players/${world.player.id}/training-stats`, json('GET', undefined, world.admin.token)))
+      .json<{ attendance: { attended: number; pct: number | null } }>();
+    expect(after.attendance).toMatchObject({ attended: 0, pct: 0 });
+
+    // And it is answered once. A second decision would rewrite history.
+    expect((await request(`/api/v1/attendance-requests/${asked.id}/approve`, json('POST', {}, world.admin.token))).status).toBe(409);
+  });
+
+  it('holds every side of it to their own', async () => {
+    const world = await session();
+    await mark(world.sessionId, world.player.id, 'absent', world.admin.token);
+    const player = await seedUser('player', world.player.id);
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, world.player.id, now).run();
+
+    // A player asking on somebody else's behalf.
+    const impostor = await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { player_id: world.mate.id, requested_status: 'present' }, player.token));
+    expect(impostor.status).toBe(403);
+    expect(await impostor.json()).toMatchObject({ detail: { code: 'player_access_denied' } });
+
+    // A parent may ask for their own child, and only for them.
+    expect((await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { player_id: world.mate.id, requested_status: 'present' }, parent.token))).status).toBe(403);
+    const theirs = await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { player_id: world.player.id, requested_status: 'present', reason: 'She was there' }, parent.token));
+    expect(theirs.status).toBe(201);
+    const open = await theirs.json<{ id: string }>();
+
+    // One open request per player per session.
+    expect((await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { requested_status: 'late' }, player.token))).status).toBe(409);
+
+    // A family cannot answer their own request.
+    expect((await request(`/api/v1/attendance-requests/${open.id}/approve`, json('POST', {}, player.token))).status).toBe(403);
+    expect((await request(`/api/v1/attendance-requests/${open.id}/approve`, json('POST', {}, parent.token))).status).toBe(403);
+
+    // Nor can a manager of some other squad.
+    const outsider = await seedUser('manager');
+    await assignSquad(outsider.id, world.other.id);
+    const refused = await request(`/api/v1/attendance-requests/${open.id}/approve`, json('POST', {}, outsider.token));
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ detail: { code: 'team_access_denied' } });
+
+    // An administrator raises none: they mark the register themselves.
+    expect((await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { player_id: world.mate.id, requested_status: 'late' }, world.admin.token))).status).toBe(403);
+  });
+
+  it('refuses a request about a session that is not theirs to be at', async () => {
+    const world = await session();
+    const player = await seedUser('player', world.stranger.id);
+    const wrongSquad = await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { requested_status: 'present' }, player.token));
+    expect(wrongSquad.status).toBe(422);
+    expect(await wrongSquad.json()).toMatchObject({ detail: { code: 'player_not_found' } });
+  });
+
+  it('refuses a request for the answer already on the register', async () => {
+    const world = await session();
+    await mark(world.sessionId, world.player.id, 'late', world.admin.token);
+    const player = await seedUser('player', world.player.id);
+    const pointless = await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { requested_status: 'late' }, player.token));
+    expect(pointless.status).toBe(409);
+    expect(await pointless.json()).toMatchObject({ detail: { code: 'already_marked' } });
   });
 });

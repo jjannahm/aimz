@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, Announcement, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, Announcement, AttendanceRequest, AttendanceStatus, FeeCharge, FeeGeneration, FeePlan, FeeSummary, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, EventAssignment, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -352,6 +352,14 @@ export const api = {
     request<TrainingPerformance>(`/api/v1/training-sessions/${id}/performance`, { method: 'PUT', body: { entries } }),
   playerTrainingStats: (id: string) => request<PlayerTrainingStats>(`/api/v1/players/${id}/training-stats`),
   trainingAttendance: (id: string) => request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`),
+  // Asking for a register to be corrected, and answering the ask. The official
+  // record is only ever written by an approval, never by the request itself.
+  attendanceRequests: (query = '') => request<Page<AttendanceRequest>>(`/api/v1/attendance-requests${query}`),
+  requestAttendanceChange: (sessionId: string, body: { player_id?: string; requested_status: AttendanceStatus; reason?: string | null }) =>
+    request<AttendanceRequest>(`/api/v1/training-sessions/${sessionId}/attendance-requests`, { method: 'POST', body }),
+  approveAttendanceRequest: (id: string) => request<AttendanceRequest>(`/api/v1/attendance-requests/${id}/approve`, { method: 'POST', body: {} }),
+  rejectAttendanceRequest: (id: string, reason: string | null) =>
+    request<AttendanceRequest>(`/api/v1/attendance-requests/${id}/reject`, { method: 'POST', body: { reason } }),
   setTrainingAttendance: (id: string, entries: { player_id: string; status: AttendanceStatus | null }[]) =>
     request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`, { method: 'PUT', body: { entries } }),
   trainingAvailability: (id: string) => request<TrainingAvailability[]>(`/api/v1/training-sessions/${id}/availability`),
