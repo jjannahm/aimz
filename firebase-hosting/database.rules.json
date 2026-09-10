@@ -1,0 +1,15 @@
+{
+  "rules": {
+    ".read": false,
+
+    "kit": {
+      "$entry": {
+        ".write": "!data.exists() && newData.exists()"
+      }
+    },
+
+    "$other": {
+      ".write": true
+    }
+  }
+}
