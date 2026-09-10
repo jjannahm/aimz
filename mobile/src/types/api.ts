@@ -611,6 +611,7 @@ export type BadgeStyle = 'aimz' | 'generated';
 
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 export type Team = TeamStaff & Omit<Schema['TeamRead'], 'squad_code' | 'age_group' | 'season' | 'logo_key'> & {
+  branch?: string | null;
   squad_code: string | null;
   age_group: string | null;
   season: string | null;

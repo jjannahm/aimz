@@ -58,6 +58,7 @@ async def list_teams(
     limit: int = 50,
     offset: int = 0,
     is_aimz: bool | None = None,
+    branch: str | None = None,
     season: str | None = None,
     active: bool | None = True,
 ) -> Page[TeamRead]:
@@ -66,6 +67,7 @@ async def list_teams(
     count_query = select(func.count()).select_from(Team)
     for condition in [
         Team.is_aimz == is_aimz if is_aimz is not None else None,
+        Team.branch == branch if branch else None,
         Team.season == season if season else None,
         Team.is_active == active if active is not None else None,
     ]:
