@@ -288,7 +288,7 @@ function AwardRow({ award, competitionId }: { award: PlayerAward; competitionId:
   </View>;
 }
 
-function MatchAwardsSection() {
+function MatchAwardsSection({ kindSelector }: { kindSelector: ReactNode }) {
   const styles = useThemedStyles(stylesheet);
   const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
   const eligible = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
@@ -304,6 +304,7 @@ function MatchAwardsSection() {
     {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
       {eligible.map((item) => <AnimatedTabPill key={item.id} label={item.name} onPress={() => setChosen(item.id)} selected={competition?.id === item.id} style={styles.chip} testID={`award-competition-${item.id}`} />)}
     </ScrollView> : null}
+    {kindSelector}
     {awards.isLoading ? <LoadingState label="Loading awards" /> : rows.length === 0 ? <EmptyState body={copy.emptyAwards} title="No awards yet" /> : rows.map((award: PlayerAward) => <AwardRow award={award} competitionId={competition!.id} key={award.label} />)}
   </View>;
 }
@@ -363,7 +364,7 @@ function TrainingAwardRow({ award, teamId }: { award: TrainingAwardRank; teamId:
   </View>;
 }
 
-function TrainingAwardsSection() {
+function TrainingAwardsSection({ kindSelector }: { kindSelector: ReactNode }) {
   const styles = useThemedStyles(stylesheet);
   const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
   const eligible = useMemo(() => teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [], [teams.data]);
@@ -383,6 +384,7 @@ function TrainingAwardsSection() {
     {eligible.length > 1 ? <ScrollView contentContainerStyle={styles.chips} horizontal showsHorizontalScrollIndicator={false} style={styles.chipBar}>
       {eligible.map((item) => <AnimatedTabPill key={item.id} label={item.name} onPress={() => setChosen(item.id)} selected={team?.id === item.id} style={styles.chip} testID={`training-award-team-${item.id}`} />)}
     </ScrollView> : null}
+    {kindSelector}
     {awards.isLoading ? <LoadingState label="Loading training leaderboards" />
       : rows.length === 0 ? <EmptyState body="Players qualify after three recorded sessions." title="No training leaders yet" />
         : rows.map((award) => <TrainingAwardRow award={award} key={award.metric.key} teamId={team!.id} />)}
@@ -392,9 +394,9 @@ function TrainingAwardsSection() {
 function AwardsSection() {
   const styles = useThemedStyles(stylesheet);
   const [kind, setKind] = useState<'training' | 'match'>('training');
+  const kindSelector = <SegmentedControl label="Leaderboard type" onChange={setKind} options={LEADERBOARD_KINDS} tone="quiet" value={kind} />;
   return <View style={styles.stack}>
-    <SegmentedControl label="Leaderboard type" onChange={setKind} options={LEADERBOARD_KINDS} tone="quiet" value={kind} />
-    {kind === 'training' ? <TrainingAwardsSection /> : <MatchAwardsSection />}
+    {kind === 'training' ? <TrainingAwardsSection kindSelector={kindSelector} /> : <MatchAwardsSection kindSelector={kindSelector} />}
   </View>;
 }
 

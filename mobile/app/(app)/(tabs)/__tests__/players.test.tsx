@@ -341,7 +341,10 @@ describe('PlayersScreen', () => {
   it('uses squad pills for training and competition pills only for match', async () => {
     const screen = await render(<PlayersScreen />, { wrapper });
     fireEvent.press(await screen.findByRole('tab', { name: 'Leaderboards' }));
-    expect(await screen.findByTestId('training-award-team-t-u9')).toBeTruthy();
+    const squad = await screen.findByTestId('training-award-team-t-u9');
+    const training = screen.getByRole('tab', { name: 'Training' });
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs.indexOf(squad)).toBeLessThan(tabs.indexOf(training));
     expect(screen.queryByTestId('award-competition-c-1')).toBeNull();
     fireEvent.press(screen.getByRole('tab', { name: 'Match' }));
     expect(await screen.findByText('Top scorer')).toBeTruthy();
