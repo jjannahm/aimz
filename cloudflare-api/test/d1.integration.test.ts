@@ -2008,3 +2008,115 @@ describe('a player\'s own information', () => {
     expect((await request(`/api/v1/players/${it.player.id}/training-stats`, json('GET', undefined, manager.token))).status).toBe(200);
   });
 });
+
+describe('a month is earned before it is owed', () => {
+  /**
+   * A squad on a monthly plan, and a player on it. The plan generates the
+   * charge, so this is the real path rather than a hand-entered one-off.
+   */
+  async function subscribed() {
+    const admin = await seedUser('admin');
+    const unique = crypto.randomUUID().slice(0, 8);
+    const post = async <T>(path: string, body: unknown): Promise<T> => (await request(path, json('POST', body, admin.token))).json<T>();
+    const squad = await post<{ id: string }>('/api/v1/teams', { name: `AIMZ Dues ${unique}`, is_aimz: true });
+    const player = await post<{ id: string }>('/api/v1/players', { name: 'Layla Hassan', team_id: squad.id, position: 'CM' });
+    const plan = await post<{ id: string }>('/api/v1/fee-plans', { team_id: squad.id, label: 'Monthly subscription', amount_piastres: 500000, due_day: 5 });
+    // A month already past, so the due date is behind us and the charge would
+    // read overdue if attendance did not hold it back.
+    await post(`/api/v1/fee-plans/${plan.id}/generate`, { period: '2026-01' });
+    const charges = await (await request(`/api/v1/fee-charges?player_id=${player.id}`, json('GET', undefined, admin.token))).json<{ items: { id: string }[] }>();
+    return { admin, unique, squad, player, plan, chargeId: charges.items[0]!.id };
+  }
+
+  /** Marks `count` sessions in January 2026, all attended. */
+  async function attend(admin: { token: string }, teamId: string, playerId: string, statuses: string[]) {
+    const sessions = await (await request('/api/v1/training-sessions', json('POST', {
+      team_id: teamId, venue: 'Cairo pitch', duration_minutes: 90,
+      occurrences: statuses.map((unused, index) => `2026-01-${String(index + 6).padStart(2, '0')}T15:00:00.000Z`),
+    }, admin.token))).json<{ id: string }[]>();
+    for (const [index, status] of statuses.entries()) {
+      await request(`/api/v1/training-sessions/${sessions[index]!.id}/attendance`, json('PUT', { entries: [{ player_id: playerId, status }] }, admin.token));
+    }
+    return sessions;
+  }
+
+  const financials = async (playerId: string, token: string) =>
+    (await request(`/api/v1/players/${playerId}/financials`, json('GET', undefined, token)))
+      .json<{ summary: { charged_piastres: number; outstanding_piastres: number }; items: { status: string; sessions_attended: number; sessions_required: number }[] }>();
+
+  it('holds a subscription back until the fourth session, then lets it fall due', async () => {
+    const it = await subscribed();
+
+    // Nothing marked at all: past its date, and still not owed.
+    let money = await financials(it.player.id, it.admin.token);
+    expect(money.items[0]).toMatchObject({ status: 'not_due', sessions_attended: 0, sessions_required: 4 });
+    // And it stays out of the summary until it is real money.
+    expect(money.summary).toMatchObject({ charged_piastres: 0, outstanding_piastres: 0 });
+
+    // Three sessions, one of them late — late is turning up.
+    await attend(it.admin, it.squad.id, it.player.id, ['present', 'late', 'present']);
+    money = await financials(it.player.id, it.admin.token);
+    expect(money.items[0]).toMatchObject({ status: 'not_due', sessions_attended: 3 });
+
+    // An absence does not earn the month either.
+    await attend(it.admin, it.squad.id, it.player.id, ['absent']);
+    money = await financials(it.player.id, it.admin.token);
+    expect(money.items[0]).toMatchObject({ status: 'not_due', sessions_attended: 3 });
+
+    // The fourth she actually attends makes it due, and the due date has gone.
+    await attend(it.admin, it.squad.id, it.player.id, ['present']);
+    money = await financials(it.player.id, it.admin.token);
+    expect(money.items[0]).toMatchObject({ status: 'overdue', sessions_attended: 4 });
+    expect(money.summary).toMatchObject({ charged_piastres: 500000, outstanding_piastres: 500000 });
+  });
+
+  it('keeps money already taken, even before the month is earned', async () => {
+    const it = await subscribed();
+    await request(`/api/v1/fee-charges/${it.chargeId}/payments`, json('POST', { amount_piastres: 200000, paid_on: '2026-01-03', method: 'cash' }, it.admin.token));
+
+    // Paid in advance of earning it: part paid, not "not due yet". Refusing to
+    // show a payment because the month is young would be the app losing money
+    // somebody handed over.
+    let money = await financials(it.player.id, it.admin.token);
+    expect(money.items[0]).toMatchObject({ status: 'partial', sessions_attended: 0 });
+
+    // Settled in full is settled, whatever the register says.
+    await request(`/api/v1/fee-charges/${it.chargeId}/payments`, json('POST', { amount_piastres: 300000, paid_on: '2026-01-04', method: 'cash' }, it.admin.token));
+    money = await financials(it.player.id, it.admin.token);
+    expect(money.items[0]).toMatchObject({ status: 'paid' });
+
+    // And generating the month again raises nothing new.
+    await request(`/api/v1/fee-plans/${it.plan.id}/generate`, json('POST', { period: '2026-01' }, it.admin.token));
+    money = await financials(it.player.id, it.admin.token);
+    expect(money.items).toHaveLength(1);
+  });
+
+  it('follows the register when a correction is approved', async () => {
+    const it = await subscribed();
+    // Four sessions, but she was marked absent at the last one.
+    const sessions = await attend(it.admin, it.squad.id, it.player.id, ['present', 'present', 'present', 'absent']);
+    expect((await financials(it.player.id, it.admin.token)).items[0]).toMatchObject({ status: 'not_due', sessions_attended: 3 });
+
+    // She asks for the fourth to be corrected, and a coach approves it.
+    const player = await seedUser('player', it.player.id);
+    const asked = await (await request(`/api/v1/training-sessions/${sessions[3]!.id}/attendance-requests`,
+      json('POST', { requested_status: 'late', reason: 'I was there' }, player.token))).json<{ id: string }>();
+    await request(`/api/v1/attendance-requests/${asked.id}/approve`, json('POST', {}, it.admin.token));
+
+    // The money follows on the very next read: no job, nothing to notice.
+    expect((await financials(it.player.id, it.admin.token)).items[0]).toMatchObject({ status: 'overdue', sessions_attended: 4 });
+  });
+
+  it('leaves a one-off charge alone: it is not earned by training', async () => {
+    const it = await subscribed();
+    await request('/api/v1/fee-charges', json('POST', {
+      player_id: it.player.id, label: 'Away kit', amount_piastres: 80000, due_on: '2026-01-10',
+    }, it.admin.token));
+
+    const money = await financials(it.player.id, it.admin.token);
+    const kit = money.items.find((item) => (item as unknown as { label: string }).label === 'Away kit')!;
+    // Past its date with no sessions attended, and still overdue: a kit is a
+    // kit whether or not anybody trained.
+    expect(kit).toMatchObject({ status: 'overdue', sessions_attended: null, sessions_required: null });
+  });
+});

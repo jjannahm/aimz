@@ -7,7 +7,7 @@ import { linkedPlayerIds } from "./team-access";
 import type { FeeChargeRow, PlayerReportRow, PlayerRow, TeamRow, UserRow } from "./types";
 import { managePlayer } from "./team-access";
 import { managedTeamIds } from "./team-access";
-import { attendedSql, lateSql } from "./attendance";
+import { attendedByMonth, attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -109,13 +109,16 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
     : { results: [] as { fee_charge_id: string; paid: number }[] };
   const paidByCharge = new Map(paidRows.results.map((row) => [row.fee_charge_id, row.paid]));
   const day = nowIso().slice(0, 10);
+  // A month the player has not yet trained four times in is not money anybody
+  // owes, so it must not be counted overdue on a report a parent reads.
+  const attendedMonths = await attendedByMonth(env, [report.player_id]);
   const fees = charges.results.reduce((sum, charge) => {
     const paid = paidByCharge.get(charge.id) ?? 0;
     return {
       charged_piastres: sum.charged_piastres + charge.amount_piastres,
       paid_piastres: sum.paid_piastres + paid,
       outstanding_piastres: sum.outstanding_piastres + Math.max(0, charge.amount_piastres - paid),
-      overdue: sum.overdue + (feeStatus(charge, paid, day) === "overdue" ? 1 : 0),
+      overdue: sum.overdue + (feeStatus(charge, paid, day, charge.period ? attendedMonths.get(`${report.player_id}|${charge.period}`) ?? 0 : undefined) === "overdue" ? 1 : 0),
     };
   }, { charged_piastres: 0, paid_piastres: 0, outstanding_piastres: 0, overdue: 0 });
 

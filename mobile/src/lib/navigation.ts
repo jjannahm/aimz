@@ -7,9 +7,10 @@ export type TabVisibility = { name: string; title: string; onBar: boolean };
  * Which tabs each role gets.
  *
  * Kept apart from the layout that draws them because it is a rule rather than
- * a rendering. Declaration order is dock order: a family reads their own week
- * first and the academy's second, so Hub leads and Reports closes; an admin
- * has neither and reads Players, Matches, Manage.
+ * a rendering. Declaration order is dock order: Hub, Reports, My Team,
+ * Matches — a family's own week first, then what has been written about them,
+ * then their squad, then the academy's fixtures. An admin has neither of the
+ * first two and reads My Team, Matches, Manage.
  *
  * A manager runs one squad, so they get three — their fixtures, their squad,
  * and the Manage screen held to it — and none of the academy-wide browsing.
@@ -25,10 +26,12 @@ export function tabsForRole(role: UserRole | undefined): TabVisibility[] {
   const isFamily = !isAdmin && !isManager;
   return [
     { name: 'my-team', title: 'Hub', onBar: isFamily },
-    { name: 'players', title: 'Players', onBar: !isManager },
+    { name: 'reports', title: 'Reports', onBar: isFamily },
+    // "My Team" rather than "Players": for a family it is their own squad they
+    // are looking at, not a directory of the academy.
+    { name: 'players', title: 'My Team', onBar: !isManager },
     { name: 'index', title: 'Matches', onBar: true },
     { name: 'squad', title: 'Team', onBar: isManager },
-    { name: 'reports', title: 'Reports', onBar: isFamily },
     { name: 'manage', title: 'Manage', onBar: isAdmin || isManager },
     // Reached from the gear in every screen's header, never from the dock.
     { name: 'settings', title: 'Settings', onBar: false },

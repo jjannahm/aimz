@@ -10,12 +10,14 @@ describe('tabsForRole', () => {
   });
 
   it('keeps the academy dock for an administrator', () => {
-    expect(dock('admin')).toEqual(['Players', 'Matches', 'Manage']);
+    expect(dock('admin')).toEqual(['My Team', 'Matches', 'Manage']);
   });
 
   it('gives a family their own week first', () => {
-    expect(dock('player')).toEqual(['Hub', 'Players', 'Matches', 'Reports']);
-    expect(dock('parent')).toEqual(['Hub', 'Players', 'Matches', 'Reports']);
+    // Hub, then what has been written about them, then their squad, then the
+    // academy's fixtures.
+    expect(dock('player')).toEqual(['Hub', 'Reports', 'My Team', 'Matches']);
+    expect(dock('parent')).toEqual(['Hub', 'Reports', 'My Team', 'Matches']);
   });
 
   it('never gives a family Manage, or anybody else the Team tab', () => {
@@ -24,13 +26,13 @@ describe('tabsForRole', () => {
   });
 
   it('never gives a manager the academy-wide tabs', () => {
-    for (const title of ['Players', 'Hub', 'Reports']) expect(dock('manager')).not.toContain(title);
+    for (const title of ['My Team', 'Hub', 'Reports']) expect(dock('manager')).not.toContain(title);
   });
 
   it('registers every route whatever the role', () => {
     // A tab leaves the dock by having no href; the route stays so a deep link
     // to it still resolves.
-    const names = ['my-team', 'players', 'index', 'squad', 'reports', 'manage', 'settings'];
+    const names = ['my-team', 'reports', 'players', 'index', 'squad', 'manage', 'settings'];
     for (const role of ['admin', 'manager', 'player', 'parent', undefined] as const) {
       expect(tabsForRole(role).map((tab) => tab.name)).toEqual(names);
     }

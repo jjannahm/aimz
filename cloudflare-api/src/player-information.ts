@@ -1,5 +1,6 @@
 import type { Hono } from "hono";
-import { feeStatus } from "./fees";
+import { attendedByMonth } from "./attendance";
+import { feeStatus, SESSIONS_PER_MONTH } from "./fees";
 import { ApiProblem, nowIso, publicPlayer, publicTeam } from "./helpers";
 import { guardPersonalData } from "./team-access";
 import type { FeeChargeRow, FeePaymentRow, PlayerContactRow, PlayerRow, TeamRow } from "./types";
@@ -89,6 +90,9 @@ export function registerPlayerInformationRoutes(app: App): void {
     if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
 
     const charges = await c.env.DB.prepare("SELECT * FROM fee_charges WHERE player_id=? ORDER BY due_on DESC").bind(player.id).all<FeeChargeRow>();
+    // How many sessions she turned up to in each month, which is what decides
+    // whether a subscription has been earned yet.
+    const attended = await attendedByMonth(c.env, [player.id]);
     const ids = charges.results.map((row) => row.id);
     const payments = ids.length
       ? await c.env.DB.prepare(`SELECT * FROM fee_payments WHERE fee_charge_id IN (${ids.map(() => "?").join(",")}) ORDER BY paid_on DESC`).bind(...ids).all<FeePaymentRow>()
@@ -102,16 +106,23 @@ export function registerPlayerInformationRoutes(app: App): void {
 
     const items = charges.results.map((charge) => {
       const paid = paidByCharge.get(charge.id) ?? 0;
+      // Null for a one-off: a kit or a tournament is not earned by training,
+      // and a count beside it would only invite the wrong question.
+      const sessions = charge.period ? attended.get(`${player.id}|${charge.period}`) ?? 0 : null;
       return {
         ...charge,
         paid_piastres: paid,
         outstanding_piastres: Math.max(0, charge.amount_piastres - paid),
-        status: feeStatus(charge, paid, today),
+        status: feeStatus(charge, paid, today, sessions ?? undefined),
+        sessions_attended: sessions,
+        sessions_required: charge.period ? SESSIONS_PER_MONTH : null,
         payments: payments.results.filter((payment) => payment.fee_charge_id === charge.id),
       };
     });
 
-    const live = items.filter((item) => !item.voided_at);
+    // A month not yet earned is not money anybody owes, so it stays out of the
+    // three figures at the top until the fourth session makes it real.
+    const live = items.filter((item) => !item.voided_at && item.status !== "not_due");
     const summary = {
       charged_piastres: live.reduce((total, item) => total + item.amount_piastres, 0),
       paid_piastres: live.reduce((total, item) => total + item.paid_piastres, 0),

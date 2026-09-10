@@ -1,26 +1,66 @@
 import type { Context, Hono } from "hono";
 import { recordAudit } from "./audit";
 import { ApiProblem, adminUser, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
+import { attendedByMonth } from "./attendance";
 import { linkedPlayerIds, requireAimzTeam } from "./team-access";
 import type { FeeChargeRow, FeePaymentRow, FeePlanRow, PlayerRow, TeamRow, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
 
 /** Where a charge stands. Worked out on every read rather than stored. */
-export type FeeStatus = "void" | "paid" | "partial" | "overdue" | "unpaid";
+export type FeeStatus = "void" | "paid" | "partial" | "overdue" | "unpaid" | "not_due";
 
 /**
+ * How many sessions a month's subscription is earned by.
+ *
+ * The academy charges for coaching, not for the calendar: a month in which a
+ * player trained twice is not a month she owes for. Four is the threshold the
+ * academy set.
+ */
+export const SESSIONS_PER_MONTH = 4;
+
+/**
+ * Where a charge stands.
+ *
  * A stored status would be a second version of the truth, and it would go stale
  * the moment the clock passed a due date — with no scheduled worker in this
  * app, nothing would be running to move it on. Derived, it is right at one
- * minute past midnight without anybody having deployed anything.
+ * minute past midnight without anybody having deployed anything. The same now
+ * goes for attendance: the fourth session of the month makes a subscription
+ * fall due, and it does so on the read after the register is marked rather
+ * than on a job that has to notice.
+ *
+ * `attended` is how many sessions the player turned up to inside the month
+ * this charge covers, present and late alike. It is only meaningful for a
+ * monthly subscription; a one-off — a kit, a tournament — has no period and is
+ * due on its date whatever the register says.
  */
-export function feeStatus(charge: { amount_piastres: number; due_on: string; voided_at: string | null }, paid: number, today: string): FeeStatus {
+export function feeStatus(
+  charge: { amount_piastres: number; due_on: string; voided_at: string | null; period?: string | null },
+  paid: number,
+  today: string,
+  attended?: number,
+): FeeStatus {
   if (charge.voided_at) return "void";
   if (paid >= charge.amount_piastres) return "paid";
-  const late = charge.due_on < today;
-  if (late) return "overdue";
-  return paid > 0 ? "partial" : "unpaid";
+  // Money already taken is money already taken, whatever the register says.
+  // A family who paid in advance is part paid, not "not due yet".
+  if (paid > 0) return charge.due_on < today && earned(charge, attended) ? "overdue" : "partial";
+  if (!earned(charge, attended)) return "not_due";
+  return charge.due_on < today ? "overdue" : "unpaid";
+}
+
+/**
+ * Whether a charge has been earned yet.
+ *
+ * True for anything that is not a monthly subscription, and for a subscription
+ * once the fourth session of its month has been attended. An unknown count —
+ * a caller that did not ask — is treated as earned, so a screen that has not
+ * been taught the rule cannot quietly stop showing what is owed.
+ */
+function earned(charge: { period?: string | null }, attended?: number): boolean {
+  if (!charge.period || attended === undefined) return true;
+  return attended >= SESSIONS_PER_MONTH;
 }
 
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/u;
@@ -79,16 +119,27 @@ function publicPlan(row: FeePlanRow, team: TeamRow | null): Record<string, unkno
   return { ...row, is_active: Boolean(row.is_active), team: publicTeam(team) };
 }
 
-function publicCharge(row: FeeChargeRow, paid: number, player: PlayerRow | null, payments?: FeePaymentRow[]): Record<string, unknown> {
+function publicCharge(row: FeeChargeRow, paid: number, player: PlayerRow | null, payments?: FeePaymentRow[], attended?: number): Record<string, unknown> {
   return {
     ...row,
     player: publicPlayer(player),
     paid_piastres: paid,
     outstanding_piastres: Math.max(0, row.amount_piastres - paid),
-    status: feeStatus(row, paid, today()),
+    status: feeStatus(row, paid, today(), attended),
+    sessions_attended: row.period ? attended ?? 0 : null,
+    sessions_required: row.period ? SESSIONS_PER_MONTH : null,
     ...(payments ? { payments } : {}),
   };
 }
+
+/** The attendance behind a list of charges, in one query rather than per row. */
+async function attendanceFor(env: Env, charges: FeeChargeRow[]): Promise<Map<string, number>> {
+  return attendedByMonth(env, [...new Set(charges.filter((charge) => charge.period).map((charge) => charge.player_id))]);
+}
+
+/** What that map says for one charge, or undefined for a one-off. */
+const attendedOn = (tallies: Map<string, number>, charge: FeeChargeRow): number | undefined =>
+  charge.period ? tallies.get(`${charge.player_id}|${charge.period}`) ?? 0 : undefined;
 
 /**
  * The person taking the money, named on the receipt.
@@ -230,7 +281,8 @@ export function registerFeeRoutes(app: App): void {
     ]);
     const paid = await paidByCharge(c.env, rows.results.map((row) => row.id));
     const players = await playersFor(c.env, rows.results.map((row) => row.player_id));
-    const items = rows.results.map((row) => publicCharge(row, paid.get(row.id) ?? 0, players.get(row.player_id) ?? null));
+    const tallies = await attendanceFor(c.env, rows.results);
+    const items = rows.results.map((row) => publicCharge(row, paid.get(row.id) ?? 0, players.get(row.player_id) ?? null, undefined, attendedOn(tallies, row)));
     const status = url.searchParams.get("status");
     return c.json({ items: status ? items.filter((item) => item.status === status) : items, total: count?.total ?? 0, limit, offset });
   });
@@ -243,7 +295,7 @@ export function registerFeeRoutes(app: App): void {
     }
     const payments = await c.env.DB.prepare("SELECT * FROM fee_payments WHERE fee_charge_id=? ORDER BY paid_on, created_at").bind(charge.id).all<FeePaymentRow>();
     const paid = payments.results.reduce((sum, row) => sum + row.amount_piastres, 0);
-    return c.json(publicCharge(charge, paid, await playerOf(c.env, charge.player_id), payments.results));
+    return c.json(publicCharge(charge, paid, await playerOf(c.env, charge.player_id), payments.results, attendedOn(await attendanceFor(c.env, [charge]), charge)));
   });
 
   app.post("/api/v1/fee-charges", async (c) => {
@@ -292,7 +344,7 @@ export function registerFeeRoutes(app: App): void {
       recordAudit(c.env, actor, { action: "fee_charge_updated", entityType: "fee_charge", entityId: row.id, matchId: null, summary: `${row.label} · ${row.amount_piastres} piastres` }),
     ]);
     const paid = (await paidByCharge(c.env, [row.id])).get(row.id) ?? 0;
-    return c.json(publicCharge(row, paid, await playerOf(c.env, row.player_id)));
+    return c.json(publicCharge(row, paid, await playerOf(c.env, row.player_id), undefined, attendedOn(await attendanceFor(c.env, [row]), row)));
   });
 
   /** Cancelled, not deleted: a receipt already seen still has to be explained. */
@@ -307,7 +359,7 @@ export function registerFeeRoutes(app: App): void {
       recordAudit(c.env, actor, { action: "fee_charge_voided", entityType: "fee_charge", entityId: charge.id, matchId: null, summary: `${charge.label}${reason ? ` · ${reason}` : ""}` }),
     ]);
     const paid = (await paidByCharge(c.env, [charge.id])).get(charge.id) ?? 0;
-    return c.json(publicCharge({ ...charge, voided_at: when, void_reason: reason }, paid, await playerOf(c.env, charge.player_id)));
+    return c.json(publicCharge({ ...charge, voided_at: when, void_reason: reason }, paid, await playerOf(c.env, charge.player_id), undefined, attendedOn(await attendanceFor(c.env, [charge]), charge)));
   });
 
   // ---- payments ----------------------------------------------------------
@@ -342,7 +394,7 @@ export function registerFeeRoutes(app: App): void {
       recordAudit(c.env, actor, { action: "fee_payment_recorded", entityType: "fee_charge", entityId: charge.id, matchId: null, summary: `${row.amount_piastres} piastres · ${row.method}` }),
     ]);
     const payments = await c.env.DB.prepare("SELECT * FROM fee_payments WHERE fee_charge_id=? ORDER BY paid_on, created_at").bind(charge.id).all<FeePaymentRow>();
-    return c.json(publicCharge(charge, alreadyPaid + amount, await playerOf(c.env, charge.player_id), payments.results), 201);
+    return c.json(publicCharge(charge, alreadyPaid + amount, await playerOf(c.env, charge.player_id), payments.results, attendedOn(await attendanceFor(c.env, [charge]), charge)), 201);
   });
 
   app.delete("/api/v1/fee-payments/:id", async (c) => {
@@ -375,6 +427,7 @@ export function registerFeeRoutes(app: App): void {
     const paid = await paidByCharge(c.env, live.map((row) => row.id));
     const players = await playersFor(c.env, live.map((row) => row.player_id));
     const now = today();
+    const ledgerTallies = await attendanceFor(c.env, live);
 
     const byPlayer = new Map<string, { charged: number; paid: number; statuses: FeeStatus[] }>();
     for (const charge of live) {
@@ -382,7 +435,7 @@ export function registerFeeRoutes(app: App): void {
       const entry = byPlayer.get(charge.player_id) ?? { charged: 0, paid: 0, statuses: [] };
       entry.charged += charge.amount_piastres;
       entry.paid += settled;
-      entry.statuses.push(feeStatus(charge, settled, now));
+      entry.statuses.push(feeStatus(charge, settled, now, attendedOn(ledgerTallies, charge)));
       byPlayer.set(charge.player_id, entry);
     }
     const rows = [...byPlayer.entries()].map(([playerId, entry]) => ({

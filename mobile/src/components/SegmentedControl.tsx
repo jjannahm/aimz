@@ -17,6 +17,16 @@ type Props<Value extends string> = {
   /** Readonly, so a caller can declare its choices `as const`. */
   options: readonly SegmentedOption<Value>[];
   value: Value;
+  /**
+   * `quiet` for a row that sits underneath another one.
+   *
+   * Two capsules of identical weight, one above the other, read as one control
+   * somebody has split in half rather than as a choice inside a choice. The
+   * quiet row keeps the same shape and the same selected colour, and gives up
+   * its outline, some of its height and a little of its type size — enough
+   * that the eye takes the top row first.
+   */
+  tone?: 'primary' | 'quiet';
 };
 
 /**
@@ -26,7 +36,8 @@ type Props<Value extends string> = {
  * and slides onto the selected tab, while the bar's clipping supplies the
  * rounded outside corners.
  */
-export function SegmentedControl<Value extends string>({ label, onChange, options, value }: Props<Value>) {
+export function SegmentedControl<Value extends string>({ label, onChange, options, tone = 'primary', value }: Props<Value>) {
+  const quiet = tone === 'quiet';
   const styles = useThemedStyles(stylesheet);
   const [boxes, setBoxes] = useState<Partial<Record<Value, LayoutRectangle>>>({});
   const [reduceMotion, setReduceMotion] = useState(true);
@@ -73,7 +84,7 @@ export function SegmentedControl<Value extends string>({ label, onChange, option
   }, [box?.width, box?.x, reduceMotion, translateX, value]);
 
   return (
-    <View accessibilityLabel={label} accessibilityRole="tablist" style={styles.bar}>
+    <View accessibilityLabel={label} accessibilityRole="tablist" style={[styles.bar, quiet && styles.barQuiet]}>
       {box ? (
         <Animated.View
           accessible={false}
@@ -100,9 +111,9 @@ export function SegmentedControl<Value extends string>({ label, onChange, option
               });
             }}
             onPress={() => onChange(option.value)}
-            style={({ pressed }) => [styles.segment, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.segment, quiet && styles.segmentQuiet, pressed && styles.pressed]}
           >
-            <Text numberOfLines={1} style={[styles.label, selected && styles.labelOn]}>{option.label}</Text>
+            <Text numberOfLines={1} style={[styles.label, quiet && styles.labelQuiet, selected && styles.labelOn]}>{option.label}</Text>
           </Pressable>
         );
       })}
@@ -142,6 +153,11 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     minWidth: 0,
     paddingHorizontal: 0,
   },
+  // Same capsule, less of it: no outline, a flatter ground, and a shorter row
+  // that still clears the minimum touch target.
+  barQuiet: { backgroundColor: colors.surface, borderColor: 'transparent' },
+  segmentQuiet: { minHeight: theme.touch.minimum - theme.spacing.sm },
+  labelQuiet: { fontSize: theme.type.caption },
   label: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.label, textAlign: 'center' },
   labelOn: { color: colors.onAccent, fontFamily: theme.font.bold },
   pressed: { opacity: 0.7 },
