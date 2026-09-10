@@ -5,6 +5,7 @@ import { summariseMilestones } from "./milestones";
 import { applyStanding, AWARDS, FORM_LENGTH, outcome, type AwardDefinition } from "./scoring-rules";
 import type { AwardTotals, CompetitionGroupRow, CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
 import { guardCompetition, guardPlayer, guardTeam } from "./team-access";
+import { attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -212,12 +213,15 @@ export function registerStatsRoutes(app: App): void {
       // actually took a register for: a session nobody marked counts against
       // nobody, and a player marked at none has no percentage rather than a
       // zero that reads as never turning up.
-      c.env.DB.prepare("SELECT SUM(CASE WHEN status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected FROM training_attendance WHERE player_id=?").bind(player.id).first<{ attended: number | null; expected: number }>(),
+      c.env.DB.prepare(`SELECT ${attendedSql()} attended, ${lateSql()} late, COUNT(*) expected FROM training_attendance WHERE player_id=?`).bind(player.id).first<{ attended: number | null; late: number | null; expected: number }>(),
     ]);
     const expected = attendance?.expected ?? 0;
     const attended = attendance?.attended ?? 0;
     const training = {
       trainings_attended: attended,
+      // Counted again on its own: the percentage says she turned up, this says
+      // how often she was not there for the start of it.
+      trainings_late: attendance?.late ?? 0,
       trainings_expected: expected,
       training_attendance_pct: expected ? Math.round((attended / expected) * 100) : null,
     };

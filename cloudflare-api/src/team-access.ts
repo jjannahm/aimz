@@ -323,3 +323,42 @@ export async function manageTrainingSession(c: Context<{ Bindings: Env }>, sessi
   assertCanManageTeam(scope, session.team_id);
   return user;
 }
+
+/**
+ * Who answers a request to correct a register.
+ *
+ * An administrator anywhere, or the manager of that player's squad — the same
+ * pair who may mark the register in the first place, which is the point: a
+ * correction is a change to the register, so it is decided by whoever could
+ * have made that change directly.
+ *
+ * A player or parent reaches a 403 here. They raise requests; they do not
+ * answer them, including their own.
+ */
+export async function decidesForPlayer(c: Context<{ Bindings: Env }>, playerId: string): Promise<UserRow> {
+  const { user, scope } = await managingUser(c);
+  if (scope === null) return user;
+  const player = await c.env.DB.prepare("SELECT team_id FROM players WHERE id = ?").bind(playerId).first<{ team_id: string }>();
+  if (!player) throw new ApiProblem(404, "player_not_found", "Player not found.");
+  assertCanManageTeam(scope, player.team_id);
+  return user;
+}
+
+/**
+ * Who may raise one: the family whose record it is.
+ *
+ * The other way round from `decidesForPlayer`, and deliberately closed to an
+ * administrator and a manager — they change the register directly, and a
+ * request from the person who would approve it is a round trip with nobody
+ * else in it.
+ */
+export async function requestsForPlayer(c: Context<{ Bindings: Env }>, playerId: string): Promise<UserRow> {
+  const user = await currentUser(c);
+  if (user.role === "admin" || user.role === "manager") {
+    throw new ApiProblem(403, "mark_directly", "You can change this register yourself rather than requesting a change.");
+  }
+  if (!(await linkedPlayerIds(c.env, user)).includes(playerId)) {
+    throw new ApiProblem(403, "player_access_denied", "You can only ask about your own family's attendance.");
+  }
+  return user;
+}

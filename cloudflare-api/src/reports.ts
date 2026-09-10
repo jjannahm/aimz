@@ -7,6 +7,7 @@ import { linkedPlayerIds } from "./team-access";
 import type { FeeChargeRow, PlayerReportRow, PlayerRow, TeamRow, UserRow } from "./types";
 import { managePlayer } from "./team-access";
 import { managedTeamIds } from "./team-access";
+import { attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -17,9 +18,14 @@ interface ReportSnapshot {
    * the training marks; a report published before them has no `training` and
    * is read as having none, which is what it recorded.
    */
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   player: { name: string; team_name: string | null; position: string | null; jersey_number: number | null };
-  attendance: { attended: number; expected: number; pct: number | null };
+  /**
+   * `late` arrives at version 3. A report published before it has none and is
+   * read as having none, which is what it recorded: the register could not
+   * hold the answer at the time.
+   */
+  attendance: { attended: number; expected: number; pct: number | null; late?: number };
   /** How the player was marked at training over the period. */
   training?: { key: string; label: string; kind: "rating" | "count"; max_value: number | null; value: number; sessions: number }[];
   /**
@@ -62,11 +68,11 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
   const [attendance, marks, outside, matches, charges] = await Promise.all([
     // Only sessions inside the period, and only those somebody took a register
     // for: a session nobody marked counts against nobody.
-    env.DB.prepare(`SELECT SUM(CASE WHEN a.status='present' THEN 1 ELSE 0 END) attended, COUNT(*) expected
+    env.DB.prepare(`SELECT ${attendedSql("a")} attended, ${lateSql("a")} late, COUNT(*) expected
       FROM training_attendance a JOIN training_sessions s ON s.id = a.training_session_id
       WHERE a.player_id = ? AND s.starts_at >= ? AND s.starts_at < ?`)
       .bind(report.player_id, report.period_start, `${report.period_end}T23:59:59.999Z`)
-      .first<{ attended: number | null; expected: number }>(),
+      .first<{ attended: number | null; late: number | null; expected: number }>(),
     // The marks given inside the period, with the metric they belong to. A
     // rating averages and a count adds up, which is why the kind comes along.
     env.DB.prepare(`SELECT t.key, t.label, t.kind, t.max_value, t.sort_order,
@@ -126,14 +132,14 @@ async function measure(env: Env, report: PlayerReportRow): Promise<ReportSnapsho
     sessions: row.sessions,
   }));
   return {
-    version: 2,
+    version: 3,
     player: {
       name: player?.name ?? "Unknown player",
       team_name: team?.name ?? null,
       position: player?.position ?? null,
       jersey_number: player?.jersey_number ?? null,
     },
-    attendance: { attended, expected, pct: expected ? Math.round((attended / expected) * 100) : null },
+    attendance: { attended, expected, pct: expected ? Math.round((attended / expected) * 100) : null, late: attendance?.late ?? 0 },
     training,
     marks_outside: outside && outside.sessions > 0 && outside.first && outside.last
       ? { sessions: outside.sessions, first: outside.first, last: outside.last }
