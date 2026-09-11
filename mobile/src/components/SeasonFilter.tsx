@@ -25,4 +25,6 @@ export function SeasonFilter({ seasons, value, onChange }: { seasons: string[]; 
 export const seasonQuery = (value: string, seasons: string[]): string | undefined =>
   seasons.includes(value) ? value : undefined;
 
-const styles = StyleSheet.create({ row: { marginBottom: theme.spacing.xs, width: '100%' } });
+// Match the horizontal inset of the Training Stats / Match Stats row above it,
+// so both controls begin and end on exactly the same vertical guides.
+const styles = StyleSheet.create({ row: { marginBottom: theme.spacing.xs, paddingHorizontal: theme.spacing.md } });
