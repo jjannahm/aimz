@@ -17,7 +17,7 @@ import { confirmManageWrite } from '@/src/lib/manageToasts';
 import { showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
-import type { AdminAccount, Player, UserRole } from '@/src/types/api';
+import type { AdminAccount, Player, StaffRole, Team } from '@/src/types/api';
 
 const roleName = (role: string) => role === 'admin' ? 'Administrator' : role === 'parent' ? 'Parent' : role === 'coach' ? 'Coach' : 'Player';
 
@@ -57,7 +57,13 @@ function describeLink(account: AdminAccount): { text: string; missing: boolean }
     return { text: names.length ? names.join(', ') : 'No children linked', missing: names.length === 0 };
   }
   if (account.role === 'admin') return { text: 'Manages the academy', missing: false };
-  if (account.role === 'coach') return { text: account.team ? `Coaches ${account.team.name}` : 'Coach account', missing: false };
+  if (account.role === 'coach') {
+    // Unassigned is worth saying loudly: a coach with no squad can sign in and
+    // reach nothing, which looks like a broken account rather than a missing
+    // line in a form.
+    if (!account.staff) return { text: 'No squad assigned', missing: true };
+    return { text: account.staff.role === 'assistant_coach' ? `Assists ${account.staff.team.name}` : `Coaches ${account.staff.team.name}`, missing: false };
+  }
   if (!account.player) return { text: 'Not linked', missing: true };
   return { text: account.team ? `${account.player.name} · ${account.team.name}` : account.player.name, missing: false };
 }
@@ -69,7 +75,7 @@ function describeLink(account: AdminAccount): { text: string; missing: boolean }
  * endpoint behind this picker writes `users.player_id`, which nothing reads for
  * a parent. Offering it would look like a fix and do nothing.
  */
-function AccountRow({ account, players }: { account: AdminAccount; players: Player[] }) {
+function AccountRow({ account, players, teams }: { account: AdminAccount; players: Player[]; teams: Team[] }) {
   const colors = useColors();
   const styles = useThemedStyles(stylesheet);
   const client = useQueryClient();
@@ -89,7 +95,16 @@ function AccountRow({ account, players }: { account: AdminAccount; players: Play
     onError: (error) => showMessage('Expiry not changed', (error as ApiError).message),
     onSuccess: async () => { await invalidateAfterWrite(client, 'account'); confirmManageWrite('account', 'saved'); },
   });
+  // The squad a coach runs, and in what capacity. One write for both, because
+  // "the U11 assistant" is one fact rather than two independent ones.
+  const squad = useMutation({
+    mutationFn: ({ teamId, role }: { teamId: string | null; role: StaffRole }) => api.setUserTeam(account.id, teamId, role),
+    onError: (error) => showMessage('Squad not changed', (error as ApiError).message),
+    onSuccess: async (_result, sent) => { await invalidateAfterWrite(client, 'account'); confirmManageWrite('account', sent.teamId ? 'saved' : 'deleted'); },
+  });
   const linkable = account.role === 'player';
+  const coaches = account.role === 'coach';
+  const staffRole = account.staff?.role ?? 'coach';
   const { text, missing } = describeLink(account);
   const remaining = describeRemaining(account.expires_at);
   const spent = remaining === 'Expired';
@@ -126,6 +141,26 @@ function AccountRow({ account, players }: { account: AdminAccount; players: Play
         {account.player ? <AppButton compact disabled={link.isPending} label="Unlink" onPress={() => link.mutate(null)} variant="ghost" /> : null}
         <Text style={styles.note}>This account reads the linked player&rsquo;s stats, schedule and announcements as its own. A player already claimed by another account is refused.</Text>
       </> : null}
+      {/* A coach's squad is what every squad-scoped screen she opens follows
+        * from — her fixtures, her register, her reports — and it is the name
+        * that reaches the top of that squad's match report. */}
+      {coaches ? <>
+        <ChoiceField
+          label="Linked team"
+          onChange={(teamId) => squad.mutate({ role: staffRole, teamId: teamId || null })}
+          options={teams.map((team) => ({ label: team.name, value: team.id }))}
+          placeholder="Choose a squad"
+          value={account.staff?.team.id ?? ''}
+        />
+        <ChoiceField
+          label="Role on the squad"
+          onChange={(role) => squad.mutate({ role: role as StaffRole, teamId: account.staff?.team.id ?? null })}
+          options={[{ label: 'Coach', value: 'coach' }, { label: 'Assistant Coach', value: 'assistant_coach' }]}
+          value={staffRole}
+        />
+        {account.staff ? <AppButton compact disabled={squad.isPending} label="Unassign" onPress={() => squad.mutate({ role: 'coach', teamId: null })} variant="ghost" /> : null}
+        <Text style={styles.note}>This account manages the squad&rsquo;s schedule, register and reports, and is named on its match reports. Unassigning leaves the login working with nothing behind it.</Text>
+      </> : null}
       <ChoiceField
         label="Access"
         onChange={(value) => expiry.mutate(deadlineIn(value === '' ? null : Number(value)))}
@@ -146,69 +181,21 @@ function AccountRow({ account, players }: { account: AdminAccount; players: Play
  * under Invites rather than taking a ninth Manage tab, because that grid is a
  * fixed two-by-four and the two questions are the same question.
  */
-const blankAccount = { name: '', email: '', password: '', role: 'player' as UserRole, hours: '' };
-
-/**
- * An account made here and now, rather than invited.
- *
- * An invitation is the way in for somebody who will be here: they choose their
- * own password and it is theirs. This is for the other case &mdash; a login
- * handed to somebody for a while, whose password you are going to have to tell
- * them, and which is meant to stop working.
- */
-function NewAccount() {
-  const styles = useThemedStyles(stylesheet);
-  const client = useQueryClient();
-  const [draft, setDraft] = React.useState(blankAccount);
-  const [open, setOpen] = React.useState(false);
-  const create = useMutation({
-    mutationFn: () => {
-      if (!draft.name.trim() || !draft.email.trim()) throw new Error('Enter a name and an email address.');
-      if (draft.password.length < 8) throw new Error('Choose a password of at least 8 characters.');
-      return api.createUser({
-        name: draft.name.trim(), email: draft.email.trim(), password: draft.password,
-        role: draft.role, expires_at: deadlineIn(draft.hours === '' ? null : Number(draft.hours)),
-      });
-    },
-    onError: (error) => showMessage('Account not created', (error as Error).message),
-    onSuccess: async () => { await invalidateAfterWrite(client, 'account'); setDraft(blankAccount); confirmManageWrite('account', 'created'); },
-  });
-  return <CollapsibleCard onOpenChange={setOpen} open={open} summary="A login handed out for a set length of time." title="Create an account" tone="raised">
-    <FormField label="Name" onChangeText={(name) => setDraft((current) => ({ ...current, name }))} value={draft.name} />
-    <FormField autoCapitalize="none" inputMode="email" keyboardType="email-address" label="Email" onChangeText={(email) => setDraft((current) => ({ ...current, email }))} value={draft.email} />
-    <FormField hint="At least 8 characters. You will have to pass this on yourself." label="Password" onChangeText={(password) => setDraft((current) => ({ ...current, password }))} secureTextEntry value={draft.password} />
-    <ChoiceField
-      label="Role"
-      onChange={(role) => setDraft((current) => ({ ...current, role: role as UserRole }))}
-      options={[{ label: 'Player', value: 'player' }, { label: 'Parent', value: 'parent' }, { label: 'Administrator', value: 'admin' }]}
-      value={draft.role}
-    />
-    <ChoiceField
-      label="Access"
-      onChange={(hours) => setDraft((current) => ({ ...current, hours }))}
-      options={LIFETIMES.map((option) => ({ label: option.hours === null ? option.label : `Ends in ${option.label}`, value: String(option.hours ?? '') }))}
-      value={draft.hours}
-    />
-    <Text style={styles.note}>A player or parent made here starts with nothing linked to it. Link it below, or send an invitation instead so they pick their own password.</Text>
-    <AppButton label="Create account" loading={create.isPending} onPress={() => create.mutate()} />
-  </CollapsibleCard>;
-}
-
-export function AccountsSection({ players }: { players: Player[] }) {
+export function AccountsSection({ players, teams }: { players: Player[]; teams: Team[] }) {
   const styles = useThemedStyles(stylesheet);
   const [search, setSearch] = React.useState('');
   const accounts = useQuery({ queryKey: cacheKeys.accounts, queryFn: () => api.adminUsers() });
   const items = accounts.data?.items ?? [];
   const shown = narrowBySearch(items, search, (account) => `${account.name} ${account.email} ${roleName(account.role)} ${describeLink(account).text}`);
   if (accounts.isError) return <ErrorState message={(accounts.error as ApiError).message} onRetry={() => accounts.refetch()} />;
-  return <><NewAccount /><CollapsibleSection
+  return <><CollapsibleSection
     count={items.length}
     search={{ label: 'Search accounts', onChange: setSearch, placeholder: 'Search a name, email or player…', resultCount: shown.length, value: search }}
     title="Registered accounts"
   >
     {accounts.isLoading ? <LoadingState /> : !items.length ? <Text style={styles.empty}>Nobody has registered yet.</Text>
       : !shown.length ? <Text style={styles.empty}>Nothing matches that.</Text>
-        : <View style={styles.list}>{shown.map((account) => <AccountRow account={account} key={account.id} players={players} />)}</View>}
+        : <View style={styles.list}>{shown.map((account) => <AccountRow account={account} key={account.id} players={players} teams={teams} />)}</View>}
   </CollapsibleSection></>;
 }
 

@@ -129,30 +129,58 @@ export function MatchReportCard({ report, size = 'page', brand = false }: { repo
     {report.penalties_missed.length ? <>{heading('Penalties missed')}<FlatCard radius={theme.radius.md} style={styles.block}>{report.penalties_missed.map(missed)}</FlatCard></> : null}
     {report.substitutions.length ? <>{heading('Substitutions')}<FlatCard radius={theme.radius.md} style={styles.block}>{report.substitutions.map(swap)}</FlatCard></> : null}
 
-    {report.squads.map((squad) => <View key={squad.team} style={styles.stack}>
-      {heading(squad.team)}
-      <FlatCard radius={theme.radius.md} style={styles.block}>
-        {squad.players.map((player) => <View key={player.name} style={styles.line}>
-          <Text style={styles.shirt}>{player.jersey_number ?? '—'}</Text>
-          <View style={styles.lineCopy}>
-            <Text style={styles.who}>{player.name}{player.captain ? ' (C)' : ''}</Text>
-            <Text style={styles.meta}>
-              {player.position ? positionName(player.position) : 'Position not set'}
-              {player.started ? '' : ' · substitute'}
-            </Text>
-          </View>
-          {/* Only what she actually did: a row of noughts beside every name
-            * turns a team sheet into a spreadsheet. */}
+    {report.squads.map((squad) => {
+      // A team sheet is read in two halves — who started, and who was on the
+      // bench — so the page says so once at the top of each rather than
+      // appending "substitute" to eleven names in a row.
+      const starters = squad.players.filter((player) => player.started);
+      const bench = squad.players.filter((player) => !player.started);
+      const line = (player: (typeof squad.players)[number]) => <View key={player.name} style={styles.line}>
+        <Text style={styles.shirt}>{player.jersey_number ?? '—'}</Text>
+        <View style={styles.lineCopy}>
+          <Text style={styles.who}>{player.name}{player.captain ? ' (C)' : ''}</Text>
+          <Text style={styles.meta}>{player.position ? positionName(player.position) : 'Position not set'}</Text>
+        </View>
+        {/* What she did, then how long she was on for. The minutes are the one
+          * figure every name carries — a nought is the answer for somebody who
+          * never came on, and worth saying — so they hold the right-hand edge
+          * on their own and the tallies sit inside them. */}
+        <View style={styles.did}>
           <Text style={styles.tally}>
             {[
-              player.minutes ? `${player.minutes}'` : null,
               player.goals ? `${player.goals} ${player.goals === 1 ? 'goal' : 'goals'}` : null,
               player.assists ? `${player.assists} ${player.assists === 1 ? 'assist' : 'assists'}` : null,
             ].filter(Boolean).join(' · ')}
           </Text>
-        </View>)}
-      </FlatCard>
-    </View>)}
+          <Text style={styles.minutes}>{player.minutes} min</Text>
+        </View>
+      </View>;
+      return <View key={squad.team} style={styles.stack}>
+        {heading(squad.team)}
+        {/* Who picked the side. A report published before the coaches were on
+          * it has no `staff` at all, and simply carries no staff card. */}
+        {squad.staff ? <FlatCard radius={theme.radius.md} style={styles.block}>
+          <View style={styles.staffRow}>
+            <Text style={styles.staffRole}>Coach</Text>
+            <Text style={[styles.staffName, !squad.staff.coach && styles.staffMissing]}>{squad.staff.coach ?? 'Not assigned'}</Text>
+          </View>
+          <View style={styles.staffRow}>
+            <Text style={styles.staffRole}>Assistant Coach</Text>
+            <Text style={[styles.staffName, !squad.staff.assistant_coach && styles.staffMissing]}>{squad.staff.assistant_coach ?? 'Not assigned'}</Text>
+          </View>
+        </FlatCard> : null}
+        {starters.length ? <>
+          <Text style={[styles.heading, styles.subHeading]}>Starters</Text>
+          <FlatCard radius={theme.radius.md} style={styles.block}>{starters.map(line)}</FlatCard>
+        </> : null}
+        {bench.length ? <>
+          <Text style={[styles.heading, styles.subHeading]}>Substitutes</Text>
+          <FlatCard radius={theme.radius.md} style={styles.block}>{bench.map(line)}</FlatCard>
+        </> : null}
+        {/* A sheet with neither half is a match nobody named a team for. */}
+        {!starters.length && !bench.length ? empty('No team sheet was named.') : null}
+      </View>;
+    })}
   </View>;
 }
 
@@ -169,6 +197,15 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   heading: { color: colors.textSecondary, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 1, marginTop: theme.spacing.xs, textTransform: 'uppercase' },
   block: { gap: theme.spacing.sm, padding: theme.spacing.md },
   line: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.md },
+  subHeading: { color: colors.accentSoft },
+  // The minutes hold the edge and the tally sits above them, so the column
+  // lines up down the sheet whatever each player did.
+  did: { alignItems: 'flex-end', flexShrink: 0 },
+  minutes: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontSize: theme.type.caption, fontVariant: ['tabular-nums'] },
+  staffRow: { alignItems: 'baseline', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
+  staffRole: { color: colors.textMuted, fontSize: theme.type.caption },
+  staffName: { color: colors.textPrimary, flexShrink: 1, fontFamily: theme.font.semibold, textAlign: 'right' },
+  staffMissing: { color: colors.textMuted, fontFamily: theme.font.regular },
   lineCopy: { flex: 1, minWidth: 0 },
   minute: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], minWidth: 34 },
   shirt: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], minWidth: 34, textAlign: 'center' },

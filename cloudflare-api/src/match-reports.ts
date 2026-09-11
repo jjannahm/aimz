@@ -2,6 +2,7 @@ import type { Hono } from "hono";
 import { recordAudit } from "./audit";
 import { getJoinedMatch } from "./domain";
 import { ApiProblem, nowIso } from "./helpers";
+import { minutesFromEvents, playedMinutes } from "./match-minutes";
 import { newToken } from "./security";
 import { guardMatch, manageMatch } from "./team-access";
 import type { EventRow, LineupRow, MatchReportRow, StatRow } from "./types";
@@ -43,9 +44,39 @@ export interface MatchReportSnapshot {
   /** One block per AIMZ squad that named a team sheet — usually one. */
   squads: {
     team: string;
+    /** Who ran the squad that day. Either may be unnamed. */
+    staff: { coach: string | null; assistant_coach: string | null };
     players: { name: string; jersey_number: number | null; position: string | null; started: boolean; captain: boolean; minutes: number; goals: number; assists: number; yellow_cards: number; red_cards: number }[];
   }[];
   generated_at: string;
+}
+
+/**
+ * Who runs each squad, for the report's team heading.
+ *
+ * The coach account assigned to the squad is the first answer — it is a real
+ * account, kept current by whoever manages the academy. The name typed on the
+ * squad itself is the fallback, which is all an academy that never made coach
+ * accounts has. Either may be missing, and the report says so rather than
+ * inventing somebody.
+ */
+async function squadStaff(env: Env, teamIds: string[]): Promise<Map<string, { coach: string | null; assistant_coach: string | null }>> {
+  const staff = new Map<string, { coach: string | null; assistant_coach: string | null }>();
+  if (!teamIds.length) return staff;
+  const placeholders = teamIds.map(() => "?").join(",");
+  const [typed, accounts] = await Promise.all([
+    env.DB.prepare(`SELECT id, coach, assistant_coach FROM teams WHERE id IN (${placeholders})`).bind(...teamIds).all<{ id: string; coach: string | null; assistant_coach: string | null }>(),
+    env.DB.prepare(`SELECT ut.team_id, ut.staff_role, u.name FROM user_teams ut JOIN users u ON u.id = ut.user_id
+      WHERE ut.team_id IN (${placeholders}) AND u.role = 'coach' ORDER BY u.name`).bind(...teamIds).all<{ team_id: string; staff_role: string; name: string }>(),
+  ]);
+  for (const row of typed.results) staff.set(row.id, { coach: row.coach, assistant_coach: row.assistant_coach });
+  for (const row of accounts.results) {
+    const held = staff.get(row.team_id) ?? { coach: null, assistant_coach: null };
+    if (row.staff_role === "assistant_coach") held.assistant_coach = row.name;
+    else held.coach = row.name;
+    staff.set(row.team_id, held);
+  }
+  return staff;
 }
 
 /** Who the id belongs to, for every player named anywhere in this match. */
@@ -119,8 +150,14 @@ export async function buildMatchReport(env: Env, matchId: string): Promise<Match
     if (bucket) bucket.push(entry); else byTeam.set(entry.team_id, [entry]);
   }
   const statFor = new Map(stats.results.map((row) => [row.player_id, row]));
+  // Worked out from the sheet and the thread rather than typed in, and for the
+  // match's own length: an academy game of two twenty-minute halves is not
+  // ninety minutes, and neither is a test match whose events land at minute 1.
+  const played = minutesFromEvents(lineup.results, events.results, playedMinutes(match));
+  const staffOf = await squadStaff(env, [...byTeam.keys()]);
   const squads = [...byTeam.entries()].map(([teamId, entries]) => ({
     team: sideName(teamId),
+    staff: staffOf.get(teamId) ?? { coach: null, assistant_coach: null },
     players: entries.map((entry) => {
       const stat = statFor.get(entry.player_id);
       return {
@@ -129,7 +166,9 @@ export async function buildMatchReport(env: Env, matchId: string): Promise<Match
         position: entry.position,
         started: Boolean(entry.is_starter),
         captain: Boolean(entry.is_captain),
-        minutes: stat?.minutes_played ?? 0,
+        // The sheet is the better answer where there is one. A match scored
+        // without a lineup has only what was typed in, and keeps it.
+        minutes: played.get(entry.player_id) ?? stat?.minutes_played ?? 0,
         goals: stat?.goals ?? 0,
         assists: stat?.assists ?? 0,
         yellow_cards: stat?.yellow_cards ?? 0,

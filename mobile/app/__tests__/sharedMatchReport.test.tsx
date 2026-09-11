@@ -76,11 +76,17 @@ describe('the page a match report link opens', () => {
     expect(screen.getByText('Yellow')).toBeTruthy();
     expect(screen.getByText('Salma Adel on')).toBeTruthy();
 
-    // The team sheet, with the captain marked and only what each player did.
+    // The team sheet, in its two halves, with the captain marked, what each
+    // player did, and how long she was on for — a nought included.
     expect(screen.getByText('Nour Hassan (C)')).toBeTruthy();
-    expect(screen.getByText("90' · 2 goals")).toBeTruthy();
-    expect(screen.getByText("60' · 1 assist")).toBeTruthy();
-    expect(screen.getByText('Centre midfield · substitute')).toBeTruthy();
+    expect(screen.getByText('Starters')).toBeTruthy();
+    expect(screen.getByText('Substitutes')).toBeTruthy();
+    expect(screen.getByText('2 goals')).toBeTruthy();
+    expect(screen.getByText('1 assist')).toBeTruthy();
+    expect(screen.getByText('90 min')).toBeTruthy();
+    expect(screen.getByText('60 min')).toBeTruthy();
+    // The half it is in says it now, so the line under a name does not.
+    expect(screen.queryByText(/· substitute/u)).toBeNull();
 
     expect(screen.getByText(/Shared by Coach Nour/)).toBeTruthy();
   });

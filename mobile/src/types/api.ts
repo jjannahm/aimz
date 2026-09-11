@@ -215,7 +215,16 @@ export type Page<T> = { items: T[]; total: number; limit: number; offset: number
  * `player: null` however many children they speak for — so the two must be told
  * apart before an empty `player` is called a broken link.
  */
-export type AdminAccount = User & { player: Player | null; team: Team | null; children: LinkedChild[] };
+/** Which job an account holds on the squad it is assigned to. */
+export type StaffRole = 'coach' | 'assistant_coach';
+
+export type AdminAccount = User & {
+  player: Player | null;
+  team: Team | null;
+  children: LinkedChild[];
+  /** The squad a coach account runs, and in what capacity. Null for everybody else. */
+  staff: { team: { id: string; name: string }; role: StaffRole } | null;
+};
 
 export type TrainingSession = {
   id: string;
@@ -488,7 +497,8 @@ export type MatchReportSnapshot = {
   cards: { minute: number | null; team: string; player: string | null; colour: 'yellow' | 'red' }[];
   substitutions: { minute: number | null; team: string; on: string | null; off: string | null; reason: string | null }[];
   penalties_missed: { minute: number | null; team: string; player: string | null; outcome: string | null }[];
-  squads: { team: string; players: { name: string; jersey_number: number | null; position: string | null; started: boolean; captain: boolean; minutes: number; goals: number; assists: number; yellow_cards: number; red_cards: number }[] }[];
+  /** `staff` arrives with the coaches on the report; one published before it has none. */
+  squads: { team: string; staff?: { coach: string | null; assistant_coach: string | null }; players: { name: string; jersey_number: number | null; position: string | null; started: boolean; captain: boolean; minutes: number; goals: number; assists: number; yellow_cards: number; red_cards: number }[] }[];
   generated_at: string;
 };
 

@@ -38,7 +38,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0044_fee_invoices.sql');
+    expect(applied.results.at(-1)?.name).toBe('0045_coach_staff_role.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
     // 0017 raised the volunteer assignments table and 0042 drops it. Both are
     // still in the chain, so the schema a fresh database ends on is the test:
@@ -2715,6 +2715,74 @@ describe('activity retention', () => {
     expect(kept?.id).toBe(team.id);
     const gone = await testEnv.DB.prepare('SELECT id FROM audit_log WHERE id=?').bind('stale').first();
     expect(gone).toBeNull();
+  });
+});
+
+describe('the squad a coach account runs', () => {
+  /**
+   * `user_teams` was always the answer to "whose squad is this"; it just could
+   * not be set from anywhere but an invitation, and could not say whether she
+   * was the coach or the assistant. Both halves are pinned here, along with the
+   * thing that reads them — the name at the top of a match report.
+   */
+  it('assigns a squad, says which, and replaces it rather than collecting them', async () => {
+    const admin = await seedUser('admin');
+    const coach = await seedUser('coach');
+    const first = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U11', is_aimz: true, age_group: 'U11' }, admin.token))).json<{ id: string }>();
+    const second = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U13', is_aimz: true, age_group: 'U13' }, admin.token))).json<{ id: string }>();
+
+    const assigned = await request(`/api/v1/admin/users/${coach.id}/team`, json('PUT', { team_id: first.id }, admin.token));
+    expect(assigned.status).toBe(200);
+    // The listing pages at a hundred, and every other test in this file has
+    // left accounts behind, so hers is looked for rather than assumed first.
+    type Listed = { id: string; staff: { team: { name: string }; role: string } | null };
+    const findListed = async (id: string): Promise<Listed | undefined> => {
+      for (let offset = 0; offset < 500; offset += 100) {
+        const page = await (await request(`/api/v1/admin/users?limit=100&offset=${offset}`, json('GET', undefined, admin.token))).json<{ items: Listed[] }>();
+        const hit = page.items.find((item) => item.id === id);
+        if (hit) return hit;
+        if (page.items.length < 100) return undefined;
+      }
+      return undefined;
+    };
+    expect((await findListed(coach.id))?.staff).toMatchObject({ team: { name: 'AIMZ U11' }, role: 'coach' });
+
+    // Naming a squad means this squad: the earlier one goes rather than piling up.
+    await request(`/api/v1/admin/users/${coach.id}/team`, json('PUT', { team_id: second.id, staff_role: 'assistant_coach' }, admin.token));
+    const rows = await testEnv.DB.prepare('SELECT team_id, staff_role FROM user_teams WHERE user_id=?').bind(coach.id).all<{ team_id: string; staff_role: string }>();
+    expect(rows.results).toEqual([{ team_id: second.id, staff_role: 'assistant_coach' }]);
+
+    // And what she may open follows it, because it is the same row.
+    const hers = await (await request('/api/v1/teams', json('GET', undefined, coach.token))).json<{ items: { id: string }[] }>();
+    expect(hers.items.map((item) => item.id)).toEqual([second.id]);
+  });
+
+  it('unassigns without deleting the account, and refuses a squad that is not ours', async () => {
+    const admin = await seedUser('admin');
+    const coach = await seedUser('coach');
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U15', is_aimz: true, age_group: 'U15' }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: 'Wadi Degla', is_aimz: false }, admin.token))).json<{ id: string }>();
+    await request(`/api/v1/admin/users/${coach.id}/team`, json('PUT', { team_id: squad.id }, admin.token));
+
+    expect((await request(`/api/v1/admin/users/${coach.id}/team`, json('PUT', { team_id: opponent.id }, admin.token))).status).toBe(422);
+
+    const cleared = await request(`/api/v1/admin/users/${coach.id}/team`, json('PUT', { team_id: null }, admin.token));
+    expect(cleared.status).toBe(200);
+    const left = await testEnv.DB.prepare('SELECT COUNT(*) n FROM user_teams WHERE user_id=?').bind(coach.id).first<{ n: number }>();
+    expect(left?.n).toBe(0);
+    // The account itself is untouched, which is the difference between
+    // unassigning somebody and removing them.
+    expect((await testEnv.DB.prepare('SELECT id FROM users WHERE id=?').bind(coach.id).first())).toBeTruthy();
+  });
+
+  it('is an administrators own to set, and only for a coach', async () => {
+    const admin = await seedUser('admin');
+    const coach = await seedUser('coach');
+    const player = await seedUser('player');
+    const squad = await (await request('/api/v1/teams', json('POST', { name: 'AIMZ U17', is_aimz: true, age_group: 'U17' }, admin.token))).json<{ id: string }>();
+
+    expect((await request(`/api/v1/admin/users/${coach.id}/team`, json('PUT', { team_id: squad.id }, coach.token))).status).toBe(403);
+    expect((await request(`/api/v1/admin/users/${player.id}/team`, json('PUT', { team_id: squad.id }, admin.token))).status).toBe(422);
   });
 });
 
