@@ -130,7 +130,7 @@ describe('PlayersScreen', () => {
     // My Stats opens on the training half now, so the match half is a press away.
     await fireEvent.press(await screen.findByRole('tab', { name: 'Match Stats' }));
     expect(await screen.findByText('Salma Nabil')).toBeTruthy();
-    expect(screen.getByText('Competition')).toBeTruthy();
+    expect(screen.getByText('Appearances')).toBeTruthy();
     expect(screen.getByText('Match breakdown')).toBeTruthy();
     expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
   });
@@ -149,11 +149,10 @@ describe('PlayersScreen', () => {
     // My Stats opens on the training half now, so the match half is a press away.
     await fireEvent.press(await screen.findByRole('tab', { name: 'Match Stats' }));
 
-    expect(await screen.findByRole('tab', { name: 'Career Stats' })).toBeTruthy();
+    expect(await screen.findByLabelText('Season All stats')).toBeTruthy();
     expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
 
-    await fireEvent.press(screen.getByRole('tab', { name: 'Season Stats' }));
-    fireEvent.press(await screen.findByTestId('season-picker'));
+    fireEvent.press(screen.getByTestId('season-picker'));
     fireEvent.press(await screen.findByTestId('season-option-2025/26'));
 
     await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-1', '2025/26'));
