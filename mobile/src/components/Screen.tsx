@@ -11,6 +11,14 @@ import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
 type Props = PropsWithChildren<{
   title: string;
+  /**
+   * A second line under the title, for what the title alone leaves out — a
+   * player's shirt number and position, say. Muted and smaller, so the title
+   * stays the thing being read. Under rather than beside it: the header row
+   * already carries the brand and two round buttons, and a phone's width runs
+   * out before a name, a number and a position do.
+   */
+  subtitle?: string;
   action?: ReactNode;
   scroll?: boolean;
   scrollRef?: RefObject<ScrollView | null>;
@@ -18,7 +26,7 @@ type Props = PropsWithChildren<{
   hideSettings?: boolean;
 }>;
 
-export function Screen({ title, action, scroll = true, scrollRef, hideSettings = false, children }: Props) {
+export function Screen({ title, subtitle, action, scroll = true, scrollRef, hideSettings = false, children }: Props) {
   const styles = useThemedStyles(stylesheet);
   const { width } = useWindowDimensions();
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -30,6 +38,7 @@ export function Screen({ title, action, scroll = true, scrollRef, hideSettings =
         <BrandMark size={28} />
         <View style={styles.heading}>
           <Text accessibilityRole="header" style={styles.title}>{title}</Text>
+          {subtitle ? <Text numberOfLines={1} style={styles.subtitle}>{subtitle}</Text> : null}
         </View>
         {/* Settings left the tab bar, so the header carries it on every screen.
          * It sits inside the same right-hand cluster as a screen's own action,
@@ -74,4 +83,5 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   actions: { alignItems: 'center', flexDirection: 'row', flexShrink: 0, gap: theme.spacing.xs },
   heading: { flex: 1 },
   title: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.display, letterSpacing: -0.7 },
+  subtitle: { color: colors.textMuted, fontFamily: theme.font.regular, fontSize: theme.type.label, marginTop: 2 },
 });

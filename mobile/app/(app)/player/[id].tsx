@@ -13,6 +13,7 @@ import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonF
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { TrainingStatsPanel } from '@/src/components/TrainingStatsPanel';
 import { api } from '@/src/lib/api';
+import { positionName } from '@/src/lib/positions';
 import { useCanSeeInformation } from '@/src/auth/useMyTeam';
 import { useSquadPlaysMatches } from '@/src/lib/squad';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -56,10 +57,20 @@ export default function PlayerDetailScreen() {
 
   if (!id) return <Screen action={<CloseButton />} title="Player" />;
 
+  // Her shirt and her position, under her name. Said here and nowhere else on
+  // the page: the match half used to carry a card repeating all three, which
+  // was the same three facts twice and a card's worth of height before the
+  // first figure. Either may be missing, and what is left still reads.
+  const who = career.data?.player;
+  const said = [
+    who?.jersey_number == null ? null : `#${who.jersey_number}`,
+    positionName(who?.position) || null,
+  ].filter(Boolean).join(' · ');
+
   // Her name heads the page rather than the word "Player stats". The match
   // panel used to be the only thing on here that named her, which left the
   // training half — the half this opens on now — with nobody's name on it.
-  return <Screen action={<CloseButton />} title={career.data?.player.name ?? 'Player stats'}>
+  return <Screen action={<CloseButton />} subtitle={said || undefined} title={career.data?.player.name ?? 'Player stats'}>
     {canSeeInformation === true ? <SegmentedControl label="Which half of the profile" onChange={setSide} options={[STATS, INFORMATION]} value={showing_side} /> : null}
 
     {showing_side === 'information' ? <InformationPanel playerId={id} /> : <>
