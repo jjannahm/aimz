@@ -343,7 +343,7 @@ export function registerAuthRoutes(app: App): void {
     // A parent's roster link lives in user_children, never in users.player_id,
     // so the join below reports every parent as unlinked. Their children are
     // read alongside and grouped here, the way the invitations list does.
-    const [count, rows, children] = await Promise.all([
+    const [count, rows, children, staff] = await Promise.all([
       c.env.DB.prepare("SELECT COUNT(*) total FROM users").first<{ total: number }>(),
       c.env.DB.prepare(`SELECT u.*, p.name player_name, p.team_id player_team_id,
         p.position player_position, p.jersey_number player_jersey_number,
@@ -359,12 +359,66 @@ export function registerAuthRoutes(app: App): void {
       c.env.DB.prepare(`SELECT uc.user_id, p.id, p.name, p.team_id, t.name team_name
         FROM user_children uc JOIN players p ON p.id=uc.player_id LEFT JOIN teams t ON t.id=p.team_id
         ORDER BY p.name`).all<{ user_id: string; id: string; name: string; team_id: string; team_name: string | null }>(),
+      // A coach's squad is not their player's — they have no player. It is the
+      // assignment in `user_teams`, which is also what every squad-scoped
+      // endpoint reads, so the list says the same thing the API enforces.
+      c.env.DB.prepare(`SELECT ut.user_id, ut.team_id, ut.staff_role, t.name team_name
+        FROM user_teams ut JOIN teams t ON t.id = ut.team_id ORDER BY t.name`)
+        .all<{ user_id: string; team_id: string; staff_role: string; team_name: string }>(),
     ]);
     const byUser = new Map<string, { id: string; name: string; team_id: string; team_name: string | null }[]>();
     for (const { user_id, ...child } of children.results) byUser.set(user_id, [...(byUser.get(user_id) ?? []), child]);
-    const items = rows.results.map((row) => ({ ...publicAdminAccount(row), children: byUser.get(row.id) ?? [] }));
+    // One squad to an account here: a coach may run two, and the picker sets
+    // one, so the first is what it shows and what it replaces.
+    const squadOf = new Map<string, { user_id: string; team_id: string; staff_role: string; team_name: string }>();
+    for (const row of staff.results) if (!squadOf.has(row.user_id)) squadOf.set(row.user_id, row);
+    const items = rows.results.map((row) => {
+      const assigned = squadOf.get(row.id);
+      return {
+        ...publicAdminAccount(row),
+        children: byUser.get(row.id) ?? [],
+        // What this account is on that squad: a head coach or an assistant.
+        // Null for everybody who is not assigned to one.
+        staff: assigned ? { team: { id: assigned.team_id, name: assigned.team_name }, role: assigned.staff_role } : null,
+      };
+    });
     return c.json({ items, total: count?.total ?? 0, limit, offset });
   });
+  /**
+   * The squad a coach account runs, and in what capacity.
+   *
+   * Writes `user_teams`, which is what every squad-scoped endpoint already
+   * reads — a coach's Manage, her fixtures, her reports and her register all
+   * follow from this one row, and so does the name on a match report. One
+   * squad at a time from here: the table holds a list because a coach at a
+   * small academy takes two age groups, but naming a squad here means *this*
+   * squad, so an earlier one is replaced rather than added to.
+   *
+   * Passing null unassigns, which leaves the account able to sign in and
+   * nothing else — the same state a coach invited but not yet given a squad
+   * has always been in.
+   */
+  app.put("/api/v1/admin/users/:id/team", async (c) => {
+    await adminUser(c);
+    const target = await c.env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(c.req.param("id")).first<UserRow>();
+    if (!target) throw new ApiProblem(404, "user_not_found", "Account not found.");
+    if (target.role !== "coach") throw new ApiProblem(422, "not_a_coach", "Only a coach account is assigned to a squad.");
+    const body = await jsonObject(c);
+    const teamId = stringField(body, "team_id", { optional: true, nullable: true, max: 36 }) ?? null;
+    const staffRole = body.staff_role === "assistant_coach" ? "assistant_coach" : "coach";
+    const now = nowIso();
+    const statements: D1PreparedStatement[] = [
+      c.env.DB.prepare("DELETE FROM user_teams WHERE user_id = ?").bind(target.id),
+    ];
+    if (teamId) {
+      const team = await c.env.DB.prepare("SELECT id FROM teams WHERE id = ? AND is_aimz = 1").bind(teamId).first();
+      if (!team) throw new ApiProblem(422, "team_not_found", "Choose one of the academy's own squads.");
+      statements.push(c.env.DB.prepare("INSERT INTO user_teams (user_id, team_id, staff_role, created_at) VALUES (?, ?, ?, ?)").bind(target.id, teamId, staffRole, now));
+    }
+    await c.env.DB.batch(statements);
+    return c.json({ id: target.id, team_id: teamId, staff_role: teamId ? staffRole : null });
+  });
+
   app.post("/api/v1/admin/users", async (c) => {
     await adminUser(c);
     const body = await jsonObject(c);

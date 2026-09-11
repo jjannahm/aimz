@@ -524,7 +524,7 @@ export default function ManageScreen() {
       {/* An invitation says who an account will be; the accounts below say who
           took one up, and are where a link made against the wrong player is put
           right. */}
-      {resource === 'invites' ? <AccountsSection players={players.data?.items ?? []} /> : null}
+      {resource === 'invites' ? <AccountsSection players={players.data?.items ?? []} teams={allTeams.filter((team) => team.is_aimz && team.is_active)} /> : null}
     </View>
   </Screen>{createdInvite?.code && createdInvite.share_url ? <InviteSuccess invitation={createdInvite} onClose={() => setCreatedInvite(null)} /> : null}</>;
 }

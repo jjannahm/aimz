@@ -5,11 +5,11 @@ import type { ReactNode } from 'react';
 import { AccountsSection, describeRemaining } from '@/src/components/manage/AccountsSection';
 import { api } from '@/src/lib/api';
 import { showMessage } from '@/src/lib/platformAlert';
-import type { AdminAccount, Player } from '@/src/types/api';
+import type { AdminAccount, Player, Team } from '@/src/types/api';
 
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 jest.mock('@/src/lib/api', () => ({
-  api: { adminUsers: jest.fn(), createUser: jest.fn(), linkUserPlayer: jest.fn(), setUserExpiry: jest.fn() },
+  api: { adminUsers: jest.fn(), createUser: jest.fn(), linkUserPlayer: jest.fn(), setUserExpiry: jest.fn(), setUserTeam: jest.fn() },
   ApiError: class extends Error {},
 }));
 jest.mock('@/src/lib/platformAlert', () => ({
@@ -25,8 +25,16 @@ const player = (id: string, name: string): Player => ({
 
 const players = [player('player-1', 'Amina Adel'), player('player-2', 'Nour Hassan')];
 
+const team = (id: string, name: string): Team => ({
+  id, name, is_aimz: true, squad_code: null, age_group: name, season: '2026/27', is_active: true,
+  logo_key: null, badge_style: null, logo_url: null, coach: null, assistant_coach: null,
+  competition_id: null, competition_group_id: null, created_at: '', updated_at: '',
+} as Team);
+
+const teams = [team('team-u11', 'U11'), team('team-u13', 'U13')];
+
 const account = (over: Partial<AdminAccount> & Pick<AdminAccount, 'id' | 'name' | 'email' | 'role'>): AdminAccount => ({
-  player: null, team: null, children: [], player_id: null, is_active: true, created_at: '', updated_at: '',
+  player: null, team: null, children: [], staff: null, player_id: null, is_active: true, created_at: '', updated_at: '',
   ...over,
 } as AdminAccount);
 
@@ -55,7 +63,7 @@ describe('AccountsSection', () => {
         { id: 'player-2', name: 'Salma Nabil', team_id: 'team-u9', team_name: 'AIMZ U9' },
       ] }),
     ]));
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
 
     expect(await screen.findByText('Mariam Adel, Salma Nabil')).toBeTruthy();
@@ -70,7 +78,7 @@ describe('AccountsSection', () => {
     jest.mocked(api.adminUsers).mockResolvedValue(page([
       account({ id: 'u-1', name: 'Hala Nabil', email: 'hala@aimz.test', role: 'parent' }),
     ]));
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
     expect(await screen.findByText('No children linked')).toBeTruthy();
   });
@@ -80,7 +88,7 @@ describe('AccountsSection', () => {
       account({ id: 'u-2', name: 'Malak Sherif', email: 'malak@aimz.test', role: 'player' }),
     ]));
     jest.mocked(api.linkUserPlayer).mockResolvedValue({ id: 'u-2' } as never);
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
 
     expect(await screen.findByText('Not linked')).toBeTruthy();
@@ -96,7 +104,7 @@ describe('AccountsSection', () => {
       account({ id: 'u-2', name: 'Malak Sherif', email: 'malak@aimz.test', role: 'player' }),
     ]));
     jest.mocked(api.linkUserPlayer).mockRejectedValue(new Error('Another account is already linked to that player.'));
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
 
     await fireEvent.press(await screen.findByLabelText('Malak Sherif, Player, Not linked'));
@@ -110,7 +118,7 @@ describe('AccountsSection', () => {
     jest.mocked(api.adminUsers).mockResolvedValue(page([
       account({ id: 'u-3', name: 'AIMZ Admin', email: 'admin@aimz.test', role: 'admin' }),
     ]));
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
     expect(await screen.findByText('Manages the academy')).toBeTruthy();
     expect(screen.queryByText('Not linked')).toBeNull();
@@ -122,11 +130,50 @@ describe('AccountsSection', () => {
     jest.mocked(api.adminUsers).mockResolvedValue(page([
       account({ id: 'u-4', name: 'Head Coach', email: 'coach@aimz.test', role: 'coach' }),
     ]));
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
-    expect(await screen.findByText('Coach account')).toBeTruthy();
+    // A coach with no squad can sign in and reach nothing, which reads as a
+    // broken account unless the list says what is actually missing.
+    expect(await screen.findByText('No squad assigned')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: /Head Coach, Coach/ }));
     expect(screen.queryByText('Linked player')).toBeNull();
+    expect(screen.getByText('Linked team')).toBeTruthy();
+  });
+
+  /**
+   * The squad is what every screen a coach opens follows from — her fixtures,
+   * her register, her reports — and it is the name that reaches the top of that
+   * squad's match report. Until now it could only be set by an invitation.
+   */
+  it('assigns a coach her squad, and says which one she has', async () => {
+    jest.mocked(api.setUserTeam).mockResolvedValue({ id: 'u-4', team_id: 'team-u11', staff_role: 'coach' } as never);
+    jest.mocked(api.adminUsers).mockResolvedValue(page([
+      account({ id: 'u-4', name: 'Head Coach', email: 'coach@aimz.test', role: 'coach' }),
+    ]));
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
+    await open(screen);
+    await fireEvent.press(await screen.findByRole('button', { name: /Head Coach, Coach/ }));
+
+    await fireEvent.press(screen.getByLabelText('Linked team'));
+    await fireEvent.press(await screen.findByRole('button', { name: 'U11' }));
+    await waitFor(() => expect(api.setUserTeam).toHaveBeenCalledWith('u-4', 'team-u11', 'coach'));
+  });
+
+  it('reads back the squad she has, and whether she assists on it', async () => {
+    jest.mocked(api.adminUsers).mockResolvedValue(page([
+      account({ id: 'u-5', name: 'Second Coach', email: 'second@aimz.test', role: 'coach', staff: { team: { id: 'team-u13', name: 'U13' }, role: 'assistant_coach' } }),
+    ]));
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
+    await open(screen);
+    expect(await screen.findByText('Assists U13')).toBeTruthy();
+  });
+
+  // Accounts are made by invitation, where somebody chooses their own password.
+  it('offers no form for making an account by hand', async () => {
+    jest.mocked(api.adminUsers).mockResolvedValue(page([]));
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
+    await waitFor(() => expect(screen.queryByText('Create an account')).toBeNull());
+    expect(screen.queryByText('Create account')).toBeNull();
   });
 });
 
@@ -173,7 +220,7 @@ describe('AccountsSection expiry', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('says how long each account that expires has left', async () => {
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
     await waitFor(() => expect(screen.getByText('Weekend Guest')).toBeTruthy());
     expect(screen.getByText('Expires in 2 days')).toBeTruthy();
@@ -181,7 +228,7 @@ describe('AccountsSection expiry', () => {
   });
 
   it('says nothing about time on an account that never expires', async () => {
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
     await waitFor(() => expect(screen.getByText('Head Coach')).toBeTruthy());
     expect(screen.queryByText('Never expires')).toBeNull();
@@ -193,7 +240,7 @@ describe('AccountsSection expiry', () => {
     jest.mocked(api.adminUsers).mockResolvedValue(page([
       account({ id: 'u-4', name: 'Visiting Parent', email: 'parent@aimz.test', role: 'parent', expires_at: soon }),
     ]));
-    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    const screen = await render(<AccountsSection players={players} teams={teams} />, { wrapper });
     await open(screen);
     await waitFor(() => expect(screen.getByText('Visiting Parent')).toBeTruthy());
     await fireEvent.press(screen.getByRole('button', { name: /Visiting Parent/ }));
