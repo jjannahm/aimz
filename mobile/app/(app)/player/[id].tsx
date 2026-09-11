@@ -9,7 +9,7 @@ import { MilestonesSection } from '@/src/components/player/MilestonesSection';
 import { InformationPanel } from '@/src/components/player/InformationPanel';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
 import { Screen } from '@/src/components/Screen';
-import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonFilter';
+import { SeasonPicker } from '@/src/components/SeasonPicker';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { TrainingStatsPanel } from '@/src/components/TrainingStatsPanel';
 import { api } from '@/src/lib/api';
@@ -22,6 +22,7 @@ import { useThemedStyles } from '@/src/theme/ThemeProvider';
 const MATCH = { label: 'Match Stats', value: 'match' } as const;
 const TRAINING = { label: 'Training Stats', value: 'training' } as const;
 type Half = 'match' | 'training';
+const STAT_RANGES = [{ label: 'Season Stats', value: 'season' }, { label: 'Career Stats', value: 'career' }] as const;
 
 /**
  * The two halves of a profile: what she has done, and who she is.
@@ -38,7 +39,8 @@ type Side = 'stats' | 'information';
 export default function PlayerDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const styles = useThemedStyles(stylesheet);
-  const [season, setSeason] = React.useState<string>(ALL_SEASONS);
+  const [season, setSeason] = React.useState('');
+  const [range, setRange] = React.useState<'season' | 'career'>('career');
   // Opens on training, the same half My Stats opens on: a coach reading somebody
   // else's record and a family reading their own are looking at one thing.
   const [half, setHalf] = React.useState<Half>('training');
@@ -52,6 +54,9 @@ export default function PlayerDetailScreen() {
   // the way the panel keys an unfiltered read, so "Career" is one shared fetch.
   const career = useQuery({ queryKey: ['player-stats', id, null], queryFn: () => api.playerStats(id), enabled: Boolean(id) });
   const seasons = career.data?.seasons ?? [];
+  React.useEffect(() => {
+    if (!season && seasons.length) setSeason(seasons[0]!);
+  }, [season, seasons]);
   const plays = useSquadPlaysMatches(career.data?.player.team_id);
   const showing: Half = plays ? half : 'training';
 
@@ -79,8 +84,9 @@ export default function PlayerDetailScreen() {
     </View> : null}
 
     {showing === 'match' ? <>
-      <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />
-      <PlayerStatsPanel playerId={id} season={seasonQuery(season, seasons)} />
+      <SegmentedControl label="Statistics range" onChange={setRange} options={STAT_RANGES} tone="quiet" value={range} />
+      {range === 'season' && seasons.length ? <SeasonPicker onChange={setSeason} season={seasons.includes(season) ? season : seasons[0]!} seasons={seasons} /> : null}
+      <PlayerStatsPanel playerId={id} season={range === 'season' ? (seasons.includes(season) ? season : seasons[0]) : undefined} />
       <MilestonesSection milestones={career.data?.milestones ?? { reached: [], streaks: [], next: [] }} />
       <HonoursSection playerId={id} />
       {career.isSuccess && !career.data.matches.length

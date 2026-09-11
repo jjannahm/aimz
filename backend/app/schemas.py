@@ -642,9 +642,23 @@ class PlayerLeaderRow(BaseModel):
     appearances: int
 
 
+class PlayerCompetitionSummary(BaseModel):
+    competition_id: str
+    competition_name: str
+    season: str
+    appearances: int
+    minutes_played: int
+    goals: int
+    assists: int
+    yellow_cards: int
+    red_cards: int
+
+
 class PlayerSeasonSummary(BaseModel):
     player: PlayerRead
     season: str | None
+    seasons: list[str] = Field(default_factory=list)
+    competitions: list[PlayerCompetitionSummary] = Field(default_factory=list)
     appearances: int
     minutes_played: int
     goals: int

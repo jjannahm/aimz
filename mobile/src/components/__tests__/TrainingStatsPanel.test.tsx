@@ -110,75 +110,28 @@ describe("a player read against her squad's attendance", () => {
     expect(screen.getByText('80%')).toBeTruthy();
     expect(screen.getByText('Team Average')).toBeTruthy();
     expect(screen.getByText('60%')).toBeTruthy();
-    // Her own cell holds her own figures and nothing else now.
-    expect(screen.queryByText(/Team avg/iu)).toBeNull();
     expect(screen.getAllByTestId('stat-cell')).toHaveLength(6);
   });
 
-  /**
-   * The overall mark is a summary of the other three rather than a skill of its
-   * own, and the cell it used to close is the squad's now. It is still on every
-   * session line, where it says what it is about.
-   */
-  it('keeps the overall mark out of the summary and on the session line', async () => {
-    const screen = await show(80, 60);
-    await screen.findByText('Dribbling avg');
-    expect(screen.queryByText('Overall Rating avg')).toBeNull();
-    expect(screen.getByText(/Overall 7\/10/u)).toBeTruthy();
-  });
-
-  it('calls her above the squad when she is clear of it', async () => {
-    const screen = await show(80, 60);
-    expect(await screen.findByText('Above average')).toBeTruthy();
-  });
-
-  it('calls her below the squad when she trails it', async () => {
-    const screen = await show(50, 75);
-    expect(await screen.findByText('Below average')).toBeTruthy();
-  });
-
-  /**
-   * The band exists so one missed session does not flip a player from one word
-   * to the other, which means both its edges are worth pinning: five points is
-   * still level, six is not.
-   */
-  it('counts five points either way as level with the squad', async () => {
-    const above = await show(80, 75);
-    expect(await above.findByText('Average')).toBeTruthy();
-
-    const below = await show(70, 75);
-    expect(await below.findByText('Average')).toBeTruthy();
-  });
-
-  it('calls six points a difference', async () => {
-    const screen = await show(81, 75);
-    expect(await screen.findByText('Above average')).toBeTruthy();
-  });
-
-  // Nobody has taken a register for the squad, so there is nothing to be read
-  // against — better silent than a verdict drawn from nothing.
-  it('leaves the comparison out when the squad has no figure', async () => {
+  it('uses a dash when the squad has no figure', async () => {
     const screen = await show(80, null);
     expect(await screen.findByText('80%')).toBeTruthy();
-    expect(screen.queryByText('Team Average')).toBeNull();
-    expect(screen.queryByText(/average/iu)).toBeNull();
+    expect(screen.getByText('Team Average')).toBeTruthy();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 
-  it('shows the outfield ratings and no goalkeeper ratings or minutes', async () => {
+  it('shows the three requested performance averages', async () => {
     const screen = await show(80, 60);
     expect(await screen.findByText('Dribbling avg')).toBeTruthy();
     expect(screen.getByText('Shooting avg')).toBeTruthy();
     expect(screen.getByText('Passing avg')).toBeTruthy();
     expect(screen.queryByText('Shot Stopping avg')).toBeNull();
-    expect(screen.queryByText('Minutes trained')).toBeNull();
   });
 
-  it('switches the summary and session breakdown to goalkeeper ratings', async () => {
+  it('keeps all six cells when those metrics do not apply to a goalkeeper', async () => {
     const screen = await show(80, 60, 'GK');
-    expect(await screen.findByText('Shot Stopping avg')).toBeTruthy();
-    expect(screen.getByText('Handling avg')).toBeTruthy();
-    expect(screen.getByText('Distribution avg')).toBeTruthy();
-    expect(screen.queryByText('Dribbling avg')).toBeNull();
+    expect(await screen.findByText('Dribbling avg')).toBeTruthy();
+    expect(screen.getAllByTestId('stat-cell')).toHaveLength(6);
     expect(screen.getByText(/Overall 7\/10 · Shot Stopping 8\/10 · Handling 9\/10 · Distribution 10\/10/)).toBeTruthy();
   });
 });

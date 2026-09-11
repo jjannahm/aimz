@@ -20,13 +20,15 @@ type Props = PropsWithChildren<{
    */
   subtitle?: string;
   action?: ReactNode;
+  /** A page-specific utility placed immediately before Settings. */
+  utility?: ReactNode;
   scroll?: boolean;
   scrollRef?: RefObject<ScrollView | null>;
   /** Settings itself, which has nowhere to go. */
   hideSettings?: boolean;
 }>;
 
-export function Screen({ title, subtitle, action, scroll = true, scrollRef, hideSettings = false, children }: Props) {
+export function Screen({ title, subtitle, action, utility, scroll = true, scrollRef, hideSettings = false, children }: Props) {
   const styles = useThemedStyles(stylesheet);
   const { width } = useWindowDimensions();
   const [headerHeight, setHeaderHeight] = useState(0);
@@ -44,6 +46,7 @@ export function Screen({ title, subtitle, action, scroll = true, scrollRef, hide
          * It sits inside the same right-hand cluster as a screen's own action,
          * left of it, so a close button stays on the outside edge. */}
         <View style={styles.actions}>
+          {utility}
           {hideSettings ? null : <SettingsButton />}
           {action}
         </View>

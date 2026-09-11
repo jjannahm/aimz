@@ -22,6 +22,7 @@ from app.schemas import (
     HeadToHead,
     HeadToHeadMeeting,
     PlayerAward,
+    PlayerCompetitionSummary,
     PlayerHonour,
     PlayerHonours,
     PlayerLeaderRow,
@@ -218,19 +219,59 @@ async def player_stats(
     player = await session.get(Player, player_id)
     if player is None:
         raise api_error(404, "player_not_found", "Player not found.")
+    seasons = list((await session.scalars(
+        select(Competition.season)
+        .distinct()
+        .join(Match, Match.competition_id == Competition.id)
+        .join(PlayerMatchStat, PlayerMatchStat.match_id == Match.id)
+        .where(PlayerMatchStat.player_id == player_id, Match.status == MatchStatus.finished)
+        .order_by(Competition.season.desc())
+    )).all())
     query = (
-        select(PlayerMatchStat)
-        .join(Match)
-        .join(Competition)
+        select(PlayerMatchStat, Competition)
+        .select_from(PlayerMatchStat)
+        .join(Match, Match.id == PlayerMatchStat.match_id)
+        .join(Competition, Competition.id == Match.competition_id)
         .where(PlayerMatchStat.player_id == player_id, Match.status == MatchStatus.finished)
         .order_by(Match.kickoff_datetime.desc())
     )
     if season:
         query = query.where(Competition.season == season)
-    rows = list((await session.scalars(query)).all())
+    result = list((await session.execute(query)).all())
+    rows = [row[0] for row in result]
+    grouped: dict[str, dict[str, object]] = {}
+    for stat, competition in result:
+        values = grouped.setdefault(competition.id, {
+            "competition": competition,
+            "appearances": 0,
+            "minutes_played": 0,
+            "goals": 0,
+            "assists": 0,
+            "yellow_cards": 0,
+            "red_cards": 0,
+        })
+        values["appearances"] += int(stat.appeared)
+        for key in ("minutes_played", "goals", "assists", "yellow_cards", "red_cards"):
+            values[key] += getattr(stat, key)
+    competitions = [
+        PlayerCompetitionSummary(
+            competition_id=values["competition"].id,
+            competition_name=values["competition"].name,
+            season=values["competition"].season,
+            appearances=values["appearances"],
+            minutes_played=values["minutes_played"],
+            goals=values["goals"],
+            assists=values["assists"],
+            yellow_cards=values["yellow_cards"],
+            red_cards=values["red_cards"],
+        )
+        for values in grouped.values()
+    ]
     return PlayerSeasonSummary(
         player=PlayerRead.model_validate(player),
         season=season,
+        seasons=seasons,
+        competitions=competitions,
         appearances=sum(row.appeared for row in rows),
         minutes_played=sum(row.minutes_played for row in rows),
         goals=sum(row.goals for row in rows),

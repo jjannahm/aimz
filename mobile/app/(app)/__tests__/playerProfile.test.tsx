@@ -126,20 +126,22 @@ describe('PlayerDetailScreen', () => {
   // same way and say the same words.
   it('reads every season until one is chosen', async () => {
     const screen = await matchHalf();
-    expect(await screen.findByLabelText('Season All stats')).toBeTruthy();
+    expect(await screen.findByRole('tab', { name: 'Career Stats' })).toBeTruthy();
     expect(api.playerStats).toHaveBeenCalledWith('p-1', undefined);
 
-    fireEvent.press(screen.getByTestId('season-picker'));
+    await fireEvent.press(screen.getByRole('tab', { name: 'Season Stats' }));
+    fireEvent.press(await screen.findByTestId('season-picker'));
     fireEvent.press(await screen.findByTestId('season-option-2025/26'));
 
     await waitFor(() => expect(api.playerStats).toHaveBeenCalledWith('p-1', '2025/26'));
   });
 
-  it('offers the filter to a player with a single season on record', async () => {
+  it('shows the selected season when only one season is on record', async () => {
     jest.mocked(api.playerStats).mockResolvedValue(summary({ seasons: ['2026/27'] }));
     const screen = await matchHalf();
     expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
-    expect(screen.getByTestId('season-picker')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('tab', { name: 'Season Stats' }));
+    expect((await screen.findAllByText('2026/27')).length).toBeGreaterThan(0);
   });
 
   // Nothing to filter, so nothing is drawn.
@@ -168,7 +170,7 @@ describe('PlayerDetailScreen', () => {
       trainings_attended: 7, trainings_expected: 10, training_attendance_pct: 70,
     }));
     const screen = await matchHalf();
-    expect(await screen.findByText('Appearances')).toBeTruthy();
+    expect(await screen.findByText('Competition')).toBeTruthy();
     expect(screen.queryByText('70%')).toBeNull();
     expect(screen.queryByText('Training · 7/10')).toBeNull();
   });

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { CloseButton } from '@/src/components/CloseButton';
@@ -10,6 +10,7 @@ import { Screen } from '@/src/components/Screen';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { TeamAvatar } from '@/src/components/TeamAvatar';
+import { narrowBySearch } from '@/src/components/SearchField';
 import { api, ApiError } from '@/src/lib/api';
 import { cacheKeys } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
@@ -83,17 +84,19 @@ function FixtureRow({ match, teamId }: { match: Match; teamId: string }) {
  * this as its Player Stats half — the same roster, the same totals, opening
  * the same profile — rather than a coach-shaped copy of it.
  */
-export function Squad({ teamId }: { teamId: string }) {
+export function Squad({ teamId, search = '', onResultCount }: { teamId: string; search?: string; onResultCount?: (count: number) => void }) {
   const styles = useThemedStyles(stylesheet);
   const players = useQuery({ queryKey: [...cacheKeys.players, 'team', teamId], queryFn: () => api.players(`?team_id=${encodeURIComponent(teamId)}&limit=100`) });
   const stats = useQuery({ queryKey: ['squad-stats', teamId], queryFn: () => api.squadStats(teamId) });
+  const roster = narrowBySearch(byPosition(players.data?.items ?? []), search, (player) => `${player.name} ${player.position} ${player.jersey_number ?? ''}`);
+  useEffect(() => onResultCount?.(roster.length), [onResultCount, roster.length]);
   if (players.isLoading) return <LoadingState label="Loading squad" />;
   if (players.isError) return <ErrorState message={(players.error as ApiError).message} onRetry={() => players.refetch()} />;
   // Read the way a team sheet is: keepers, defenders, midfield, then attack,
   // and alphabetical within each line. The API answers in its own order, which
   // is nobody's idea of a squad list.
-  const roster = byPosition(players.data?.items ?? []);
-  if (!roster.length) return <Text style={styles.empty}>No players are on this squad yet.</Text>;
+  const hasPlayers = Boolean(players.data?.items.length);
+  if (!roster.length) return <Text style={styles.empty}>{hasPlayers && search.trim() ? 'No players match that search.' : 'No players are on this squad yet.'}</Text>;
   const byPlayer = new Map(stats.data?.map((row) => [row.player_id, row]));
   return <View style={styles.card}>
     {roster.map((player, index) => {
