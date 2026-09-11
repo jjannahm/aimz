@@ -1,13 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
 
 import { FlatCard } from '@/src/components/FlatCard';
 import { StatGrid, type Stat } from '@/src/components/StatGrid';
-import { isGoalkeeper, positionName } from '@/src/lib/positions';
+import { isGoalkeeper } from '@/src/lib/positions';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
-import { mediaUrl } from '@/src/lib/mediaUrl';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
 
@@ -36,8 +35,10 @@ export function PlayerStatsPanel({ playerId, season }: { playerId: string; seaso
       { key: 'penalties', label: 'Penalties saved', value: keeping.penalties_saved },
     ] : []),
   ];
+  // Who she is is the page's header to say — her name, shirt and position are
+  // up there already, and a card repeating them cost a screenful of height
+  // before the first figure. The figures open the panel now.
   return <>
-    <FlatCard radius={theme.radius.lg} style={styles.profile}>{query.data.player.photo_url ? <Image accessibilityLabel={`${query.data.player.name} profile photo`} source={{ uri: mediaUrl(query.data.player.photo_url) }} style={styles.profilePhoto} /> : <View style={styles.number}><Text style={styles.numberText}>{query.data.player.jersey_number ?? '–'}</Text></View>}<View><Text style={styles.name}>{query.data.player.name}</Text><Text style={styles.position}>{positionName(query.data.player.position)}</Text><Text style={styles.season}>{query.data.season ?? 'All recorded seasons'}</Text></View></FlatCard>
     <StatGrid stats={tiles} />
     <Text style={styles.heading}>Match breakdown</Text>
     {query.data.matches.length === 0 ? <Text style={styles.empty}>No finished-match statistics yet.</Text> : query.data.matches.map((item) => <FlatCard key={item.id} radius={theme.radius.md} style={styles.match}>
@@ -50,6 +51,11 @@ export function PlayerStatsPanel({ playerId, season }: { playerId: string; seaso
   </>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ empty: { color: colors.textMuted, fontFamily: theme.font.regular }, grid: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.xs }, heading: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, label: { color: colors.textMuted, fontFamily: theme.font.regular, marginTop: 2 }, match: { padding: theme.spacing.md }, matchDate: { color: colors.textSecondary, fontFamily: theme.font.mono, fontSize: theme.type.caption, marginTop: 3 }, matchMeta: { color: colors.textMuted, fontFamily: theme.font.regular, marginTop: 4 }, matchTitle: { color: colors.textPrimary, fontFamily: theme.font.semibold }, name: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, number: { alignItems: 'center', backgroundColor: colors.accent, borderRadius: 28, height: 56, justifyContent: 'center', width: 56 }, numberText: { color: colors.onAccent, fontFamily: theme.font.monoBold, fontSize: theme.type.display }, position: { color: colors.textSecondary, fontFamily: theme.font.regular, marginTop: 2 }, profile: { alignItems: 'center', borderRadius: theme.radius.lg, flexDirection: 'row', gap: theme.spacing.sm, padding: theme.spacing.md }, profilePhoto: { borderRadius: 28, height: 56, width: 56 }, season: { color: colors.textMuted, fontFamily: theme.font.regular, marginTop: 4 }, // Three to a row rather than two, and the tile only as tall as its
-  // number and name need: twice as much fits before a scroll.
-  stat: { flexBasis: '31%', flexGrow: 1, padding: theme.spacing.sm }, value: { color: colors.textPrimary, fontFamily: theme.font.monoBold, fontSize: theme.type.score, fontVariant: ['tabular-nums'] } });
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  empty: { color: colors.textMuted, fontFamily: theme.font.regular },
+  heading: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading },
+  match: { padding: theme.spacing.md },
+  matchTitle: { color: colors.textPrimary, fontFamily: theme.font.semibold },
+  matchDate: { color: colors.textSecondary, fontFamily: theme.font.mono, fontSize: theme.type.caption, marginTop: 3 },
+  matchMeta: { color: colors.textMuted, fontFamily: theme.font.regular, marginTop: 4 },
+});

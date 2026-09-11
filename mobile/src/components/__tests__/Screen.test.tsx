@@ -29,4 +29,17 @@ describe('Screen header', () => {
     expect(screen.getByLabelText('Settings')).toBeTruthy();
     expect(screen.getByLabelText('Close')).toBeTruthy();
   });
+
+  // The header row already holds the brand and two round buttons, so a second
+  // line is where a name's shirt and position fit on a phone.
+  it('carries a second line under the title when there is one, and nothing when there is not', async () => {
+    const with_line = await render(<Screen subtitle="#14 · Centre midfield" title="Amina Adel"><Text>body</Text></Screen>);
+    expect(with_line.getByText('Amina Adel')).toBeTruthy();
+    expect(with_line.getByText('#14 · Centre midfield')).toBeTruthy();
+    // The title is what a reader is taken to; the line under it is not a header.
+    expect(with_line.getByRole('header').props.children).toBe('Amina Adel');
+
+    const without = await render(<Screen title="Matches"><Text>body</Text></Screen>);
+    expect(without.queryByText('#14 · Centre midfield')).toBeNull();
+  });
 });

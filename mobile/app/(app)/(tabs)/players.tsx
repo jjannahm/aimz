@@ -79,7 +79,20 @@ function MyStats({ playerId }: { playerId: string }) {
   // record and a coach reading somebody else's are looking at one thing.
   const plays = useSquadPlaysMatches(career.data?.player.team_id);
   const showing = plays ? half : 'training';
+  // Who this is, said once at the top of her record. The page header above is
+  // the tab's own name — "Players" — so unlike the profile screen there is
+  // nowhere else here for her name, shirt and position to live. A line rather
+  // than the card the match half used to carry: three facts, not a screenful.
+  const who = career.data?.player;
+  const said = [
+    who?.jersey_number == null ? null : `#${who.jersey_number}`,
+    positionName(who?.position) || null,
+  ].filter(Boolean).join(' · ');
   return <View style={styles.stack}>
+    {who ? <View style={styles.whois}>
+      <Text accessibilityRole="header" style={styles.whoisName}>{who.name}</Text>
+      {said ? <Text style={styles.whoisMeta}>{said}</Text> : null}
+    </View> : null}
     {canSeeInformation === true ? <SegmentedControl label="Which half of the profile" onChange={setSide} options={PROFILE_SIDES} value={openSide} /> : null}
     {openSide === 'information' ? <InformationPanel playerId={playerId} /> : <>
       {plays ? <View style={styles.subTabs}>
@@ -414,6 +427,6 @@ export default function PlayersScreen() {
     </Screen>;
 }
 
-const stylesheet = (colors: ThemeColors) => StyleSheet.create({ subTabs: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.xs }, chipBar: { flexGrow: 0 }, chips: { gap: theme.spacing.sm }, chip: { paddingHorizontal: theme.spacing.md }, stack: { gap: theme.spacing.md }, back: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.touch.minimum, paddingRight: theme.spacing.md }, backText: { color: colors.accentSoft, fontFamily: theme.font.bold }, squadTitle: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, list: { overflow: 'hidden', paddingHorizontal: 0 },
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({ whois: { gap: 2 }, whoisName: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, whoisMeta: { color: colors.textMuted, fontFamily: theme.font.regular, fontSize: theme.type.label }, subTabs: { paddingHorizontal: theme.spacing.md, paddingTop: theme.spacing.xs }, chipBar: { flexGrow: 0 }, chips: { gap: theme.spacing.sm }, chip: { paddingHorizontal: theme.spacing.md }, stack: { gap: theme.spacing.md }, back: { alignItems: 'center', alignSelf: 'flex-start', flexDirection: 'row', gap: theme.spacing.xs, minHeight: theme.touch.minimum, paddingRight: theme.spacing.md }, backText: { color: colors.accentSoft, fontFamily: theme.font.bold }, squadTitle: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading }, list: { overflow: 'hidden', paddingHorizontal: 0 },
   row: { alignItems: 'center', borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: theme.spacing.md, minHeight: theme.size.listRow, padding: theme.spacing.md },
   lastRow: { borderBottomWidth: 0 }, leaderRow: { alignItems: 'center', flexDirection: 'row' }, leaderPlayer: { flex: 1 }, rank: { color: colors.textMuted, fontFamily: theme.font.monoBold, fontVariant: ['tabular-nums'], paddingLeft: theme.spacing.md, textAlign: 'center', width: 34 }, tally: { color: colors.accentSoft, fontFamily: theme.font.monoBold, fontSize: theme.type.heading, fontVariant: ['tabular-nums'] }, awardList: { gap: theme.spacing.sm }, awardOpen: { gap: theme.spacing.sm }, award: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.md, padding: theme.spacing.md }, awardLabel: { color: colors.textMuted, fontFamily: theme.font.bold, fontSize: theme.type.caption, letterSpacing: 0.8, textTransform: 'uppercase' }, pressed: { opacity: 0.7 }, badge: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 }, badgeText: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.label }, number: { alignItems: 'center', backgroundColor: colors.surfaceRaised, borderRadius: 20, height: 40, justifyContent: 'center', width: 40 }, photo: { borderRadius: 20, height: 40, width: 40 }, numberText: { color: colors.accentSoft, fontFamily: theme.font.bold, fontSize: theme.type.heading }, copy: { flex: 1 }, name: { color: colors.textPrimary, fontFamily: theme.font.semibold, fontSize: theme.type.body }, position: { color: colors.textMuted, fontFamily: theme.font.regular, marginTop: 2 } });

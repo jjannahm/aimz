@@ -88,12 +88,16 @@ describe('PlayerDetailScreen', () => {
   });
   afterEach(() => jest.clearAllMocks());
 
-  it('names the player and her position in full, not the stored code', async () => {
+  /**
+   * Her name heads the page and her shirt and position sit under it, in words
+   * rather than the stored code. Said once: the card that used to repeat all
+   * three above the figures is gone.
+   */
+  it('names the player, her shirt and her position in the header, once', async () => {
     const screen = await matchHalf();
-    // The panel's identity card carries the name, so the header bar does not
-    // repeat it — hence findAllByText rather than a single match.
-    expect((await screen.findAllByText('Nour Hassan')).length).toBeGreaterThan(0);
-    expect(screen.getByText('Striker')).toBeTruthy();
+    expect(await screen.findByText('Nour Hassan')).toBeTruthy();
+    expect(screen.getByText('#9 · Striker')).toBeTruthy();
+    expect(screen.queryByText('All recorded seasons')).toBeNull();
   });
 
   it('shows what she is closest to next, and the run she is on', async () => {
