@@ -184,17 +184,6 @@ export type PlayerMatchLine = PlayerMatchStat & GoalkeeperTotals & {
 export type PlayerSeasonSummary = Omit<Schema['PlayerSeasonSummary'], 'matches'> & GoalkeeperTotals & {
   /** Every season she has a record in, newest first. */
   seasons: string[];
-  competitions?: {
-    competition_id: string;
-    competition_name: string;
-    season: string;
-    appearances: number;
-    minutes_played: number;
-    goals: number;
-    assists: number;
-    yellow_cards: number;
-    red_cards: number;
-  }[];
   trainings_attended: number;
   trainings_expected: number;
   /** Null when no register has ever named her, rather than a misleading zero. */

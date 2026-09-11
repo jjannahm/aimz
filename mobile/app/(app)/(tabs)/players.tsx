@@ -13,7 +13,7 @@ import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { SegmentedControl, type SegmentedOption } from '@/src/components/SegmentedControl';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
-import { SeasonPicker } from '@/src/components/SeasonPicker';
+import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonFilter';
 import { TrainingStatsPanel } from '@/src/components/TrainingStatsPanel';
 import { InformationPanel } from '@/src/components/player/InformationPanel';
 import { useCanSeeInformation } from '@/src/auth/useMyTeam';
@@ -58,15 +58,13 @@ const sectionsFor = (linked: boolean): Section[] =>
 // she trains every week and plays some weeks. A selected tab sitting second
 // with an empty one to its left reads as though something was skipped.
 const STAT_HALVES = [{ label: 'Training Stats', value: 'training' }, { label: 'Match Stats', value: 'match' }] as const;
-const STAT_RANGES = [{ label: 'Season Stats', value: 'season' }, { label: 'Career Stats', value: 'career' }] as const;
 
 /** The two halves of a profile, worded as they are on the player page. */
 const PROFILE_SIDES = [{ label: 'Stats', value: 'stats' }, { label: 'Information', value: 'information' }] as const;
 
 function MyStats({ playerId }: { playerId: string }) {
   const styles = useThemedStyles(stylesheet);
-  const [season, setSeason] = useState('');
-  const [range, setRange] = useState<'season' | 'career'>('career');
+  const [season, setSeason] = useState(ALL_SEASONS);
   const [side, setSide] = useState<'stats' | 'information'>('stats');
   // A family always may, but the hook is what the player page asks too, so the
   // two screens cannot drift apart on who sees what.
@@ -101,9 +99,8 @@ function MyStats({ playerId }: { playerId: string }) {
         <SegmentedControl label="Which statistics" onChange={setHalf} options={STAT_HALVES} tone="quiet" value={showing} />
       </View> : null}
       {showing === 'match' ? <>
-        <SegmentedControl label="Statistics range" onChange={setRange} options={STAT_RANGES} tone="quiet" value={range} />
-        {range === 'season' && seasons.length ? <SeasonPicker onChange={setSeason} season={seasons.includes(season) ? season : seasons[0]!} seasons={seasons} /> : null}
-        <PlayerStatsPanel playerId={playerId} season={range === 'season' ? (seasons.includes(season) ? season : seasons[0]) : undefined} />
+        <SeasonFilter onChange={setSeason} seasons={seasons} value={seasons.includes(season) ? season : ALL_SEASONS} />
+        <PlayerStatsPanel playerId={playerId} season={seasonQuery(season, seasons)} />
       </> : <TrainingStatsPanel playerId={playerId} />}
     </>}
   </View>;

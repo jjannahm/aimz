@@ -12,7 +12,7 @@ import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
  * wide, and this belongs on the same line as a heading. A single option is
  * shown as plain text — there is nothing to choose between.
  */
-export function CompactPicker({ value, options, onChange, title, label, muted = false, testID = 'compact-picker' }: {
+export function CompactPicker({ value, options, onChange, title, label, muted = false, fullWidth = false, testID = 'compact-picker' }: {
   value: string;
   options: string[];
   onChange: (value: string) => void;
@@ -22,6 +22,8 @@ export function CompactPicker({ value, options, onChange, title, label, muted = 
   label: string;
   /** A quiet aside on the label — a season that has ended, say. */
   muted?: string | boolean;
+  /** Fill the available row when the picker is the row's primary control. */
+  fullWidth?: boolean;
   testID?: string;
 }) {
   const styles = useThemedStyles(stylesheet);
@@ -33,7 +35,7 @@ export function CompactPicker({ value, options, onChange, title, label, muted = 
       accessibilityLabel={`${label} ${value}${typeof muted === 'string' ? `, ${muted}` : muted ? ', ended' : ''}`}
       accessibilityRole="button"
       onPress={() => setOpen(true)}
-      style={({ pressed }) => [styles.control, pressed && styles.pressed]}
+      style={({ pressed }) => [styles.control, fullWidth && styles.fullWidth, pressed && styles.pressed]}
       testID={testID}
     >
       <Text style={styles.label}>{value}</Text>
@@ -76,6 +78,7 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
     minHeight: theme.touch.minimum, paddingHorizontal: theme.spacing.md,
   },
   label: { color: colors.onAccent, fontFamily: theme.font.semibold, fontVariant: ['tabular-nums'] },
+  fullWidth: { justifyContent: 'space-between', width: '100%' },
   sole: { color: colors.textMuted, fontFamily: theme.font.medium, fontVariant: ['tabular-nums'] },
 
   stage: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: theme.spacing.lg },

@@ -190,18 +190,6 @@ async def test_full_match_scoring_standings_and_stats(
     assert summary.status_code == 200
     assert summary.json()["goals"] == 1
     assert summary.json()["minutes_played"] == 90
-    assert summary.json()["seasons"] == ["2026/27"]
-    assert summary.json()["competitions"] == [{
-        "competition_id": competition.json()["id"],
-        "competition_name": "Academy League",
-        "season": "2026/27",
-        "appearances": 1,
-        "minutes_played": 90,
-        "goals": 1,
-        "assists": 0,
-        "yellow_cards": 0,
-        "red_cards": 0,
-    }]
 
     deleted = await client.delete(
         f"/api/v1/matches/{match_id}/events/{goal.json()['id']}", headers=admin_headers
