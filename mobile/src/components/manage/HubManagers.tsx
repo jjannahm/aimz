@@ -12,7 +12,7 @@ import { FormField } from '@/src/components/FormField';
 import { narrowBySearch } from '@/src/components/SearchField';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
-import { invalidateAfterWrite } from '@/src/lib/cache';
+import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime, toEgyptWallClock } from '@/src/lib/egyptTime';
 import { confirmManageSave, confirmManageWrite } from '@/src/lib/manageToasts';
 import { confirmAction, showMessage } from '@/src/lib/platformAlert';
@@ -45,6 +45,16 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
   const styles = useThemedStyles(stylesheet);
   const client = useQueryClient();
   const sessions = useQuery({ queryKey: ['training', 'admin'], queryFn: () => api.trainingSessions('?limit=100') });
+  // Which sessions somebody has asked to be corrected, so the list says where
+  // to go. One read for the whole list rather than one per row, and the API
+  // hands back only what this account may answer — an administrator the
+  // academy's, a coach her own squads'.
+  const pending = useQuery({ queryKey: [...cacheKeys.attendanceRequests, 'pending'], queryFn: () => api.attendanceRequests('?status=pending&limit=100') });
+  const waiting = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of pending.data?.items ?? []) counts.set(row.training_session_id, (counts.get(row.training_session_id) ?? 0) + 1);
+    return counts;
+  }, [pending.data]);
   const [draft, setDraft] = React.useState<ScheduleDraft>(freshSchedule);
   const [editing, setEditing] = React.useState<TrainingSession | null>(null);
   /** The form is folded away until it is wanted; editing an occurrence unfolds it. */
@@ -121,7 +131,7 @@ export function ScheduleManager({ teams }: { teams: Team[] }) {
       * pressable is a button inside a button once this renders on the web. */}
     {sessions.isError ? <ErrorState message={(sessions.error as ApiError).message} onRetry={() => sessions.refetch()} /> : <CollapsibleSection count={sessionItems.length} search={{ label: 'Search training sessions', onChange: setSearch, placeholder: 'Search a squad, date or venue…', resultCount: shownSessions.length, value: search }} title="Current training sessions">
       {sessions.isLoading ? <LoadingState /> : !sessionItems.length ? <Text style={styles.empty}>Nothing has been added yet.</Text> : !shownSessions.length ? <Text style={styles.empty}>Nothing matches that.</Text> : <View style={styles.list}>{shownSessions.map((session) => <View key={session.id} style={styles.card}>
-        <Pressable accessibilityHint="Opens the session and its availability" accessibilityLabel={`${session.team.name}, ${formatEgyptDateTime(session.starts_at)} at ${session.venue}`} accessibilityRole="button" onPress={() => router.push({ pathname: '/training/[id]', params: { id: session.id } })} style={({ pressed }) => [styles.copy, pressed && styles.pressedRow]}><Text style={styles.title}>{session.team.name}</Text><Text style={styles.meta}>{formatEgyptDateTime(session.starts_at)} · {session.venue}</Text></Pressable>
+        <Pressable accessibilityHint="Opens the session and its availability" accessibilityLabel={`${session.team.name}, ${formatEgyptDateTime(session.starts_at)} at ${session.venue}${waiting.get(session.id) ? `, ${waiting.get(session.id)} attendance ${waiting.get(session.id) === 1 ? 'correction' : 'corrections'} waiting` : ''}`} accessibilityRole="button" onPress={() => router.push({ pathname: '/training/[id]', params: { id: session.id } })} style={({ pressed }) => [styles.copy, pressed && styles.pressedRow]}><Text style={styles.title}>{session.team.name}</Text><Text style={styles.meta}>{formatEgyptDateTime(session.starts_at)} · {session.venue}</Text>{waiting.get(session.id) ? <Text style={styles.waiting}>{waiting.get(session.id)} attendance {waiting.get(session.id) === 1 ? 'correction' : 'corrections'} waiting</Text> : null}</Pressable>
         <View style={styles.actions}><AppButton compact icon="pencil" iconOnly label="Edit occurrence" onPress={() => beginEdit(session)} variant="ghost" /><AppButton compact icon="trash" iconOnly label="Delete occurrence" onPress={() => confirmAction('Delete this session?', 'Only this occurrence will be removed.', 'Delete one', () => remove(session, 'one'), { destructive: true })} variant="danger" />{session.series_id ? <AppButton compact label="Delete series" onPress={() => confirmAction('Delete the full series?', 'Every occurrence in this series will be removed.', 'Delete series', () => remove(session, 'series'), { destructive: true })} variant="danger" /> : null}</View>
       </View>)}</View>}
     </CollapsibleSection>}
@@ -336,6 +346,9 @@ const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   formActions: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, marginTop: theme.spacing.sm },
   label: { color: colors.textSecondary, fontSize: theme.type.label, fontWeight: '700' },
   meta: { color: colors.textMuted, marginTop: 4 },
+  // The one thing on a session row that is waiting on somebody, in the amber
+  // the pending correction itself wears.
+  waiting: { color: colors.warningText, fontFamily: theme.font.bold, fontSize: theme.type.caption, marginTop: 4 },
   pressedRow: { opacity: 0.6 },
   stack: { gap: theme.spacing.md },
   // Urgent, in the red the rest of the app keeps for something being wrong.
