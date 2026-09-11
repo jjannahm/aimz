@@ -19,7 +19,7 @@ import { theme, type ThemeColors } from '@/src/theme';
 import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 import type { AdminAccount, Player, UserRole } from '@/src/types/api';
 
-const roleName = (role: string) => role === 'admin' ? 'Administrator' : role === 'parent' ? 'Parent' : 'Player';
+const roleName = (role: string) => role === 'admin' ? 'Administrator' : role === 'parent' ? 'Parent' : role === 'coach' ? 'Coach' : 'Player';
 
 /**
  * How long an account is meant to last, as hours from now.
@@ -56,7 +56,8 @@ function describeLink(account: AdminAccount): { text: string; missing: boolean }
     const names = account.children.map((child) => child.name);
     return { text: names.length ? names.join(', ') : 'No children linked', missing: names.length === 0 };
   }
-  if (account.role === 'admin' && !account.player) return { text: 'Manages the academy', missing: false };
+  if (account.role === 'admin') return { text: 'Manages the academy', missing: false };
+  if (account.role === 'coach') return { text: account.team ? `Coaches ${account.team.name}` : 'Coach account', missing: false };
   if (!account.player) return { text: 'Not linked', missing: true };
   return { text: account.team ? `${account.player.name} · ${account.team.name}` : account.player.name, missing: false };
 }
@@ -88,7 +89,7 @@ function AccountRow({ account, players }: { account: AdminAccount; players: Play
     onError: (error) => showMessage('Expiry not changed', (error as ApiError).message),
     onSuccess: async () => { await invalidateAfterWrite(client, 'account'); confirmManageWrite('account', 'saved'); },
   });
-  const parent = account.role === 'parent';
+  const linkable = account.role === 'player';
   const { text, missing } = describeLink(account);
   const remaining = describeRemaining(account.expires_at);
   const spent = remaining === 'Expired';
@@ -113,7 +114,7 @@ function AccountRow({ account, players }: { account: AdminAccount; players: Play
       {/* A parent's children live in user_children, and the picker below writes
         * users.player_id, which nothing reads for a parent. Offering it would
         * look like a fix and do nothing. Their time can still be changed. */}
-      {parent ? null : <>
+      {linkable ? <>
         <PlayerPickerField
           label="Linked player"
           onChange={(playerIds) => link.mutate(playerIds[0] ?? null)}
@@ -124,7 +125,7 @@ function AccountRow({ account, players }: { account: AdminAccount; players: Play
         />
         {account.player ? <AppButton compact disabled={link.isPending} label="Unlink" onPress={() => link.mutate(null)} variant="ghost" /> : null}
         <Text style={styles.note}>This account reads the linked player&rsquo;s stats, schedule and announcements as its own. A player already claimed by another account is refused.</Text>
-      </>}
+      </> : null}
       <ChoiceField
         label="Access"
         onChange={(value) => expiry.mutate(deadlineIn(value === '' ? null : Number(value)))}

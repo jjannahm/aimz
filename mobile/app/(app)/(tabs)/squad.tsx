@@ -1,9 +1,14 @@
 import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { Pressable, StyleSheet } from 'react-native';
 
 import { Screen } from '@/src/components/Screen';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, LoadingState } from '@/src/components/StateView';
+import { SearchField } from '@/src/components/SearchField';
 import { useMyTeamIds } from '@/src/lib/squad';
+import { theme, type ThemeColors } from '@/src/theme';
+import { useColors, useThemedStyles } from '@/src/theme/ThemeProvider';
 
 import { Squad, TeamProfile } from '../team/[id]';
 
@@ -28,6 +33,18 @@ const HALVES = [
 export default function MySquadScreen() {
   const { teamIds, isLoading } = useMyTeamIds();
   const [half, setHalf] = React.useState<'team' | 'players'>('team');
+  const [searching, setSearching] = React.useState(false);
+  const [search, setSearch] = React.useState('');
+  const [resultCount, setResultCount] = React.useState<number | undefined>();
+  const styles = useThemedStyles(stylesheet);
+  const colors = useColors();
+  const toggleSearch = () => {
+    setSearching((current) => {
+      if (current) setSearch('');
+      return !current;
+    });
+  };
+  const searchButton = half === 'players' ? <Pressable accessibilityLabel={searching ? 'Close player search' : 'Search players'} accessibilityRole="button" accessibilityState={{ expanded: searching }} onPress={toggleSearch} style={({ pressed }) => [styles.searchButton, pressed && styles.pressed]}><Ionicons accessibilityElementsHidden color={searching ? colors.accentSoft : colors.textPrimary} name={searching ? 'close' : 'search'} size={22} /></Pressable> : null;
   const tabs = <SegmentedControl label="Which statistics" onChange={setHalf} options={HALVES} value={half} />;
 
   if (isLoading) return <Screen title="My Team"><LoadingState label="Loading your squad" /></Screen>;
@@ -44,10 +61,16 @@ export default function MySquadScreen() {
   // of its fixtures.
   const teamId = teamIds[0]!;
   if (half === 'players') {
-    return <Screen title="My Team">
+    return <Screen title="My Team" utility={searchButton}>
       {tabs}
-      <Squad teamId={teamId} />
+      {searching ? <SearchField autoFocus label="Search players" onChange={setSearch} placeholder="Search a name, position or number…" resultCount={resultCount} value={search} /> : null}
+      <Squad onResultCount={setResultCount} search={search} teamId={teamId} />
     </Screen>;
   }
   return <TeamProfile above={tabs} asTab id={teamId} title="My Team" />;
 }
+
+const stylesheet = (colors: ThemeColors) => StyleSheet.create({
+  searchButton: { alignItems: 'center', backgroundColor: colors.surface, borderRadius: 22, height: theme.touch.minimum, justifyContent: 'center', width: theme.touch.minimum },
+  pressed: { opacity: 0.7 },
+});

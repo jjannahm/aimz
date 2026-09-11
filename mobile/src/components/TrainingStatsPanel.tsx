@@ -52,23 +52,6 @@ const readTotal = (metric: TrainingMetric, value: number) =>
 const shortLabel = (metric: TrainingMetric) => metric.kind === 'rating' ? `${metric.label} avg` : metric.label;
 
 /**
- * How far from the squad's average still counts as being at it.
- *
- * Landing exactly on the average is rare, so without a band almost everybody
- * reads as above or below it, and one missed session flips a player from one to
- * the other. Five points either way is wide enough to be steady.
- */
-const SAME_AS_SQUAD = 5;
-
-/** Where this player sits against her squad, in a word. */
-function standing(pct: number | null, teamPct: number | null) {
-  if (pct === null || teamPct === null) return null;
-  const gap = pct - teamPct;
-  if (Math.abs(gap) <= SAME_AS_SQUAD) return 'average' as const;
-  return gap > 0 ? 'above' as const : 'below' as const;
-}
-
-/**
  * What a player did at training, as against what they did in matches.
  *
  * The tallies are one panel divided by hairlines rather than six cards with
@@ -103,20 +86,11 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
   if (query.isError || !query.data) return <ErrorState message={(query.error as ApiError)?.message ?? 'Training stats not found.'} onRetry={() => query.refetch()} />;
   const { attendance, totals, sessions, metrics, player } = query.data;
   const playerMetrics = metricsForPlayer(metrics, player);
-  const sits = standing(attendance.pct, attendance.team_pct);
-  const verdict = { above: 'Above average', average: 'Average', below: 'Below average' } as const;
-  // Above in the same green a present mark carries. Below in amber rather than
-  // the red beside it: this is a child's attendance read by her own family, and
-  // red states a failure where the figure only shows a gap.
-  const verdictTone = { above: colors.live, average: colors.textMuted, below: colors.warning } as const;
 
   // A metric nobody has recorded is left out rather than shown as a zero: a
   // nought here would read as a mark given, not as one never given.
   const totalByMetric = new Map(totals.map((total) => [total.metric.id, total]));
-  // The top row is the attendance read across, one question to a cell: how
-  // often she came, how often she was late, and what the squad managed. The
-  // squad's figure used to be small print inside her own cell, which put two
-  // different squads' worth of meaning in one box.
+  const performanceKeys = ['dribbling', 'shooting', 'passing'];
   const tiles: Stat[] = [
     {
       key: 'attendance',
@@ -125,20 +99,10 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
       secondary: attendance.pct == null ? '—' : `${attendance.pct}%`,
     },
     { key: 'late', label: 'Late', value: String(attendance.late ?? 0), tone: (attendance.late ?? 0) > 0 ? colors.warning : undefined },
-    // Her own percentage says nothing on its own — 80% in a squad averaging 95
-    // is not 80% in one averaging 60 — so the squad's closes the row, with
-    // where she falls against it underneath. Left out entirely when nobody has
-    // taken a register for the squad: there is nothing to be read against.
-    ...(attendance.team_pct == null ? [] : [{
-      key: 'team-attendance',
-      label: 'Team Average',
-      value: `${attendance.team_pct}%`,
-      ...(sits ? { note: verdict[sits], noteTone: verdictTone[sits] } : {}),
-    }]),
-    // The marks, less the overall one: it is a summary of the others rather
-    // than a skill, and the row it used to close now belongs to the squad. It
-    // is still on every session line below, where it says what it is about.
-    ...playerMetrics.filter((metric) => metric.key !== 'overall_rating').map((metric) => {
+    { key: 'team-average', label: 'Team Average', value: attendance.team_pct == null ? '—' : `${attendance.team_pct}%` },
+    ...performanceKeys.map((key) => {
+      const metric = playerMetrics.find((item) => item.key === key);
+      if (!metric) return { key, label: `${key[0]!.toUpperCase()}${key.slice(1)} avg`, value: '—' };
       const total = totalByMetric.get(metric.id);
       return {
         key: metric.id,
@@ -147,10 +111,6 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
       };
     }),
   ];
-
-  if (!tiles.length && !sessions.length) {
-    return <Text style={styles.empty}>Nothing has been recorded for this player at training yet.</Text>;
-  }
 
   return <>
     <StatGrid stats={tiles} />

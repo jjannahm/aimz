@@ -447,6 +447,7 @@ describe('ManageScreen invite player picker', () => {
     await fireEvent.press(await screen.findByRole('tab', { name: 'Invites' }));
     await openForm(screen, 'invites');
     expect(await screen.findByText('Choose a player')).toBeTruthy();
+    expect(screen.queryByLabelText('Invite code')).toBeNull();
 
     fireEvent.press(screen.getByRole('button', { name: 'Player' }));
     await waitFor(() => expect(screen.getByTestId('player-picker-search')).toBeTruthy());

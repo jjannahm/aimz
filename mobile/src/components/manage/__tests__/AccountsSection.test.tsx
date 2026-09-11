@@ -114,6 +114,19 @@ describe('AccountsSection', () => {
     await open(screen);
     expect(await screen.findByText('Manages the academy')).toBeTruthy();
     expect(screen.queryByText('Not linked')).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: /AIMZ Admin/ }));
+    expect(screen.queryByText('Linked player')).toBeNull();
+  });
+
+  it('identifies a coach and never offers player linking', async () => {
+    jest.mocked(api.adminUsers).mockResolvedValue(page([
+      account({ id: 'u-4', name: 'Head Coach', email: 'coach@aimz.test', role: 'coach' }),
+    ]));
+    const screen = await render(<AccountsSection players={players} />, { wrapper });
+    await open(screen);
+    expect(await screen.findByText('Coach account')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: /Head Coach, Coach/ }));
+    expect(screen.queryByText('Linked player')).toBeNull();
   });
 });
 
