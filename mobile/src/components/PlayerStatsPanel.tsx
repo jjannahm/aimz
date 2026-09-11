@@ -15,7 +15,10 @@ export function PlayerStatsPanel({ playerId, season }: { playerId: string; seaso
   // Undefined is the whole career, which is what every caller but the profile's
   // season switcher wants. The key carries it so the two do not share a cache.
   const query = useQuery({ queryKey: ['player-stats', playerId, season ?? null], queryFn: () => api.playerStats(playerId, season), enabled: Boolean(playerId) });
-  if (query.isLoading) return <LoadingState label="Loading player stats" />;
+  // `isPending` rather than `isLoading`: a query that has not resolved must not
+  // fall through to the figures below, where a record still on its way would be
+  // drawn as a record of nothing.
+  if (query.isPending) return <LoadingState label="Loading player stats" />;
   if (query.isError || !query.data) return <ErrorState message={(query.error as ApiError)?.message ?? 'Player not found.'} onRetry={() => query.refetch()} />;
   // Goalkeeping is only shown to a keeper. On an outfielder these are three
   // zeroes that say nothing, and they would crowd out the tallies that do.

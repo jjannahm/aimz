@@ -75,6 +75,35 @@ describe("a player read against her squad's attendance", () => {
   });
   afterEach(() => jest.clearAllMocks());
 
+  /**
+   * A record on its way is not a record of nothing.
+   *
+   * The empty panel — `0 of 0`, dashes, "No sessions recorded yet" — is only
+   * ever the answer to a read that came back empty, never the state of one
+   * still waiting. Pinned because the two look identical on screen, and the
+   * difference matters most when somebody is looking at a player they cannot
+   * sanity-check from memory.
+   */
+  it('waits rather than drawing zeros while the read is still out', async () => {
+    jest.mocked(api.playerTrainingStats).mockReturnValue(new Promise(() => undefined) as never);
+    const screen = await render(<TrainingStatsPanel playerId="p-1" />, { wrapper });
+
+    expect(screen.getByText('Loading training stats')).toBeTruthy();
+    expect(screen.queryByText('0 of 0')).toBeNull();
+    expect(screen.queryByText('No sessions recorded yet.')).toBeNull();
+    expect(screen.queryByText('Session breakdown')).toBeNull();
+  });
+
+  // And once it does come back empty, the empty state is the honest answer.
+  it('says so plainly when the player really has nothing recorded', async () => {
+    jest.mocked(api.playerTrainingStats).mockResolvedValue({
+      ...stats(null, null, 'CM', []), attendance: { attended: 0, late: 0, expected: 0, pct: null, team_pct: null },
+      totals: allMetrics.map((item) => ({ metric: item, value: null, sessions: 0 })),
+    } as never);
+    const screen = await render(<TrainingStatsPanel playerId="p-1" />, { wrapper });
+    expect(await screen.findByText('No sessions recorded yet.')).toBeTruthy();
+  });
+
   it('gives the squad a cell of its own and still uses six', async () => {
     const screen = await show(80, 60);
     expect(await screen.findByText('8 of 10')).toBeTruthy();

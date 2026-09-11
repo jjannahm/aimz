@@ -1640,6 +1640,62 @@ describe('training performance', () => {
       expect(theirs.status).toBe(403);
     });
 
+    /**
+     * The same record, whoever is reading it.
+     *
+     * Every query behind this endpoint binds the player id out of the URL, so a
+     * viewer can change what they are allowed to open but never what it says.
+     * Pinned across all four roles at once, because the failure it guards
+     * against — a reader's own account leaking into the filter, and an
+     * authorised viewer being handed an empty record instead of a refusal — is
+     * invisible from any single one of them.
+     */
+    it('reads the same for the player, her parent, her coach and an administrator', async () => {
+      const { admin, squad, sessions } = await setUp();
+      const her = squad[0]!;
+      const dribbling = (await metricsOf(admin.token)).find((metric) => metric.key === 'dribbling')!;
+      await request(`/api/v1/training-sessions/${sessions[0]!.id}/attendance`, json('PUT', { entries: [{ player_id: her.id, status: 'present' }] }, admin.token));
+      await request(`/api/v1/training-sessions/${sessions[1]!.id}/attendance`, json('PUT', { entries: [{ player_id: her.id, status: 'late' }] }, admin.token));
+      await record(sessions[0]!.id, admin.token, [{ player_id: her.id, metric_id: dribbling.id, value: 9 }]);
+
+      const player = await seedUser('player', her.id);
+      const parent = await seedUser('parent');
+      await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, her.id, now).run();
+      const coach = await seedUser('coach');
+      await assignSquad(coach.id, her.team_id);
+
+      const read = async (token: string) => (await request(`/api/v1/players/${her.id}/training-stats`, json('GET', undefined, token))).json();
+      const [asHer, asParent, asCoach, asAdmin] = await Promise.all([
+        read(player.token), read(parent.token), read(coach.token), read(admin.token),
+      ]);
+
+      // Not merely non-empty: identical, field for field.
+      expect(asAdmin).toEqual(asHer);
+      expect(asCoach).toEqual(asHer);
+      expect(asParent).toEqual(asHer);
+      // And it is the record she actually has, so an all-empty match would not
+      // pass this by agreeing about nothing.
+      expect(asAdmin).toMatchObject({ attendance: { attended: 2, late: 1, expected: 2, pct: 100 } });
+      expect((asAdmin as { sessions: unknown[] }).sessions).toHaveLength(2);
+    });
+
+    /**
+     * Access decides what may be opened, never what it says. A coach outside
+     * the squad is refused outright rather than handed an empty record that
+     * would read as a player with no training behind her.
+     */
+    it('refuses a coach from another squad rather than emptying the record', async () => {
+      const { admin, squad, sessions } = await setUp();
+      const her = squad[0]!;
+      await request(`/api/v1/training-sessions/${sessions[0]!.id}/attendance`, json('PUT', { entries: [{ player_id: her.id, status: 'present' }] }, admin.token));
+      const elsewhere = await (await request('/api/v1/teams', json('POST', { name: `Other ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+      const stranger = await seedUser('coach');
+      await assignSquad(stranger.id, elsewhere.id);
+
+      const refused = await request(`/api/v1/players/${her.id}/training-stats`, json('GET', undefined, stranger.token));
+      expect(refused.status).toBe(404);
+    });
+
     it('is shut to a stranger, like everything else', async () => {
       const { squad } = await setUp();
       expect((await request(`/api/v1/players/${squad[0]!.id}/training-stats`, json('GET'))).status).toBe(401);

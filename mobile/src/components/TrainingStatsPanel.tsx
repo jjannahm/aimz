@@ -95,7 +95,11 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
     enabled: Boolean(playerId) && speaksFor,
   });
 
-  if (query.isLoading) return <LoadingState label="Loading training stats" />;
+  // `isPending` rather than `isLoading`: a query that has not resolved — held
+  // back, or waiting on a first fetch — must not fall through to the figures
+  // below, where a record still on its way would be drawn as a record of
+  // nothing. An empty panel means the answer came back empty.
+  if (query.isPending) return <LoadingState label="Loading training stats" />;
   if (query.isError || !query.data) return <ErrorState message={(query.error as ApiError)?.message ?? 'Training stats not found.'} onRetry={() => query.refetch()} />;
   const { attendance, totals, sessions, metrics, player } = query.data;
   const playerMetrics = metricsForPlayer(metrics, player);
