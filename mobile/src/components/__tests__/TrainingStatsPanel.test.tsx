@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import type { ReactNode } from 'react';
 
 import { TrainingStatsPanel } from '@/src/components/TrainingStatsPanel';
@@ -190,6 +190,29 @@ describe('asking for an absence to be corrected', () => {
     await waitFor(() => expect(api.requestAttendanceChange).toHaveBeenCalledWith('s-1', {
       player_id: 'p-1', requested_status: 'present', reason: 'I attended but was marked absent.',
     }));
+  });
+
+  /**
+   * The bug this pins: the card used to sit inside the dismiss layer, which on
+   * the web is a button with a text field inside it — and the space bar in a
+   * field presses the button it is inside, so typing a reason closed the form
+   * on the first word. The way out is a childless sheet behind the card.
+   */
+  it('survives a space in the reason, and still closes from the sheet behind it', async () => {
+    const screen = await show(80, 60, 'CM', [session('s-1', 'absent')]);
+    await fireEvent.press(await screen.findByText('Request Present'));
+
+    const sheet = screen.getByTestId('request-present-backdrop');
+    // The form is not inside the way out, so nothing it does can press it.
+    expect(within(sheet).queryByLabelText('Reason')).toBeNull();
+    expect(sheet.props.accessible).toBe(false);
+
+    await fireEvent.changeText(screen.getByLabelText('Reason'), 'I was there');
+    expect(screen.getByText('Submit Request')).toBeTruthy();
+    expect(screen.getByLabelText('Reason').props.value).toBe('I was there');
+
+    await fireEvent.press(sheet);
+    await waitFor(() => expect(screen.queryByText('Submit Request')).toBeNull());
   });
 
   it('shows what became of an ask instead of offering it twice', async () => {

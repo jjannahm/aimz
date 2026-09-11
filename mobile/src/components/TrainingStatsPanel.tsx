@@ -224,10 +224,14 @@ function RequestPresent({ playerId, sessionId, venue, onClose }: { playerId: str
   });
 
   return <Modal animationType="fade" onRequestClose={onClose} transparent visible>
-    <Pressable accessibilityLabel="Close" accessibilityRole="button" onPress={onClose} style={styles.backdrop}>
-      {/* The card swallows the press that would close it, so reaching for the
-        * field does not dismiss the form under your thumb. */}
-      <Pressable onPress={() => undefined} style={styles.modal}>
+    <View style={styles.backdrop}>
+      {/* The way out sits behind the card rather than around it, and answers to
+        * nothing but a press: a dismiss layer wrapping the form is a button on
+        * the web with a text field inside it, and the space bar in that field
+        * presses the button. Hence a childless sheet, the way every other
+        * picker in the app dismisses itself. */}
+      <Pressable accessible={false} onPress={onClose} style={StyleSheet.absoluteFill} testID="request-present-backdrop" />
+      <View style={styles.modal}>
         <Text accessibilityRole="header" style={styles.modalTitle}>Request Present</Text>
         <Text style={styles.modalMeta}>{venue}</Text>
         <View style={styles.change}>
@@ -245,8 +249,8 @@ function RequestPresent({ playerId, sessionId, venue, onClose }: { playerId: str
         <Text style={styles.modalNote}>A coach or an administrator decides. The register does not change until they do.</Text>
         <AppButton disabled={!reason.trim() || send.isPending} label="Submit Request" loading={send.isPending} onPress={() => send.mutate()} />
         <AppButton label="Cancel" onPress={onClose} variant="ghost" />
-      </Pressable>
-    </Pressable>
+      </View>
+    </View>
   </Modal>;
 }
 
