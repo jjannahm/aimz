@@ -314,15 +314,6 @@ export async function managePlayer(c: Context<{ Bindings: Env }>, playerId: stri
   return user;
 }
 
-/** The coach or administrator who may change this training session. */
-export async function manageTrainingSession(c: Context<{ Bindings: Env }>, sessionId: string): Promise<UserRow> {
-  const { user, scope } = await managingUser(c);
-  if (scope === null) return user;
-  const session = await c.env.DB.prepare("SELECT team_id FROM training_sessions WHERE id = ?").bind(sessionId).first<{ team_id: string }>();
-  if (!session) throw new ApiProblem(404, "training_session_not_found", "Training session not found.");
-  assertCanManageTeam(scope, session.team_id);
-  return user;
-}
 
 /**
  * Who answers a request to correct a register.
@@ -394,16 +385,3 @@ export async function guardPersonalData(c: Context<{ Bindings: Env }>, playerId:
   return user;
 }
 
-/**
- * A write boundary for an administrator, or for staff assigned to this squad.
- *
- * Kept as its own name because training, announcements and reports all ask
- * this one question, and it reads better at those call sites than the scope
- * machinery it is built from.
- */
-export async function requireTeamOperator(c: Context<{ Bindings: Env }>, teamId: string): Promise<UserRow> {
-  const { user, scope } = await managingUser(c);
-  await requireAimzTeam(c.env, teamId);
-  assertCanManageTeam(scope, teamId);
-  return user;
-}
