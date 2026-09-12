@@ -1,3 +1,4 @@
+import type { UserRead } from "../../mobile/src/types/contract";
 import type { UserRole, UserRow } from "./types";
 import { timingSafeEqual } from "node:crypto";
 
@@ -184,7 +185,7 @@ export async function verifyUploadToken(token: string, secret: string): Promise<
   }
 }
 
-export function publicUser(user: UserRow): Record<string, unknown> {
+export function publicUser(user: UserRow): UserRead {
   return {
     id: user.id,
     name: user.name,

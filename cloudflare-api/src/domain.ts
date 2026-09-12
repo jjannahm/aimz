@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import type { MatchRead } from "../../mobile/src/types/contract";
 import { recordAudit } from "./audit";
 import { generationStatements, groupSizeOf, knockoutShape } from "./knockout";
 import { POSITION_CODES } from "./positions";
@@ -88,7 +89,7 @@ const matchSelect = `
   JOIN teams a ON a.id = m.away_team_id
   JOIN competitions c ON c.id = m.competition_id`;
 
-export function joinedMatch(row: JoinedMatchRow): Record<string, unknown> {
+export function joinedMatch(row: JoinedMatchRow): MatchRead {
   const home: TeamRow = {
     id: row.home_team_id, name: row.home_name, branch: row.home_branch, squad_code: row.home_squad_code,
     age_group: row.home_age_group, season: row.home_season, is_aimz: row.home_is_aimz,
