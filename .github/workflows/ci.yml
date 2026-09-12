@@ -38,10 +38,21 @@ jobs:
         run: npm test
       - name: Validate the Worker bundle
         run: npm run deploy:dry-run
+      # Advisory. Cloudflare is the platform and `backend/` is a frozen
+      # reference, so the gap is expected — this keeps it visible and
+      # accurate instead of letting a hand-typed number in the docs rot.
+      - name: Report FastAPI parity
+        run: npm run parity
 
-  # The FastAPI reference implementation, which nothing deploys. Advisory on
-  # purpose — it is behind the Worker on several features — so it reports
-  # rather than blocks. Nothing depends on this job.
+  # The FastAPI reference implementation, which nothing deploys. Cloudflare is
+  # the platform; `backend/` is frozen and behind the Worker by twelve endpoint
+  # families (`npm run parity` in cloudflare-api prints the current gap).
+  # Advisory on purpose — it reports rather than blocks.
+  #
+  # The steps below are skipped when a pull request does not touch `backend/`,
+  # which is most of them. The job itself always runs: "Backend" is a required
+  # status check in branch protection, and a job that never starts never
+  # reports, which would leave every unrelated pull request waiting forever.
   backend:
     name: Backend
     runs-on: ubuntu-latest
@@ -51,15 +62,38 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Does this change touch backend/?
+        id: changed
+        working-directory: .
+        run: |
+          # Anything other than a clean "nothing under backend/ changed"
+          # answer runs the checks, so a missing ref can never silently skip.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "result=true" >> "$GITHUB_OUTPUT"
+          elif ! git rev-parse --verify "origin/${{ github.base_ref }}" >/dev/null 2>&1; then
+            echo "result=true" >> "$GITHUB_OUTPUT"
+          elif git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -q '^backend/'; then
+            echo "result=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=false" >> "$GITHUB_OUTPUT"
+            echo "No backend/ changes; skipping the FastAPI checks." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/setup-python@v5
+        if: steps.changed.outputs.result == 'true'
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/pyproject.toml
-      - run: pip install -e '.[dev]'
-      - run: ruff check app tests migrations
-      - run: pytest
+      - if: steps.changed.outputs.result == 'true'
+        run: pip install -e '.[dev]'
+      - if: steps.changed.outputs.result == 'true'
+        run: ruff check app tests migrations
+      - if: steps.changed.outputs.result == 'true'
+        run: pytest
       - name: Verify migration SQL generation
+        if: steps.changed.outputs.result == 'true'
         run: alembic upgrade head --sql > /tmp/aimz-migration.sql
 
   mobile:

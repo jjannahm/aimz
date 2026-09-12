@@ -1,10 +1,6 @@
-import type { components } from '@/src/types/generated';
+import type * as Contract from '@/src/types/contract';
 
-type Schema = components['schemas'];
-
-// The generated union comes from an API without parent accounts; catches up on
-// the next `npm run api:types`.
-export type UserRole = Schema['UserRole'] | 'parent' | 'coach';
+export type UserRole = Contract.UserRole;
 /**
  * `expires_at` is when an account stops working, or null for one that never
  * does. `team_ids` are the squads it is attached to — a player's own, a
@@ -12,7 +8,7 @@ export type UserRole = Schema['UserRole'] | 'parent' | 'coach';
  * who is attached to none because they may open all of them. Only
  * `GET /users/me` carries it; a session's own copy of the user does not.
  */
-export type User = Omit<Schema['UserRead'], 'role'> & { role: UserRole; expires_at?: string | null; team_ids?: string[] | null; onboarding_status?: 'pending' | 'approved' | 'declined' };
+export type User = Contract.UserRead & { team_ids?: string[] | null };
 /**
  * A private, renewable calendar subscription for one player or family.
  *
@@ -25,15 +21,13 @@ export type CalendarFeed = { url: string | null; subscribed_at: string | null };
 export type InviteKind = 'player' | 'parent' | 'coach' | 'newcomer';
 /** A roster player an account speaks for: itself for a player, a child for a parent. */
 export type LinkedChild = { id: string; name: string; team_id: string; team_name: string | null };
-export type MatchStatus = Schema['MatchStatus'];
-export type MatchPhase = Schema['MatchPhase'];
-export type MatchPhaseAction = Schema['MatchPhaseUpdate']['action'];
-type CompetitionType = Schema['CompetitionType'];
-// The generated union predates own goals and missed penalties; catches up on
-// the next `npm run api:types`.
-export type EventType = Schema['EventType'] | ExtraEventType;
-export type TokenResponse = Omit<Schema['TokenResponse'], 'user'> & { user: User };
-export type RegistrationInvite = Schema['InviteRead'] & { player_id: string | null; kind: InviteKind; team_id?: string | null; application_id?: string | null; players?: { id: string; name: string }[]; code?: string; share_url?: string };
+export type MatchStatus = Contract.MatchStatus;
+export type MatchPhase = Contract.MatchPhase;
+export type MatchPhaseAction = Contract.MatchPhaseAction;
+type CompetitionType = Contract.CompetitionType;
+export type EventType = Contract.EventType;
+export type TokenResponse = Omit<Contract.TokenResponse, 'user'> & { user: User };
+export type RegistrationInvite = Contract.InviteRead & { players?: { id: string; name: string }[]; code?: string; share_url?: string };
 export type NewcomerStage = 'new' | 'contacted' | 'follow_up' | 'trial_booked' | 'closed';
 export type NewcomerOutcome = 'joined' | 'not_interested' | 'declined';
 export type NewcomerApplicationPayload = {
@@ -84,14 +78,12 @@ export type KitOrderPayload = {
   notes?: string;
 };
 
-export type PresignResponse = Schema['PresignResponse'];
-// Not in the generated schema yet; catches up on the next `npm run api:types`.
+export type PresignResponse = Contract.PresignResponse;
 /** 8, 16 or 32 for a knockout; null for a competition that is only a table. */
 /** A closed season is read-only; the API refuses to score into one. */
 type CompetitionStatus = 'active' | 'completed';
-// Not in the generated schema yet; catches up on the next `npm run api:types`.
 // Optional so a response cached before seasons could be closed still types.
-export type Competition = Schema['CompetitionRead'] & { team_count: number | null; group_size: number | null; status?: CompetitionStatus; completed_at?: string | null };
+export type Competition = Omit<Contract.CompetitionRead, 'status' | 'completed_at'> & { status?: CompetitionStatus; completed_at?: string | null };
 
 /** Every season on record, newest first. */
 export function allSeasons(competitions: Competition[]): string[] {
@@ -135,7 +127,7 @@ export const isKnockout = (competition: Pick<Competition, 'team_count'> | null |
 
 type CompetitionGroupRef = { id: string; name: string; position: number };
 /** `group` is null on a league row, and on a knockout team not yet drawn. */
-export type StandingRow = Omit<Schema['StandingRow'], 'team'> & { team: Team; form: FormResult[]; group?: CompetitionGroupRef | null };
+export type StandingRow = Omit<Contract.StandingRow, 'team' | 'form'> & { team: Team; form: FormResult[]; group?: CompetitionGroupRef | null };
 
 export type CompetitionGroup = CompetitionGroupRef & { competition_id: string; teams: Team[] };
 
@@ -151,8 +143,7 @@ export type BracketSlot = {
 };
 type BracketRound = { round: number; label: string; slots: BracketSlot[] };
 export type Bracket = { competition_id: string; team_count: number | null; rounds: BracketRound[] };
-export type PlayerMatchStat = Schema['PlayerMatchStatRead'];
-// Not in the generated schema yet; catches up on the next `npm run api:types`.
+export type PlayerMatchStat = Contract.PlayerMatchStatRead;
 // Optional so a response cached before the goalkeeping fields existed still
 // types, and the app reads them through a zero.
 type GoalkeeperTotals = { goals_conceded?: number; penalties_saved?: number; clean_sheets?: number };
@@ -179,7 +170,7 @@ type PlayerMatchLine = PlayerMatchStat & GoalkeeperTotals & {
   man_of_the_match: boolean;
 };
 
-export type PlayerSeasonSummary = Omit<Schema['PlayerSeasonSummary'], 'matches'> & GoalkeeperTotals & {
+export type PlayerSeasonSummary = Omit<Contract.PlayerSeasonSummary, 'matches'> & GoalkeeperTotals & {
   /** Every season she has a record in, newest first. */
   seasons: string[];
   trainings_attended: number;
@@ -606,7 +597,7 @@ export type PlayerFinancials = {
   items: PlayerFeeCharge[];
 };
 
-// Mirrors backend PlayerLeaderRow; move to the generated schema after the next `npm run api:types`.
+// The leaderboard row returned by the Worker.
 export type PlayerLeaderRow = {
   rank: number;
   player: Player;
@@ -708,7 +699,6 @@ export type AuditEntry = {
 
 export type LeaderMetric = 'goals' | 'assists' | 'cards';
 
-// Not in the generated schema yet; catches up on the next `npm run api:types`.
 type ExtraEventType = 'own_goal' | 'penalty_missed';
 export type SubstitutionReason = 'tactical' | 'injury' | 'concussion' | 'disciplinary' | 'other';
 export type PenaltyOutcome = 'saved' | 'off_target';
@@ -727,8 +717,6 @@ export const PENALTY_OUTCOMES: { label: string; value: PenaltyOutcome }[] = [
   { label: 'Off target', value: 'off_target' },
 ];
 
-type TeamStaff = { coach: string | null; assistant_coach: string | null; competition_id: string | null; competition_group_id: string | null };
-
 /**
  * Which badge a team wears, kept apart from `is_aimz` so a league of peer clubs
  * can each keep their own. Null leaves the choice to `is_aimz`, as it was
@@ -736,23 +724,12 @@ type TeamStaff = { coach: string | null; assistant_coach: string | null; competi
  */
 export type BadgeStyle = 'aimz' | 'generated';
 
-// Not in the generated schema yet; catches up on the next `npm run api:types`.
-export type Team = TeamStaff & Omit<Schema['TeamRead'], 'squad_code' | 'age_group' | 'season' | 'logo_key'> & {
-  branch?: string | null;
-  squad_code: string | null;
-  age_group: string | null;
-  season: string | null;
-  logo_key: string | null;
-  badge_style: BadgeStyle | null;
-};
+export type Team = Contract.TeamRead;
 
-export type Player = Omit<Schema['PlayerRead'], 'jersey_number' | 'photo_key'> & {
-  jersey_number: number | null;
-  photo_key: string | null;
-};
+export type Player = Contract.PlayerRead;
 
 export type MatchTimeStructure = Pick<
-  Schema['MatchRead'],
+  Contract.MatchRead,
   | 'half_length_minutes'
   | 'num_halves'
   | 'half_time_break_minutes'
@@ -788,11 +765,10 @@ export function outfieldCount(format: LineupFormat): number {
 /** Extra time is always two periods, per football convention. */
 export const EXTRA_TIME_PERIODS = 2;
 
-export type Match = Omit<Schema['MatchRead'], 'home_team' | 'away_team' | 'competition'> & {
+export type Match = Omit<Contract.MatchRead, 'home_team' | 'away_team' | 'competition' | 'lineup_format' | 'man_of_the_match_is_opponent'> & {
   home_team: Team | null;
   away_team: Team | null;
   competition: Competition | null;
-  // Not in the generated schema yet; catches up on the next `npm run api:types`.
   lineup_format: LineupFormat | null;
   formation: string | null;
   man_of_the_match_player_id: string | null;
@@ -808,13 +784,12 @@ export function totalMatchMinutes(structure: MatchTimeStructure): number {
 
 type MatchEventExtras = {
   is_penalty: boolean;
-  // Not in the generated schema yet; catches up on the next `npm run api:types`.
   substitution_reason: SubstitutionReason | null;
   penalty_outcome: PenaltyOutcome | null;
 };
 
 export type MatchEvent = MatchEventExtras & Omit<
-  Schema['MatchEventRead'],
+  Contract.MatchEventRead,
   'type' | 'minute' | 'player_id' | 'secondary_player_id' | 'related_event_id' | 'notes'
 > & {
   type: EventType;
@@ -825,11 +800,10 @@ export type MatchEvent = MatchEventExtras & Omit<
   notes: string | null;
 };
 
-// Not in the generated schema yet; catches up on the next `npm run api:types`.
 type LineupCaptain = { is_captain: boolean };
 
 export type LineupEntry = LineupCaptain & Omit<
-  Schema['LineupEntryRead'],
+  Contract.LineupEntryRead,
   'position' | 'jersey_number'
 > & {
   position: string | null;
@@ -837,7 +811,7 @@ export type LineupEntry = LineupCaptain & Omit<
 };
 
 export type LiveMatchSnapshot = Omit<
-  Schema['LiveMatchSnapshot'],
+  Contract.LiveMatchSnapshot,
   'match' | 'events' | 'lineup'
 > & {
   match: Match;

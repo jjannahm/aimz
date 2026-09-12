@@ -24,33 +24,54 @@ The app intentionally does not include Kafka, Redis, WebSockets, push notificati
 
 ## Repository map
 
-- `backend/app/`: FastAPI routes, security, SQLAlchemy models, and services
+- `cloudflare-api/`: **the AIMZ API** — Cloudflare Worker, D1 migrations, authentication, scoring, standings, and deployment config
+- `backend/app/`: frozen FastAPI reference — routes, security, SQLAlchemy models, and services. Nothing deploys it
 - `backend/migrations/`: PostgreSQL Alembic history
 - `backend/tests/`: isolated API integration tests
 - `backend/scripts/load_live.py`: configurable 1,000-client polling probe
-- `cloudflare-api/`: Cloudflare Worker, D1 migrations, authentication, scoring, standings, and staging deployment config
 - `mobile/app/`: Expo Router auth, player, admin, detail, and live-scoring routes
-- `mobile/src/`: typed API client, generated OpenAPI types, auth state, theme, and components
+- `mobile/src/`: typed API client, the hand-written `/api/v1` contract, auth state, theme, and components
 - `mobile/TESTFLIGHT_CHECKLIST.md`: release and review handoff
 - `mobile/assets/branding/`: placeholder branding and official-asset replacement instructions
 - `mobile/public/`: Cloudflare Pages routing and preview headers
-- `.github/workflows/ci.yml`: backend and mobile deployment gates
+- `.github/workflows/ci.yml`: `Cloudflare API` and `Mobile` gates, the advisory `Backend` check, and the Worker/Pages deploys
 - `STAGING.md`: Cloudflare Pages, Workers, D1, secrets, and collaboration runbook
 
 ## Local setup
 
-### 1. Environment and PostgreSQL
+### 1. API (Cloudflare Worker + D1)
+
+This is the API the app talks to, in staging and in development:
+
+```bash
+cd cloudflare-api
+npm ci
+npm run db:migrate:local
+npm run dev
+```
+
+Wrangler serves it on `http://127.0.0.1:8787` with a local D1 database. Check
+`/api/v1/health` and `/api/v1/health/ready`.
+
+### 2. Mobile app
+
+```bash
+cd mobile
+pnpm install
+cp .env.example .env
+pnpm ios
+```
+
+Point `EXPO_PUBLIC_API_URL` at the Worker (`http://127.0.0.1:8787` by default). A physical iPhone must use the Mac's LAN address instead; TestFlight must use a production HTTPS endpoint.
+
+### Frozen FastAPI reference (optional)
+
+`backend/` is not a deployment target and is twelve endpoint families behind the
+Worker — see `STAGING.md`. It still runs locally if you are working on it:
 
 ```bash
 cp .env.example .env
 docker compose up -d postgres
-```
-
-Docker is optional if PostgreSQL 17 is already available locally. SQLite is used only by isolated automated tests, never as the app's runtime database.
-
-### 2. API
-
-```bash
 cd backend
 python3 -m venv .venv
 source .venv/bin/activate
@@ -61,20 +82,7 @@ aimz-seed
 uvicorn app.main:app --reload
 ```
 
-Check `http://127.0.0.1:8000/api/v1/health` and `/api/v1/health/ready`. API documentation is available at `/docs` outside production.
-
-`aimz-seed` creates the first admin, optional review admin, and initial player invite from environment variables. Change every example credential before using a shared environment.
-
-### 3. Mobile app
-
-```bash
-cd mobile
-pnpm install
-cp .env.example .env
-pnpm ios
-```
-
-The simulator can reach `http://127.0.0.1:8000`. A physical iPhone must use the Mac's LAN address in `EXPO_PUBLIC_API_URL`; TestFlight must use a production HTTPS endpoint.
+`aimz-seed` creates the first admin, optional review admin, and initial player invite from environment variables. Change every example credential before using a shared environment. Docker is optional if PostgreSQL 17 is already available locally.
 
 ## Required configuration
 
@@ -107,14 +115,11 @@ Configure `S3_ENDPOINT_URL`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_
 
 Admin authorization is enforced by the active API runtime. Hiding the Manage tab is not the security boundary.
 
-## API types and tests
+## Tests and verification
 
-Regenerate the app's API schema while FastAPI is running:
-
-```bash
-cd mobile
-pnpm api:types
-```
+The app's `/api/v1` types are hand-written in `mobile/src/types/contract.ts` and
+shared with the Worker, which returns them from its serializers — so `tsc`
+checks the same contract at both ends. There is nothing to regenerate.
 
 Run verification:
 

@@ -1,4 +1,5 @@
 import type { Context } from "hono";
+import type { CompetitionRead, MatchRead, PlayerMatchStatRead, PlayerRead, TeamRead } from "../../mobile/src/types/contract";
 import type { CompetitionRow, JsonObject, MatchRow, PlayerRow, StatRow, TeamRow, UserRow } from "./types";
 import { verifyAccessToken } from "./security";
 
@@ -118,7 +119,7 @@ function mediaPath(objectKey: string | null): string | null {
   return objectKey ? `/api/v1/media/${objectKey}` : null;
 }
 
-export function publicTeam(team: TeamRow | null): Record<string, unknown> | null {
+export function publicTeam(team: TeamRow | null): TeamRead | null {
   if (!team) return null;
   return {
     ...team,
@@ -128,12 +129,12 @@ export function publicTeam(team: TeamRow | null): Record<string, unknown> | null
   };
 }
 
-export function publicCompetition(competition: CompetitionRow | null): Record<string, unknown> | null {
+export function publicCompetition(competition: CompetitionRow | null): CompetitionRead | null {
   return competition ? { ...competition } : null;
 }
 
-export function publicStat(stat: StatRow): Record<string, unknown> {
-  return { ...stat, appeared: Boolean(stat.appeared) };
+export function publicStat(stat: StatRow): PlayerMatchStatRead {
+  return { ...stat, appeared: Boolean(stat.appeared), clean_sheet: Boolean(stat.clean_sheet) };
 }
 
 /**
@@ -153,7 +154,7 @@ function ageFromBirthDate(dateOfBirth: string | null, today = new Date()): numbe
   return age >= 0 && age < 130 ? age : null;
 }
 
-export function publicPlayer(player: PlayerRow | null): Record<string, unknown> | null {
+export function publicPlayer(player: PlayerRow | null): PlayerRead | null {
   if (!player) return null;
   return {
     id: player.id,
@@ -175,12 +176,13 @@ export function publicMatch(
   homeTeam: TeamRow | null = null,
   awayTeam: TeamRow | null = null,
   competition: CompetitionRow | null = null,
-): Record<string, unknown> {
+): MatchRead {
   return {
     ...match,
     // D1 stores flags as integers; clients expect the boolean the FastAPI
     // reference returns.
     has_extra_time: Boolean(match.has_extra_time),
+    man_of_the_match_is_opponent: Boolean(match.man_of_the_match_is_opponent),
     home_team: publicTeam(homeTeam),
     away_team: publicTeam(awayTeam),
     competition: publicCompetition(competition),

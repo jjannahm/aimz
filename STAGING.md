@@ -14,7 +14,17 @@ The Worker does not sleep after inactivity, so the preview no longer has Render 
 
 ## Cloudflare API
 
-The `cloudflare-api/` package preserves the mobile app's `/api/v1` contract for authentication, teams, competitions, players, matches, live scoring, lineups, statistics, standings, and invitation management. The existing FastAPI backend remains the local and future production-oriented reference implementation.
+The `cloudflare-api/` package **is** the AIMZ API. It serves every one of the 26
+`/api/v1` endpoint families the mobile app calls — authentication, teams,
+competitions, players, matches, live scoring, lineups, statistics, standings,
+invitation management, fees and invoices, kit orders, match and player reports,
+attendance requests, and training metrics.
+
+`backend/` is a frozen FastAPI reference implementation. Nothing deploys it and
+it is not a deployment target: it serves 14 of those 26 families and is 18
+migrations behind. Run `npm run parity` in `cloudflare-api/` for the current
+gap. The AWS migration that would have made it production is stood down — see
+`infra/aws-cdk/README.md`.
 
 ### Required GitHub Actions secrets
 
@@ -116,7 +126,7 @@ Share credentials and invitation codes privately. Do not place them in the repos
 
 1. Create a feature branch from `main`.
 2. Push the branch and open a pull request into `main`.
-3. Wait for the required `Backend` and `Mobile` checks. The Backend check also typechecks and bundles the Worker.
+3. Wait for the `Cloudflare API` and `Mobile` checks. `Cloudflare API` typechecks, tests, and bundles the Worker, and `Deploy Worker` depends on it, so a Worker that does not build cannot reach staging. `Backend` is advisory — it cannot fail the build, and it skips its own steps entirely unless the change touches `backend/`.
 4. Review and merge.
 5. The `main` workflow applies pending D1 migrations, deploys and probes the Worker, then deploys Pages. Do not publish the web app against an older API manually.
 
@@ -130,9 +140,21 @@ After the Cloudflare Pages app is verified against the Worker:
 
 Cloudflare deployment configuration contains no Render or Neon credentials. Deleting those external resources is irreversible, so verify the Cloudflare URLs first.
 
-## Local full-stack reference
+## Local development
 
-FastAPI/PostgreSQL can still run locally for backend development:
+Develop against the Worker, since that is what the app talks to:
+
+```bash
+cd cloudflare-api
+npm ci
+npm run db:migrate:local
+npm run dev
+```
+
+### Frozen FastAPI reference
+
+FastAPI/PostgreSQL still runs locally, but only as a reference — it is twelve
+endpoint families behind and nothing deploys it:
 
 ```bash
 cd backend
@@ -141,4 +163,4 @@ cd backend
 .venv/bin/alembic upgrade head --sql
 ```
 
-The hosted preview uses Worker/D1; the local FastAPI implementation is not deployed to Render.
+Neither the hosted preview nor anything else deploys the FastAPI implementation.

@@ -1,9 +1,28 @@
 # Stage 3 — data cutover (Cloudflare D1 → AWS RDS)
 
-Stage 1 stood up the AWS infrastructure; Stage 2 brought the FastAPI backend to
-feature parity with the Cloudflare Worker. Stage 3 moves the live data across and
-points clients at AWS. Nothing here deletes anything on Cloudflare — the Worker
-stays serving until the final switch, so a rollback is just "point back".
+> ## ⛔ Stood down. Do not run this procedure.
+>
+> **Cloudflare is the platform.** The AWS migration is not being pursued, and
+> the precondition this document was written against was never met.
+>
+> An earlier version of this page opened by saying "Stage 2 brought the FastAPI
+> backend to feature parity with the Cloudflare Worker." That was never true.
+> Stage 2 was never completed. `backend/` does not serve twelve of the twenty-six
+> endpoint families the mobile app calls — fees, invoices, kit orders, match and
+> player reports, attendance requests, branches, and training metrics among them.
+>
+> Following the steps below would move live academy data onto an API that cannot
+> serve roughly half the product, and then point the app at it.
+>
+> Run `npm run parity` in `cloudflare-api/` for the current gap. Nothing here is
+> deleted — the tooling and the CDK stack remain on disk should AWS ever be
+> revisited — but Stage 2 must genuinely be finished and verified before any of
+> this becomes safe.
+
+Stage 1 stood up the AWS infrastructure. Stage 3 was intended to move the live
+data across and point clients at AWS. Nothing here deletes anything on
+Cloudflare — the Worker stays serving until a final switch, so a rollback would
+be just "point back".
 
 ## 0. Prerequisites
 

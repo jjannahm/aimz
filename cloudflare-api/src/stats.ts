@@ -355,8 +355,8 @@ async function awardRankings(env: Env, competitionId: string): Promise<(definiti
 
 interface AwardRank {
   rank: number;
-  player: Record<string, unknown> | null;
-  team: Record<string, unknown> | null;
+  player: object | null;
+  team: object | null;
   value: number;
   unit: string;
   appearances: number;

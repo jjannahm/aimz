@@ -27,8 +27,8 @@ interface TrainingRank {
   rank: number;
   metric: Record<string, unknown>;
   label: string;
-  player: Record<string, unknown> | null;
-  team: Record<string, unknown> | null;
+  player: object | null;
+  team: object | null;
   value: number;
   unit: string;
   sessions: number;
