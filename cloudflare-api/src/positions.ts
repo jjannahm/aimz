@@ -48,10 +48,6 @@ export const GOALKEEPER = "GK";
 
 const BY_CODE = new Map(POSITIONS.map((position) => [position.code, position]));
 
-export function positionDefinition(code: string): PositionDefinition | null {
-  return BY_CODE.get(code) ?? null;
-}
-
 /** The full name, falling back to whatever was stored so nothing renders blank. */
 export function positionName(code: string): string {
   return BY_CODE.get(code)?.name ?? code;
