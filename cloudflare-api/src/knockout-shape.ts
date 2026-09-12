@@ -14,7 +14,7 @@ export const ADVANCE_PER_GROUP = 2;
 export const groupCountFor = (teamCount: number, groupSize: number = GROUP_SIZE) => teamCount / groupSize;
 
 /** A bracket halves cleanly or not at all, so the group count must be a power of two. */
-export const isPowerOfTwo = (value: number) => Number.isInteger(value) && value >= 1 && (value & (value - 1)) === 0;
+const isPowerOfTwo = (value: number) => Number.isInteger(value) && value >= 1 && (value & (value - 1)) === 0;
 
 /**
  * Rounds a knockout runs, biggest first, named by how many teams are left.
@@ -37,7 +37,7 @@ export function roundLabel(round: number): string {
 }
 
 export type Shape = { team_count: number | null; group_size: number | null };
-export type ShapeResult = { ok: true; shape: Shape } | { ok: false; field: string; message: string };
+type ShapeResult = { ok: true; shape: Shape } | { ok: false; field: string; message: string };
 
 /**
  * The shape a knockout is drawn in: how many teams, and how many to a group.

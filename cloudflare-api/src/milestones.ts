@@ -12,7 +12,7 @@ export interface MilestoneMatch {
   motm: boolean;
 }
 
-export interface Milestone {
+interface Milestone {
   /** Stable enough to key a list on, and to recognise across two responses. */
   id: string;
   label: string;
@@ -21,14 +21,14 @@ export interface Milestone {
   match_id: string;
 }
 
-export interface Streak {
+interface Streak {
   id: string;
   label: string;
   count: number;
 }
 
 /** What the player is closest to next, and how far away it is. */
-export interface NextMilestone {
+interface NextMilestone {
   id: string;
   label: string;
   current: number;
@@ -36,7 +36,7 @@ export interface NextMilestone {
   remaining: number;
 }
 
-export interface MilestoneSummary {
+interface MilestoneSummary {
   reached: Milestone[];
   streaks: Streak[];
   next: NextMilestone[];

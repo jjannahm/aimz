@@ -60,9 +60,3 @@ export function computeMinutesPlayed(
       };
     });
 }
-
-/** "60'" for someone still on, "0–60'" for someone taken off. */
-export function describeSpell(spell: PlayerMinutes): string {
-  if (spell.offAt === null) return `${spell.minutes}'`;
-  return `${spell.minutes}' (${spell.onAt}–${spell.offAt}')`;
-}

@@ -18,7 +18,7 @@ export type AttendanceStatus = (typeof ATTENDANCE_STATUSES)[number];
  * would cost her a percentage point she earned, which is the whole reason the
  * third status exists.
  */
-export const ATTENDED: readonly AttendanceStatus[] = ["present", "late"];
+const ATTENDED: readonly AttendanceStatus[] = ["present", "late"];
 
 const column = (alias?: string) => (alias ? `${alias}.status` : "status");
 const list = (statuses: readonly AttendanceStatus[]) => statuses.map((status) => `'${status}'`).join(", ");
@@ -54,4 +54,4 @@ export async function attendedByMonth(env: Env, playerIds: string[]): Promise<Ma
 }
 
 /** The `WHERE` half of the same rule, for counting rather than summing. */
-export const attendedCondition = (alias?: string) => `${column(alias)} IN (${list(ATTENDED)})`;
+const attendedCondition = (alias?: string) => `${column(alias)} IN (${list(ATTENDED)})`;

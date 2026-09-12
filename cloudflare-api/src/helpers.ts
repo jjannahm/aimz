@@ -114,7 +114,7 @@ export function parsePagination(url: URL): { limit: number; offset: number } {
  * resolves it against its API base. Keeping it relative spares every one of
  * publicTeam's call sites from having to thread the environment through.
  */
-export function mediaPath(objectKey: string | null): string | null {
+function mediaPath(objectKey: string | null): string | null {
   return objectKey ? `/api/v1/media/${objectKey}` : null;
 }
 
@@ -143,7 +143,7 @@ export function publicStat(stat: StatRow): Record<string, unknown> {
  * what a squad list or a profile actually needs, and it identifies a child far
  * less precisely.
  */
-export function ageFromBirthDate(dateOfBirth: string | null, today = new Date()): number | null {
+function ageFromBirthDate(dateOfBirth: string | null, today = new Date()): number | null {
   if (!dateOfBirth) return null;
   const born = new Date(`${dateOfBirth}T00:00:00.000Z`);
   if (Number.isNaN(born.getTime())) return null;

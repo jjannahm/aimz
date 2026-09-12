@@ -83,7 +83,7 @@ export function summarise(row: StandingRow | undefined, played: PlayedMatch[]): 
  * Null before a ball has been kicked, rather than a streak of nought, so the
  * screen can leave the line out instead of stating nothing.
  */
-export function currentStreak(played: PlayedMatch[]): { result: FormResult; count: number } | null {
+function currentStreak(played: PlayedMatch[]): { result: FormResult; count: number } | null {
   const latest = played[0];
   if (!latest) return null;
   let count = 0;

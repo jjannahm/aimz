@@ -116,7 +116,7 @@ export function byPosition<T extends { name: string; position: string | null }>(
 const FLANK_ORDER: Record<PositionFlank, number> = { left: 0, centre: 1, right: 2 };
 
 /** Which side of its line a position stands on; centre for anything unknown. */
-export function flankFor(code: string | null | undefined): PositionFlank {
+function flankFor(code: string | null | undefined): PositionFlank {
   return (code ? BY_CODE.get(code)?.flank : undefined) ?? 'centre';
 }
 

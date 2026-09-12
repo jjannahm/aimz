@@ -13,6 +13,7 @@ import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
+import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -52,7 +53,7 @@ export function KitSection() {
   const [errors, setErrors] = useState<Partial<Record<keyof Draft, string>>>({});
   const set = (field: keyof Draft, value: string) => setDraft((current) => ({ ...current, [field]: value }));
 
-  const orders = useQuery({ queryKey: ['kit-orders'], queryFn: () => api.kitOrders() });
+  const orders = useQuery({ queryKey: cacheKeys.kitOrders, queryFn: () => api.kitOrders() });
   const place = useMutation({
     mutationFn: async () => {
       if (!playerId) throw new ApiError('No player to order for.', 403);
@@ -72,7 +73,7 @@ export function KitSection() {
       setDraft(empty);
       setErrors({});
       showMessage('Kit ordered', 'AIMZ has the order and will confirm when it is ready.');
-      await client.invalidateQueries({ queryKey: ['kit-orders'] });
+      await invalidateAfterWrite(client, 'kit');
     },
     onError: (error) => showMessage('Kit not ordered', error instanceof ApiError ? error.message : 'Try again.'),
   });

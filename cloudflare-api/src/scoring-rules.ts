@@ -14,7 +14,7 @@ export const FORM_LENGTH = 5;
 // A one-match wonder should not win a discipline award.
 export const MIN_AWARD_APPEARANCES = 3;
 
-export type StatCounter = "goals" | "assists" | "own_goals" | "yellow_cards" | "red_cards";
+type StatCounter = "goals" | "assists" | "own_goals" | "yellow_cards" | "red_cards";
 
 export function eventCounter(type: EventRow["type"]): StatCounter | null {
   // Assists are credited from the goal they came from, never from the event type.
@@ -61,7 +61,7 @@ export function applyStanding(row: StandingAccumulator, scored: number, conceded
   } else row.lost += 1;
 }
 
-export type AwardMetric = "motm" | "goals" | "assists" | "appearances" | "minutes" | "discipline";
+type AwardMetric = "motm" | "goals" | "assists" | "appearances" | "minutes" | "discipline";
 
 /** One definition per award, feeding both its headline winner and its ranking. */
 export interface AwardDefinition {

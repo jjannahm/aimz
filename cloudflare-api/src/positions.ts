@@ -3,9 +3,9 @@
 // relative imports, and `import type` is erased before it tries.
 
 /** The four lines of a football team, and the rows a pitch is drawn in. */
-export type PositionLine = "GK" | "DEF" | "MID" | "FWD";
+type PositionLine = "GK" | "DEF" | "MID" | "FWD";
 
-export interface PositionDefinition {
+interface PositionDefinition {
   /** What is stored, and what an admin types to find it. */
   code: string;
   /** What is shown. */

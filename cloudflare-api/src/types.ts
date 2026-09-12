@@ -10,12 +10,12 @@ export type UserRole = "player" | "admin" | "parent" | "coach";
  * record is created.
  */
 export type InviteKind = "player" | "parent" | "coach" | "newcomer";
-export type CompetitionType = "league" | "tournament" | "friendly";
+type CompetitionType = "league" | "tournament" | "friendly";
 export type MatchStatus = "scheduled" | "live" | "finished";
 export type MatchPhase = "not_started" | "first_half" | "halftime" | "second_half" | "extra_time" | "finished";
-export type EventType = "goal" | "assist" | "own_goal" | "penalty_missed" | "yellow_card" | "red_card" | "substitution";
-export type SubstitutionReason = "tactical" | "injury" | "concussion" | "disciplinary" | "other";
-export type PenaltyOutcome = "saved" | "off_target";
+type EventType = "goal" | "assist" | "own_goal" | "penalty_missed" | "yellow_card" | "red_card" | "substitution";
+type SubstitutionReason = "tactical" | "injury" | "concussion" | "disciplinary" | "other";
+type PenaltyOutcome = "saved" | "off_target";
 
 export interface UserRow {
   id: string;
@@ -154,8 +154,8 @@ export interface AvailabilityRow {
 }
 
 /** Who a notice is addressed to, and how loudly it is said. */
-export type AnnouncementAudience = "academy" | "team" | "coaches";
-export type AnnouncementPriority = "standard" | "pinned" | "urgent";
+type AnnouncementAudience = "academy" | "team" | "coaches";
+type AnnouncementPriority = "standard" | "pinned" | "urgent";
 
 export interface AnnouncementRow {
   id: string;

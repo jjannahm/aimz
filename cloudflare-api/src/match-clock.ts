@@ -1,8 +1,8 @@
 import type { MatchPhase, MatchRow, MatchStatus } from "./types";
 
-export type MatchPhaseAction = "start_match" | "halftime" | "start_second_half" | "start_extra_time" | "finish_match";
+type MatchPhaseAction = "start_match" | "halftime" | "start_second_half" | "start_extra_time" | "finish_match";
 
-export type MatchClockTransition = Pick<MatchRow, "status" | "phase" | "phase_started_at">;
+type MatchClockTransition = Pick<MatchRow, "status" | "phase" | "phase_started_at">;
 type MatchClockInput = Pick<MatchRow, "status" | "phase" | "phase_started_at"> & Partial<Pick<MatchRow, "has_extra_time">>;
 
 export class MatchPhaseTransitionError extends Error {

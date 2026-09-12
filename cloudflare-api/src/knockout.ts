@@ -74,7 +74,7 @@ async function readBracket(env: Env, competition: CompetitionRow): Promise<Recor
  * Only matches between two teams of the same group count, so a knockout tie
  * played in the same competition never lands in a group table.
  */
-export interface GroupStandingRow {
+interface GroupStandingRow {
   team: TeamRow;
   played: number; won: number; drawn: number; lost: number;
   goals_for: number; goals_against: number; points: number;

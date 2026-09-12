@@ -21,7 +21,7 @@ type App = Hono<{ Bindings: Env }>;
  * scorers the way a real one does, and that also sidesteps the question of
  * whose report it is when both squads are ours.
  */
-export interface MatchReportSnapshot {
+interface MatchReportSnapshot {
   /** Bumped when the shape changes, so an address already sent keeps rendering. */
   version: 1;
   match: {
@@ -95,7 +95,7 @@ async function playerNames(env: Env, ids: string[]): Promise<Map<string, string>
  * and publishing freezes exactly the same object, so what a parent opens and
  * what the coach saw before sending it cannot drift apart.
  */
-export async function buildMatchReport(env: Env, matchId: string): Promise<MatchReportSnapshot> {
+async function buildMatchReport(env: Env, matchId: string): Promise<MatchReportSnapshot> {
   const match = await getJoinedMatch(env, matchId);
   const [events, lineup, stats] = await Promise.all([
     env.DB.prepare("SELECT * FROM match_events WHERE match_id=? ORDER BY CASE WHEN minute IS NULL THEN 1 ELSE 0 END, minute, created_at").bind(matchId).all<EventRow>(),

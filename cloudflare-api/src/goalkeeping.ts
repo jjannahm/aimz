@@ -18,7 +18,7 @@ const GOALKEEPER = "GK";
  * splits the match between them, and the one who was not on cannot be charged
  * with a goal or credited with a clean sheet.
  */
-export interface GoalkeeperMatchStats {
+interface GoalkeeperMatchStats {
   goals_conceded: number;
   penalties_saved: number;
   clean_sheet: number;

@@ -324,7 +324,7 @@ export function registerStatsRoutes(app: App): void {
  * Ranks every award off one set of totals, so an award's headline winner is
  * always rank 1 of the ranking a client opens behind it.
  */
-export async function awardRankings(env: Env, competitionId: string): Promise<(definition: AwardDefinition) => AwardRank[]> {
+async function awardRankings(env: Env, competitionId: string): Promise<(definition: AwardDefinition) => AwardRank[]> {
   const totals = await env.DB.prepare(`SELECT s.player_id AS player_id, SUM(s.goals) AS goals, SUM(s.assists) AS assists, SUM(s.minutes_played) AS minutes, SUM(s.yellow_cards + s.red_cards) AS cards, SUM(CASE WHEN s.appeared THEN 1 ELSE 0 END) AS appearances, (SELECT COUNT(*) FROM matches mm WHERE mm.competition_id=m.competition_id AND mm.status='finished' AND mm.man_of_the_match_player_id=s.player_id) AS motm, MAX(m.kickoff_datetime) AS latest_kickoff, s.team_id AS team_id FROM player_match_stats s JOIN matches m ON m.id=s.match_id WHERE m.status='finished' AND m.competition_id=? GROUP BY s.player_id`).bind(competitionId).all<AwardTotals>();
   const playerIds = totals.results.map((row) => row.player_id);
   const players = playerIds.length

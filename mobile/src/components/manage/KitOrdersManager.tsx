@@ -7,6 +7,7 @@ import { FlatCard } from '@/src/components/FlatCard';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
+import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { confirmAction, showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -27,10 +28,10 @@ export function KitOrdersManager() {
   const styles = useThemedStyles(stylesheet);
   const client = useQueryClient();
   const [queue, setQueue] = useState<KitStatus>('ordered');
-  const orders = useQuery({ queryKey: ['kit-orders', queue], queryFn: () => api.kitOrders(`?status=${queue}&limit=100`) });
+  const orders = useQuery({ queryKey: [...cacheKeys.kitOrders, queue], queryFn: () => api.kitOrders(`?status=${queue}&limit=100`) });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: KitStatus }) => api.setKitStatus(id, status),
-    onSuccess: async () => { await client.invalidateQueries({ queryKey: ['kit-orders'] }); },
+    onSuccess: async () => { await invalidateAfterWrite(client, 'kit'); },
     onError: (error) => showMessage('Not saved', error instanceof ApiError ? error.message : 'Try again.'),
   });
 

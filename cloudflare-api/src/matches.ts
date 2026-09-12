@@ -72,7 +72,7 @@ async function appearedInMatch(env: Env, matchId: string, playerId: string): Pro
  * for — falls back to the squad they are on now, which is the best available
  * answer at the moment it is written, and is then fixed for good.
  */
-export async function squadsForMatch(env: Env, matchId: string): Promise<Map<string, string>> {
+async function squadsForMatch(env: Env, matchId: string): Promise<Map<string, string>> {
   const [lineup, players] = await Promise.all([
     env.DB.prepare("SELECT player_id, team_id FROM match_lineup_entries WHERE match_id = ?").bind(matchId).all<{ player_id: string; team_id: string }>(),
     env.DB.prepare("SELECT p.id, p.team_id FROM players p JOIN matches m ON m.id = ? WHERE p.team_id IN (m.home_team_id, m.away_team_id)").bind(matchId).all<{ id: string; team_id: string }>(),

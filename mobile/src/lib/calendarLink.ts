@@ -14,7 +14,7 @@ export const calendarFeedKey = ['calendar-feed'] as const;
  * `webcal:` is what tells a calendar to subscribe rather than download once.
  * Apple, Google and Outlook all register for it.
  */
-export const webcalUrl = (url: string) => url.replace(/^https?:/u, 'webcal:');
+const webcalUrl = (url: string) => url.replace(/^https?:/u, 'webcal:');
 
 export async function shareCalendar(url: string): Promise<void> {
   await Share.share({
