@@ -2718,6 +2718,136 @@ describe('activity retention', () => {
   });
 });
 
+describe('the minutes a match ends up recording', () => {
+  /**
+   * One afternoon, one answer.
+   *
+   * The season total and the match report used to be worked out by different
+   * code on different sides of the wire — the app's, which knew nothing about
+   * red cards, and the report's, which did. A player sent off at 22 minutes was
+   * credited the full match by her profile and 22 by the report. They are the
+   * same arithmetic now, so the two cannot disagree.
+   */
+  const setUp = async () => {
+    const admin = await seedUser('admin');
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: `Minutes ${crypto.randomUUID().slice(0, 6)}`, season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const squad = await (await request('/api/v1/teams', json('POST', { name: `AIMZ ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true, age_group: 'U12', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: `Rivals ${crypto.randomUUID().slice(0, 6)}`, is_aimz: false, competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const make = async (name: string, position: string, shirt: number) =>
+      (await (await request('/api/v1/players', json('POST', { name, team_id: squad.id, position, jersey_number: shirt }, admin.token))).json<{ id: string }>()).id;
+    const sentOff = await make('Sent Off', 'CB', 4);
+    const stayed = await make('Played All', 'CM', 8);
+    const bench = await make('Came On', 'ST', 11);
+    // Two twenty-minute halves: an academy match, not ninety minutes.
+    const match = await (await request('/api/v1/matches', json('POST', {
+      competition_id: competition.id, home_team_id: squad.id, away_team_id: opponent.id,
+      kickoff_datetime: now, venue: 'Palm', status: 'scheduled',
+      half_length_minutes: 20, num_halves: 2, half_time_break_minutes: 10,
+    }, admin.token))).json<{ id: string }>();
+    await request(`/api/v1/matches/${match.id}/lineup`, json('PUT', [
+      { player_id: sentOff, team_id: squad.id, is_starter: true, position: 'CB' },
+      { player_id: stayed, team_id: squad.id, is_starter: true, position: 'CM' },
+      { player_id: bench, team_id: squad.id, is_starter: false, position: 'ST' },
+    ], admin.token));
+    await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action: 'start_match' }, admin.token));
+    return { admin, squad, match, sentOff, stayed, bench };
+  };
+
+  const finish = async (matchId: string, token: string) => {
+    for (const action of ['halftime', 'start_second_half', 'finish_match']) {
+      await request(`/api/v1/matches/${matchId}/phase`, json('POST', { action }, token));
+    }
+  };
+
+  const statsOf = async (matchId: string) =>
+    Object.fromEntries((await testEnv.DB.prepare('SELECT player_id, minutes_played FROM player_match_stats WHERE match_id=?')
+      .bind(matchId).all<{ player_id: string; minutes_played: number }>()).results.map((row) => [row.player_id, row.minutes_played]));
+
+  const reportOf = async (matchId: string, token: string) => {
+    const summary = await (await request(`/api/v1/matches/${matchId}/report`, json('GET', undefined, token)))
+      .json<{ snapshot: { squads: { players: { name: string; minutes: number }[] }[] } }>();
+    return Object.fromEntries(summary.snapshot.squads[0]!.players.map((player) => [player.name, player.minutes]));
+  };
+
+  it('reads a sent-off player the same on her profile as on the report', async () => {
+    const { admin, squad, match, sentOff, stayed } = await setUp();
+    await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'red_card', minute: 22, team_id: squad.id, player_id: sentOff, client_operation_id: 'min-red-22' }, admin.token));
+    await finish(match.id, admin.token);
+
+    const stored = await statsOf(match.id);
+    const report = await reportOf(match.id, admin.token);
+    // Two twenty-minute halves is forty: the break is wall-clock, not football.
+    expect(stored[stayed]).toBe(40);
+    expect(stored[sentOff]).toBe(22);
+    expect(report['Played All']).toBe(40);
+    expect(report['Sent Off']).toBe(22);
+  });
+
+  it('counts a substitution from both ends', async () => {
+    const { admin, squad, match, stayed, bench } = await setUp();
+    await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'substitution', minute: 30, team_id: squad.id, player_id: bench, secondary_player_id: stayed, client_operation_id: 'min-sub-30' }, admin.token));
+    await finish(match.id, admin.token);
+
+    const stored = await statsOf(match.id);
+    expect(stored[stayed]).toBe(30);
+    expect(stored[bench]).toBe(10);
+  });
+
+  /**
+   * The coach's screen saves minutes off its own running clock while the match
+   * is on, because nothing else knows it. Pressing that button after full time
+   * must not put the old answer back.
+   */
+  it('replaces what was typed by hand once the match is over', async () => {
+    const { admin, squad, match, sentOff, stayed } = await setUp();
+    await request(`/api/v1/matches/${match.id}/events`, json('POST', { type: 'red_card', minute: 22, team_id: squad.id, player_id: sentOff, client_operation_id: 'min-red-again' }, admin.token));
+    await finish(match.id, admin.token);
+
+    // What the live screen would send: the full match for everybody on it.
+    await request(`/api/v1/matches/${match.id}/player-stats`, json('PUT', [
+      { player_id: sentOff, appeared: true, minutes_played: 40 },
+      { player_id: stayed, appeared: true, minutes_played: 40 },
+    ], admin.token));
+
+    const stored = await statsOf(match.id);
+    expect(stored[sentOff]).toBe(22);
+    expect(stored[stayed]).toBe(40);
+  });
+
+  // While the match is running the coach's clock is the only one there is.
+  it('keeps what was typed while the match is still on', async () => {
+    const { admin, match, stayed } = await setUp();
+    await request(`/api/v1/matches/${match.id}/player-stats`, json('PUT', [
+      { player_id: stayed, appeared: true, minutes_played: 12 },
+    ], admin.token));
+
+    const stored = await statsOf(match.id);
+    expect(stored[stayed]).toBe(12);
+  });
+
+  /**
+   * A match scored without a team sheet has nothing to derive from, and the
+   * minutes entered by hand are the only record of it. Deriving would wipe them.
+   */
+  it('leaves a match scored without a team sheet alone', async () => {
+    const admin = await seedUser('admin');
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: `Sheetless ${crypto.randomUUID().slice(0, 6)}`, season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const squad = await (await request('/api/v1/teams', json('POST', { name: `AIMZ ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true, age_group: 'U12', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: `Rivals ${crypto.randomUUID().slice(0, 6)}`, is_aimz: false, competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const player = await (await request('/api/v1/players', json('POST', { name: 'No Sheet', team_id: squad.id, position: 'CM', jersey_number: 6 }, admin.token))).json<{ id: string }>();
+    const match = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: squad.id, away_team_id: opponent.id, kickoff_datetime: now, venue: 'Palm', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    await request(`/api/v1/matches/${match.id}/phase`, json('POST', { action: 'start_match' }, admin.token));
+    await finish(match.id, admin.token);
+
+    await request(`/api/v1/matches/${match.id}/player-stats`, json('PUT', [
+      { player_id: player.id, appeared: true, minutes_played: 55 },
+    ], admin.token));
+
+    const stored = await statsOf(match.id);
+    expect(stored[player.id]).toBe(55);
+  });
+});
+
 describe('the squad a coach account runs', () => {
   /**
    * `user_teams` was always the answer to "whose squad is this"; it just could

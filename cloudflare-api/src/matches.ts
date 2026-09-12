@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import { minutesFromEvents, playedMinutes } from "./match-minutes";
 import { ApiProblem, booleanField, enumField, jsonArray, jsonObject, nowIso, numberField, publicPlayer, publicStat, publicTeam, stringField } from "./helpers";
 import { computeGoalkeeperStats, playersWhoTookTheField } from "./goalkeeping";
 import { recordAudit } from "./audit";
@@ -326,9 +327,15 @@ export function registerMatchRoutes(app: App): void {
     // back to the squad she is on now. Stamped on the statistic so a promotion
     // to an older age group never carries this match's record with her.
     const squadOf = await squadsForMatch(c.env, match.id);
+    const derived = await derivedMinutes(c.env, match.id, match.status === "finished");
     for (const item of body) {
       const playerId = stringField(item, "player_id", { min: 1, max: 36 })!; playerIds.push(playerId);
-      const appeared = booleanField(item, "appeared") ? 1 : 0; const minutes = numberField(item, "minutes_played", { min: 0, max: 150 })!;
+      const appeared = booleanField(item, "appeared") ? 1 : 0;
+      // Saved by hand while the match runs, because only the coach's screen
+      // knows the clock. Once it is over the thread knows better, and what was
+      // typed is replaced by what the events say — so this button and the
+      // match report cannot leave two answers behind.
+      const minutes = derived?.get(playerId) ?? numberField(item, "minutes_played", { min: 0, max: 150 })!;
       const teamId = squadOf.get(playerId) ?? null;
       statements.push(c.env.DB.prepare(`INSERT INTO player_match_stats (id, match_id, player_id, team_id, appeared, minutes_played, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(match_id, player_id) DO UPDATE SET team_id=excluded.team_id, appeared=excluded.appeared, minutes_played=excluded.minutes_played, updated_at=excluded.updated_at`).bind(crypto.randomUUID(), match.id, playerId, teamId, appeared, minutes, now, now));
     }
@@ -376,6 +383,32 @@ function scoreRecalculation(env: Env, matchId: string, updated: string): D1Prepa
  * timeline correction, so a named XI for a match that is never played records
  * nothing.
  */
+/**
+ * What each player actually played, once the match is over.
+ *
+ * The register of the match is the event thread, so the minutes are read off
+ * it rather than typed in — the same `minutesFromEvents` the match report
+ * renders, so a season total and a report can no longer disagree about the
+ * same afternoon. A player sent off at 22 minutes played 22, everywhere.
+ *
+ * Null while a match is still running, and null for a match scored without a
+ * team sheet. In the first case the coach's screen is the only thing that
+ * knows the clock; in the second there is no sheet to derive anything from and
+ * the minutes entered by hand are the only record there is.
+ */
+async function derivedMinutes(env: Env, matchId: string, finished: boolean): Promise<Map<string, number> | null> {
+  if (!finished) return null;
+  const [match, lineup, events] = await Promise.all([
+    env.DB.prepare("SELECT half_length_minutes, num_halves, has_extra_time, extra_time_half_length_minutes FROM matches WHERE id=?")
+      .bind(matchId).first<{ half_length_minutes: number; num_halves: number; has_extra_time: number; extra_time_half_length_minutes: number }>(),
+    env.DB.prepare("SELECT player_id, is_starter FROM match_lineup_entries WHERE match_id=?").bind(matchId).all<{ player_id: string; is_starter: number }>(),
+    env.DB.prepare("SELECT type, minute, player_id, secondary_player_id FROM match_events WHERE match_id=?").bind(matchId)
+      .all<{ type: string; minute: number | null; player_id: string | null; secondary_player_id: string | null }>(),
+  ]);
+  if (!match || !lineup.results.length) return null;
+  return minutesFromEvents(lineup.results, events.results, playedMinutes(match));
+}
+
 async function pitchStatements(env: Env, matchId: string, finished: boolean, updated: string): Promise<D1PreparedStatement[]> {
   const [lineup, events] = await Promise.all([
     env.DB.prepare("SELECT * FROM match_lineup_entries WHERE match_id=?").bind(matchId).all<LineupRow>(),
@@ -383,6 +416,9 @@ async function pitchStatements(env: Env, matchId: string, finished: boolean, upd
   ]);
   const onPitch = playersWhoTookTheField(lineup.results, events.results);
   const stats = computeGoalkeeperStats(lineup.results, events.results, finished);
+  // Minutes are the sheet's to state once the match is over, the same way the
+  // appearances and the goalkeeping tallies below already are.
+  const played = await derivedMinutes(env, matchId, finished);
 
   // Which squad each of them turned out for, from the sheet they are named on,
   // or from the substitution that brought on someone who was not named at all.
@@ -404,12 +440,19 @@ async function pitchStatements(env: Env, matchId: string, finished: boolean, upd
     env.DB.prepare("UPDATE player_match_stats SET appeared=0, updated_at=? WHERE match_id=? AND player_id IN (SELECT player_id FROM match_lineup_entries WHERE match_id=?)").bind(updated, matchId, matchId),
   ];
 
+  if (played) {
+    // Cleared and rewritten the way the appearances are, and scoped the same
+    // way: a correction that takes a substitution away has to take the minutes
+    // it bought with it, and a match with no sheet is left alone entirely.
+    statements.push(env.DB.prepare("UPDATE player_match_stats SET minutes_played=0, updated_at=? WHERE match_id=? AND player_id IN (SELECT player_id FROM match_lineup_entries WHERE match_id=?)").bind(updated, matchId, matchId));
+  }
+
   for (const playerId of onPitch) {
     statements.push(env.DB.prepare(`
       INSERT INTO player_match_stats (id, match_id, player_id, team_id, appeared, minutes_played, created_at, updated_at)
-      VALUES (?, ?, ?, ?, 1, 0, ?, ?)
-      ON CONFLICT(match_id, player_id) DO UPDATE SET appeared=1, team_id=COALESCE(excluded.team_id, player_match_stats.team_id), updated_at=excluded.updated_at
-    `).bind(crypto.randomUUID(), matchId, playerId, teamOf.get(playerId) ?? null, updated, updated));
+      VALUES (?, ?, ?, ?, 1, ?, ?, ?)
+      ON CONFLICT(match_id, player_id) DO UPDATE SET appeared=1, team_id=COALESCE(excluded.team_id, player_match_stats.team_id), minutes_played=COALESCE(?, player_match_stats.minutes_played), updated_at=excluded.updated_at
+    `).bind(crypto.randomUUID(), matchId, playerId, teamOf.get(playerId) ?? null, played?.get(playerId) ?? 0, updated, updated, played?.get(playerId) ?? null));
   }
 
   for (const [playerId, row] of stats) {
