@@ -13,6 +13,35 @@ permissions:
   contents: read
 
 jobs:
+  # The API that is actually deployed. Blocking: nothing below it should reach
+  # staging on a Worker that does not typecheck, does not pass its tests, or
+  # does not bundle. These steps used to live inside the advisory Backend job,
+  # where `continue-on-error` covered them too and a broken Worker would still
+  # have deployed.
+  api:
+    name: Cloudflare API
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloudflare-api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: cloudflare-api/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Validate the Worker bundle
+        run: npm run deploy:dry-run
+
+  # The FastAPI reference implementation, which nothing deploys. Advisory on
+  # purpose — it is behind the Worker on several features — so it reports
+  # rather than blocks. Nothing depends on this job.
   backend:
     name: Backend
     runs-on: ubuntu-latest
@@ -32,18 +61,6 @@ jobs:
       - run: pytest
       - name: Verify migration SQL generation
         run: alembic upgrade head --sql > /tmp/aimz-migration.sql
-      - name: Install Cloudflare API dependencies
-        run: npm ci
-        working-directory: cloudflare-api
-      - name: Typecheck Cloudflare API
-        run: npm run typecheck
-        working-directory: cloudflare-api
-      - name: Test Cloudflare API
-        run: npm test
-        working-directory: cloudflare-api
-      - name: Validate Cloudflare Worker bundle
-        run: npm run deploy:dry-run
-        working-directory: cloudflare-api
 
   mobile:
     name: Mobile
@@ -79,7 +96,7 @@ jobs:
 
   worker:
     name: Deploy Worker
-    needs: backend
+    needs: api
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
