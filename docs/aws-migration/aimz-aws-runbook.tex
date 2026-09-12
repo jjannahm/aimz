@@ -363,22 +363,37 @@ npx cdk destroy -c env=production
 \end{lstlisting}
 
 % ---------------------------------------------------------------------------
-\section{Remaining work (staged plan)}
+\section{Remaining work --- stood down}
 
-This runbook covers \textbf{Stage 1}: the AWS infrastructure and deployment
-tooling. Two stages remain before the AWS deployment fully replaces Cloudflare:
+\textbf{This migration is not being pursued.} Cloudflare is the platform:
+Pages serves the web app, a Worker serves the API, and D1 holds the data.
+This runbook covers \textbf{Stage 1} only --- the AWS infrastructure and
+deployment tooling --- and Stage 1 is where it stopped. Nothing has been
+deleted, so the option survives, but neither stage below is being worked on.
 
 \begin{enumerate}[leftmargin=1.6em]
-  \item \textbf{Stage 2 --- FastAPI feature parity.} The Cloudflare Worker is
-        ahead of the FastAPI backend by roughly 15 migrations and eight route
-        groups (stats, knockout, training, announcements, roster,
-        calendar, audit). These must be ported into \texttt{backend/} so the
-        AWS API matches the contract the mobile app expects. The Redis cache
-        provisioned here is then wired into the hot read paths.
-  \item \textbf{Stage 3 --- Cutover.} Point \texttt{EXPO\_PUBLIC\_API\_URL} at
-        the ALB, migrate live data from D1 into RDS, publish the web app to
-        CloudFront, ship the mobile build, and retire the Workers/Pages/D1/R2
-        resources.
+  \item \textbf{Stage 2 --- FastAPI feature parity. Never completed.} An
+        earlier revision of this page put the gap at ``roughly 15 migrations and
+        eight route groups (stats, knockout, training, announcements, roster,
+        calendar, audit)''. That estimate was wrong in both directions and
+        should not be relied on: \texttt{backend/} already had every one of
+        those groups, while the families it actually lacks were missing from
+        the list entirely. As of this writing \texttt{backend/} serves 14 of
+        the 26 endpoint families the mobile app calls, and is 18 Alembic
+        migrations behind the Worker's 46 D1 migrations. The twelve it does
+        not serve are fee plans, fee charges, fee payments, fee invoices,
+        invoices, kit orders, match reports, player reports, attendance
+        requests, branches, shared reports, and training metrics.
+
+        Do not copy a number out of this paragraph. Run \texttt{npm run parity}
+        in \texttt{cloudflare-api/}; it prints the current gap, and it exists
+        because every hand-typed parity figure in this repository has gone
+        stale, including the one above.
+  \item \textbf{Stage 3 --- Cutover. Not safe to run.} See
+        \texttt{docs/aws-migration/stage3-data-cutover.md}, which is marked
+        stood down. It once claimed Stage 2 had achieved parity; it had not,
+        and following it would have moved live academy data onto an API that
+        cannot serve half the product.
 \end{enumerate}
 
 \vfill

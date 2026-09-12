@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import type { InviteRead, TokenResponse } from "../../mobile/src/types/contract";
 import { ApiProblem, USER_SELECT, adminUser, assertNotExpired, currentUser, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
 import {
   createAccessToken,
@@ -91,7 +92,7 @@ async function ensureSeeded(env: Env): Promise<void> {
   ).bind(crypto.randomUUID(), inviteHash, adminId, nowIso()).run();
 }
 
-async function issueTokens(env: Env, user: UserRow): Promise<Record<string, unknown>> {
+async function issueTokens(env: Env, user: UserRow): Promise<TokenResponse> {
   const expiresIn = Number(env.ACCESS_TOKEN_SECONDS);
   const accessToken = await createAccessToken(user.id, user.role, env.JWT_SECRET, expiresIn);
   const refreshToken = newToken();
@@ -606,7 +607,7 @@ async function claimablePlayer(env: Env, playerId: string | null, exceptUserId?:
   return playerId;
 }
 
-function publicInvite(invite: InviteRow): Record<string, unknown> {
+function publicInvite(invite: InviteRow): InviteRead {
   return {
     id: invite.id,
     label: invite.label,

@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import type { PresignResponse } from "../../mobile/src/types/contract";
 import { ApiProblem, enumField, jsonObject } from "./helpers";
 import { createUploadToken, verifyUploadToken } from "./security";
 import { assertCanManageTeam, managingUser } from "./team-access";
@@ -49,7 +50,7 @@ export function registerMediaRoutes(app: App): void {
       fields: { token, "Content-Type": contentType },
       object_key: objectKey,
       expires_in: UPLOAD_TOKEN_SECONDS,
-    });
+    } satisfies PresignResponse);
   });
 
   // Authorised by the signed token in the body rather than a bearer header: the

@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import type { LineupEntryRead, MatchEventRead } from "../../mobile/src/types/contract";
 import { minutesFromEvents, playedMinutes } from "./match-minutes";
 import { ApiProblem, booleanField, enumField, jsonArray, jsonObject, nowIso, numberField, publicPlayer, publicStat, publicTeam, stringField } from "./helpers";
 import { computeGoalkeeperStats, playersWhoTookTheField } from "./goalkeeping";
@@ -12,11 +13,11 @@ import { guardMatch, manageMatch } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
-function publicEvent(event: EventRow): Record<string, unknown> {
+function publicEvent(event: EventRow): MatchEventRead {
   return { ...event, is_penalty: Boolean(event.is_penalty) };
 }
 
-function publicLineup(entry: LineupRow): Record<string, unknown> {
+function publicLineup(entry: LineupRow): LineupEntryRead {
   return { ...entry, is_starter: Boolean(entry.is_starter), is_captain: Boolean(entry.is_captain) };
 }
 
