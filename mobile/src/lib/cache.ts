@@ -39,11 +39,16 @@ export const cacheKeys = {
   awards: ['awards'] as const,
   trainingAwards: ['training-awards'] as const,
   auditLog: ['audit-log'] as const,
+  kitOrders: ['kit-orders'] as const,
+  newcomers: ['newcomers'] as const,
+  newcomer: (id: string) => ['newcomer', id] as const,
+  allNewcomers: ['newcomer'] as const,
+  branches: ['branches'] as const,
   liveMatch: (id: string) => ['live-match', id] as const,
   allLiveMatches: ['live-match'] as const,
 };
 
-type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award' | 'bracket' | 'account' | 'training' | 'announcement' | 'availability' | 'attendance' | 'attendance-request' | 'match-report' | 'roster' | 'fee' | 'report' | 'training-stat';
+type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' | 'invite' | 'award' | 'bracket' | 'account' | 'training' | 'announcement' | 'availability' | 'attendance' | 'attendance-request' | 'match-report' | 'roster' | 'fee' | 'report' | 'training-stat' | 'kit' | 'newcomer';
 
 /**
  * What a write touches, including everything derived from it.
@@ -55,7 +60,7 @@ type Entity = 'team' | 'player' | 'competition' | 'match' | 'event' | 'lineup' |
  * matches, timelines and leaderboards.
  */
 const affects: Record<Entity, (readonly string[])[]> = {
-  team: [cacheKeys.teams, cacheKeys.players, cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.trainingAwards, cacheKeys.allLiveMatches, cacheKeys.groups, cacheKeys.bracket, cacheKeys.training, cacheKeys.announcements],
+  team: [cacheKeys.teams, cacheKeys.players, cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.trainingAwards, cacheKeys.allLiveMatches, cacheKeys.groups, cacheKeys.bracket, cacheKeys.training, cacheKeys.announcements, cacheKeys.branches],
   player: [cacheKeys.players, cacheKeys.leaders, cacheKeys.trainingAwards, cacheKeys.playerStats, cacheKeys.allLiveMatches, cacheKeys.accounts, cacheKeys.availability],
   competition: [cacheKeys.competitions, cacheKeys.matches, cacheKeys.standings, cacheKeys.awards, cacheKeys.groups, cacheKeys.bracket],
   match: [cacheKeys.matches, cacheKeys.standings, cacheKeys.leaders, cacheKeys.playerStats, cacheKeys.awards, cacheKeys.allLiveMatches, cacheKeys.bracket, cacheKeys.allMatchReports],
@@ -81,6 +86,8 @@ const affects: Record<Entity, (readonly string[])[]> = {
   'match-report': [cacheKeys.allMatchReports],
   // A reading changes the session's sheet and every total built on it.
   'training-stat': [cacheKeys.trainingStats, cacheKeys.trainingAwards, cacheKeys.playerStats],
+  kit: [cacheKeys.kitOrders],
+  newcomer: [cacheKeys.newcomers, cacheKeys.allNewcomers],
   roster: [cacheKeys.rosterDetails, cacheKeys.players, cacheKeys.personalDetails, cacheKeys.trainingAwards],
   // Naming a man of the match changes the match, not the table or the scorers.
   award: [cacheKeys.matches, cacheKeys.auditLog, cacheKeys.allLiveMatches, cacheKeys.allMatchReports],

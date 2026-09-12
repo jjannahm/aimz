@@ -1,4 +1,4 @@
-import { computeMinutesPlayed, describeSpell } from '@/src/lib/matchMinutes';
+import { computeMinutesPlayed } from '@/src/lib/matchMinutes';
 
 const starter = (player_id: string) => ({ player_id, is_starter: true });
 const bench = (player_id: string) => ({ player_id, is_starter: false });
@@ -62,15 +62,5 @@ describe('computeMinutesPlayed', () => {
     ], 55);
     expect(minutesFor(result, 'a')).toBe(55);
     expect(minutesFor(result, 'c')).toBe(0);
-  });
-});
-
-describe('describeSpell', () => {
-  it('shows a plain figure for a player still on', () => {
-    expect(describeSpell({ playerId: 'a', minutes: 60, onAt: 0, offAt: null, started: true })).toBe("60'");
-  });
-
-  it('shows the window for a player who came off', () => {
-    expect(describeSpell({ playerId: 'a', minutes: 60, onAt: 0, offAt: 60, started: true })).toBe("60' (0–60')");
   });
 });

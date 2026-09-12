@@ -54,13 +54,13 @@ export async function linkedTeamIds(env: Env, user: UserRow): Promise<string[]> 
   return teamIds;
 }
 
-export async function linkedTeamId(env: Env, user: UserRow): Promise<string> {
+async function linkedTeamId(env: Env, user: UserRow): Promise<string> {
   const [teamId] = await linkedTeamIds(env, user);
   return teamId!;
 }
 
 /** The scope for an account: `null` for an administrator, their squads otherwise. */
-export async function teamScope(env: Env, user: UserRow): Promise<TeamScope> {
+async function teamScope(env: Env, user: UserRow): Promise<TeamScope> {
   if (user.role === "admin") return null;
   return linkedTeamIds(env, user);
 }
@@ -168,7 +168,7 @@ export function matchScopeClause(scope: TeamScope, alias = "m"): { sql: string; 
  *  the reply cannot be used to confirm that some other squad's match exists.
  * ------------------------------------------------------------------------ */
 
-export async function assertTeamVisible(env: Env, user: UserRow, teamId: string): Promise<void> {
+async function assertTeamVisible(env: Env, user: UserRow, teamId: string): Promise<void> {
   const scope = await teamScope(env, user);
   if (scope === null || scope.includes(teamId)) return;
   // An opponent club is visible to anyone whose squad has played or is due to
@@ -181,7 +181,7 @@ export async function assertTeamVisible(env: Env, user: UserRow, teamId: string)
   if (!met) throw new ApiProblem(404, "team_not_found", "Team not found.");
 }
 
-export async function assertMatchVisible(env: Env, user: UserRow, matchId: string): Promise<void> {
+async function assertMatchVisible(env: Env, user: UserRow, matchId: string): Promise<void> {
   const scope = await teamScope(env, user);
   if (scope === null) return;
   const clause = matchScopeClause(scope)!;
@@ -189,7 +189,7 @@ export async function assertMatchVisible(env: Env, user: UserRow, matchId: strin
   if (!visible) throw new ApiProblem(404, "match_not_found", "Match not found.");
 }
 
-export async function assertPlayerVisible(env: Env, user: UserRow, playerId: string): Promise<void> {
+async function assertPlayerVisible(env: Env, user: UserRow, playerId: string): Promise<void> {
   const scope = await teamScope(env, user);
   if (scope === null) return;
   const clause = scopeClause(scope, "team_id")!;
@@ -197,7 +197,7 @@ export async function assertPlayerVisible(env: Env, user: UserRow, playerId: str
   if (!visible) throw new ApiProblem(404, "player_not_found", "Player not found.");
 }
 
-export async function assertCompetitionVisible(env: Env, user: UserRow, competitionId: string): Promise<void> {
+async function assertCompetitionVisible(env: Env, user: UserRow, competitionId: string): Promise<void> {
   const scope = await teamScope(env, user);
   if (scope === null) return;
   const ids = await visibleCompetitionIds(env, scope);
@@ -384,4 +384,3 @@ export async function guardPersonalData(c: Context<{ Bindings: Env }>, playerId:
   }
   return user;
 }
-

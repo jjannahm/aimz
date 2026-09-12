@@ -28,7 +28,7 @@ export type MatchClockState = {
   extraTimeProgress: number;
 };
 
-export function resolveMatchPhase(match: Pick<ClockMatch, 'status' | 'phase'>): MatchPhase {
+function resolveMatchPhase(match: Pick<ClockMatch, 'status' | 'phase'>): MatchPhase {
   if (match.phase) return match.phase;
   if (match.status === 'live') return 'first_half';
   if (match.status === 'finished') return 'finished';

@@ -11,6 +11,7 @@ import { PositionField } from '@/src/components/PositionField';
 import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { ErrorState, LoadingState } from '@/src/components/StateView';
 import { api, ApiError } from '@/src/lib/api';
+import { cacheKeys, invalidateAfterWrite } from '@/src/lib/cache';
 import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -21,12 +22,12 @@ export function NewcomersManager({ teams }: { teams: Team[] }) {
   const styles = useThemedStyles(stylesheet); const client = useQueryClient();
   const [queue, setQueue] = useState<'active' | 'history'>('active'); const [search, setSearch] = useState(''); const [branch, setBranch] = useState(''); const [source, setSource] = useState(''); const [stage, setStage] = useState(''); const [selected, setSelected] = useState<string | null>(null);
   const params = new URLSearchParams({ queue }); if (search) params.set('search', search); if (branch) params.set('branch', branch); if (source) params.set('source', source); if (stage) params.set('stage', stage);
-  const list = useQuery({ queryKey: ['newcomers', queue, search, branch, source, stage], queryFn: () => api.newcomers(`?${params}`) });
+  const list = useQuery({ queryKey: [...cacheKeys.newcomers, queue, search, branch, source, stage], queryFn: () => api.newcomers(`?${params}`) });
   // Read from the branches themselves rather than typed in: a text box could
   // say which branch was chosen and never which ones there are.
-  const branches = useQuery({ queryKey: ['branches'], queryFn: () => api.branches() });
-  const detail = useQuery({ queryKey: ['newcomer', selected], queryFn: () => api.newcomer(selected!), enabled: Boolean(selected) });
-  if (selected) return <Detail item={detail.data} loading={detail.isLoading} teams={teams} onBack={() => setSelected(null)} onChanged={async () => { await client.invalidateQueries({ queryKey: ['newcomers'] }); await client.invalidateQueries({ queryKey: ['newcomer', selected] }); }} />;
+  const branches = useQuery({ queryKey: cacheKeys.branches, queryFn: () => api.branches() });
+  const detail = useQuery({ queryKey: cacheKeys.newcomer(selected ?? ''), queryFn: () => api.newcomer(selected!), enabled: Boolean(selected) });
+  if (selected) return <Detail item={detail.data} loading={detail.isLoading} teams={teams} onBack={() => setSelected(null)} onChanged={() => invalidateAfterWrite(client, 'newcomer')} />;
   const due = list.data?.items.filter((item) => item.next_follow_up_at && new Date(item.next_follow_up_at) <= new Date()).length ?? 0;
   return <View style={styles.stack}>
     <SegmentedControl label="Newcomer queue" onChange={(value) => setQueue(value as typeof queue)} options={[{ label: 'Active', value: 'active' }, { label: 'History', value: 'history' }]} value={queue} />

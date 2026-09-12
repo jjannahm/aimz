@@ -5,7 +5,7 @@ import * as Clipboard from 'expo-clipboard';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Redirect, router } from 'expo-router';
-import { Controller, useForm, useWatch, type Control } from 'react-hook-form';
+import { Controller, useForm, useWatch, type Control, type UseFormSetValue } from 'react-hook-form';
 import React from 'react';
 import { Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { z } from 'zod';
@@ -515,7 +515,7 @@ export default function ManageScreen() {
     {subTabs}
     <View style={styles.content} testID="manage-content">
       {!appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}
-      <CollapsibleCard onOpenChange={setFormOpen} open={formOpen} summary={formSummary[resource]} title={`${editing ? 'Edit' : 'Add'} ${listLabel}`} tone="raised">{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields competitions={competitions.data?.items ?? []} control={form.control} editingId={editing && resource === 'competitions' ? editing.id : null} errors={form.formState.errors} onGenerateInvite={save} players={players.data?.items ?? []} resource={resource} setValue={form.setValue} teams={teams.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : resource === 'invites' ? 'Generate invitation' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></CollapsibleCard>
+      <CollapsibleCard onOpenChange={setFormOpen} open={formOpen} summary={formSummary[resource]} title={`${editing ? 'Edit' : 'Add'} ${listLabel}`} tone="raised">{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields competitions={competitions.data?.items ?? []} control={form.control} editingId={editing && resource === 'competitions' ? editing.id : null} players={players.data?.items ?? []} resource={resource} setValue={form.setValue} teams={teams.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : resource === 'invites' ? 'Generate invitation' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></CollapsibleCard>
       {resource === 'players' ? <BulkPlayerImport teams={allTeams} /> : null}
       {resource === 'competitions' ? <SeasonControls competitions={competitions.data?.items ?? []} /> : null}
       {query.isError ? <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} /> : <CollapsibleSection count={items.length} search={{ label: `Search ${listLabel}`, onChange: setSearch, placeholder: `Search ${listLabel}…`, resultCount: shown.length, value: search }} title={`Current ${listLabel}`}>
@@ -573,7 +573,7 @@ function InviteSuccess({ invitation, onClose }: { invitation: RegistrationInvite
  * invitation is for one person; a parent may have several children here.
  * Both use the same searchable control, in single- and multi-select modes.
  */
-function InviteSubject({ control, players, setValue, teams }: { control: any; players: Player[]; setValue: any; teams: Team[] }) {
+function InviteSubject({ control, players, setValue, teams }: { control: Control<Values>; players: Player[]; setValue: UseFormSetValue<Values>; teams: Team[] }) {
   const styles = useThemedStyles(stylesheet);
   const kind = useWatch({ control, name: 'inviteKind' }) as InviteKind;
   if (kind === 'coach') return <InviteSquads control={control} setValue={setValue} teams={teams} />;
@@ -590,7 +590,7 @@ function InviteSubject({ control, players, setValue, teams }: { control: any; pl
  * one, and because the account is the same either way — the API stores a row
  * per squad and scopes every request to the set.
  */
-function InviteSquads({ control, setValue, teams }: { control: any; setValue: any; teams: Team[] }) {
+function InviteSquads({ control, setValue, teams }: { control: Control<Values>; setValue: UseFormSetValue<Values>; teams: Team[] }) {
   const styles = useThemedStyles(stylesheet);
   const raw = (useWatch({ control, name: 'inviteTeamIds' }) as string) || '';
   const chosen = raw.split(',').filter(Boolean);
@@ -609,7 +609,7 @@ function InviteSquads({ control, setValue, teams }: { control: any; setValue: an
   </>;
 }
 
-function InvitePlayers({ control, players, setValue }: { control: any; players: Player[]; setValue: any }) {
+function InvitePlayers({ control, players, setValue }: { control: Control<Values>; players: Player[]; setValue: UseFormSetValue<Values> }) {
   const kind = useWatch({ control, name: 'inviteKind' }) as InviteKind;
   const raw = (useWatch({ control, name: 'invitePlayerIds' }) as string) || '';
   const styles = useThemedStyles(stylesheet);
@@ -631,7 +631,7 @@ function InvitePlayers({ control, players, setValue }: { control: any; players: 
   </>;
 }
 
-function ResourceFields({ control, resource, setValue, teams, competitions, editingId, players }: { control: any; errors: any; resource: LegacyResource; setValue: any; teams: Team[]; competitions: Competition[]; editingId: string | null; players: Player[]; onGenerateInvite: () => void }) {
+function ResourceFields({ control, resource, setValue, teams, competitions, editingId, players }: { control: Control<Values>; resource: LegacyResource; setValue: UseFormSetValue<Values>; teams: Team[]; competitions: Competition[]; editingId: string | null; players: Player[] }) {
   const styles = useThemedStyles(stylesheet);
   const selectedCompetition = useWatch({ control, name: 'competitionId' }) as string;
   // Only teams entered in the chosen competition can play in it. Either side
@@ -671,7 +671,7 @@ function entityTitle(item: Entity) { if ('home_team_id' in item) return `${item.
  * text box on each of them would eventually produce.
  */
 function BranchChoice({ control }: { control: Control<Values> }) {
-  const branches = useQuery({ queryKey: ['branches'], queryFn: () => api.branches() });
+  const branches = useQuery({ queryKey: cacheKeys.branches, queryFn: () => api.branches() });
   return <Controller control={control} name="branch" render={({ field }) => <ChoiceField
     label="Branch"
     onChange={field.onChange}

@@ -9,7 +9,7 @@ import type { FeeChargeRow, FeeInvoiceRow, FeePaymentRow, PlayerRow, TeamRow, Us
 type App = Hono<{ Bindings: Env }>;
 
 /** What an invoice says, as it stood when it was sent. */
-export interface InvoiceSnapshot {
+interface InvoiceSnapshot {
   /** Bumped when the shape changes, so an address already sent keeps rendering. */
   version: 1;
   reference: string;
@@ -64,7 +64,7 @@ function reference(issuedOn: string): string {
  * invoice that demanded it anyway would be asking for money the app itself
  * says is not yet due.
  */
-export async function buildInvoice(
+async function buildInvoice(
   env: Env,
   player: PlayerRow,
   team: TeamRow | null,

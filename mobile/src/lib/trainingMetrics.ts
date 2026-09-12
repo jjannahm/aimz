@@ -4,7 +4,7 @@ import type { Player, TrainingMetric } from '@/src/types/api';
 export const isGoalkeeper = (player: Pick<Player, 'position'>) => player.position?.trim().toUpperCase() === 'GK';
 
 /** The active metric set that applies to one player's existing position. */
-export const metricAppliesToPlayer = (metric: TrainingMetric, player: Pick<Player, 'position'>) => {
+const metricAppliesToPlayer = (metric: TrainingMetric, player: Pick<Player, 'position'>) => {
   const kind = isGoalkeeper(player) ? 'goalkeeper' : 'outfield';
   // Missing means an older cached response from before metrics became
   // position-aware; those metrics were shared by every player.

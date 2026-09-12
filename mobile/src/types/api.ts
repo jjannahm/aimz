@@ -28,7 +28,7 @@ export type LinkedChild = { id: string; name: string; team_id: string; team_name
 export type MatchStatus = Schema['MatchStatus'];
 export type MatchPhase = Schema['MatchPhase'];
 export type MatchPhaseAction = Schema['MatchPhaseUpdate']['action'];
-export type CompetitionType = Schema['CompetitionType'];
+type CompetitionType = Schema['CompetitionType'];
 // The generated union predates own goals and missed penalties; catches up on
 // the next `npm run api:types`.
 export type EventType = Schema['EventType'] | ExtraEventType;
@@ -44,7 +44,7 @@ export type NewcomerApplicationPayload = {
   consent_version?: string;
 };
 export type InviteContext = { kind: InviteKind; label: string; team_id: string | null; team_name: string | null; players: { id: string; name: string }[]; requires_application: boolean };
-export type NewcomerNote = { id: string; author_id: string | null; body: string; created_at: string };
+type NewcomerNote = { id: string; author_id: string | null; body: string; created_at: string };
 export type Newcomer = Omit<NewcomerApplicationPayload, 'consent'> & {
   id: string; source: 'public_link' | 'account_registration'; stage: NewcomerStage;
   outcome: NewcomerOutcome | null; user_id: string | null; player_id: string | null;
@@ -85,15 +85,10 @@ export type PresignResponse = Schema['PresignResponse'];
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 /** 8, 16 or 32 for a knockout; null for a competition that is only a table. */
 /** A closed season is read-only; the API refuses to score into one. */
-export type CompetitionStatus = 'active' | 'completed';
+type CompetitionStatus = 'active' | 'completed';
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 // Optional so a response cached before seasons could be closed still types.
 export type Competition = Schema['CompetitionRead'] & { team_count: number | null; group_size: number | null; status?: CompetitionStatus; completed_at?: string | null };
-
-/** Seasons of one competition, newest first, and which of them is open. */
-export function seasonsOf(competitions: Competition[], name: string): Competition[] {
-  return competitions.filter((item) => item.name === name).sort((a, b) => b.season.localeCompare(a.season));
-}
 
 /** Every season on record, newest first. */
 export function allSeasons(competitions: Competition[]): string[] {
@@ -132,10 +127,10 @@ export function describeCustomDraw(groupCount: number, groupSize: number): strin
 }
 /** Every group is a four, which is where the 8/16/32 sizes come from. */
 export const GROUP_SIZE = 4;
-export type KnockoutTeamCount = (typeof KNOCKOUT_TEAM_COUNTS)[number];
+type KnockoutTeamCount = (typeof KNOCKOUT_TEAM_COUNTS)[number];
 export const isKnockout = (competition: Pick<Competition, 'team_count'> | null | undefined): boolean => competition?.team_count != null;
 
-export type CompetitionGroupRef = { id: string; name: string; position: number };
+type CompetitionGroupRef = { id: string; name: string; position: number };
 /** `group` is null on a league row, and on a knockout team not yet drawn. */
 export type StandingRow = Omit<Schema['StandingRow'], 'team'> & { team: Team; form: FormResult[]; group?: CompetitionGroupRef | null };
 
@@ -151,20 +146,20 @@ export type BracketSlot = {
   winner_team_id: string | null;
   match_id: string | null;
 };
-export type BracketRound = { round: number; label: string; slots: BracketSlot[] };
+type BracketRound = { round: number; label: string; slots: BracketSlot[] };
 export type Bracket = { competition_id: string; team_count: number | null; rounds: BracketRound[] };
 export type PlayerMatchStat = Schema['PlayerMatchStatRead'];
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
 // Optional so a response cached before the goalkeeping fields existed still
 // types, and the app reads them through a zero.
-export type GoalkeeperTotals = { goals_conceded?: number; penalties_saved?: number; clean_sheets?: number };
+type GoalkeeperTotals = { goals_conceded?: number; penalties_saved?: number; clean_sheets?: number };
 
 /** What a player reached, and when. */
-export type Milestone = { id: string; label: string; kickoff_datetime: string; match_id: string };
+type Milestone = { id: string; label: string; kickoff_datetime: string; match_id: string };
 /** A run still going as of her last match. */
-export type Streak = { id: string; label: string; count: number };
+type Streak = { id: string; label: string; count: number };
 /** The next mark on a track she is already on: "2 more appearances to 50". */
-export type NextMilestone = { id: string; label: string; current: number; target: number; remaining: number };
+type NextMilestone = { id: string; label: string; current: number; target: number; remaining: number };
 export type MilestoneSummary = { reached: Milestone[]; streaks: Streak[]; next: NextMilestone[] };
 
 /**
@@ -173,7 +168,7 @@ export type MilestoneSummary = { reached: Milestone[]; streaks: Streak[]; next: 
  * `team` is the squad she turned out for that day, which is not necessarily the
  * squad she is on now — that is the whole point of it being on the statistic.
  */
-export type PlayerMatchLine = PlayerMatchStat & GoalkeeperTotals & {
+type PlayerMatchLine = PlayerMatchStat & GoalkeeperTotals & {
   kickoff_datetime: string;
   competition: { id: string; name: string; season: string };
   team: Team | null;
@@ -339,7 +334,7 @@ export type PlayerTrainingStats = {
 };
 
 /** What a report says, as it stood when it was published. */
-export type ReportSnapshot = {
+type ReportSnapshot = {
   /** Two adds the training marks; one is a report published before them. */
   version: 1 | 2;
   player: { name: string; team_name: string | null; position: string | null; jersey_number: number | null };
@@ -408,7 +403,7 @@ export type FeePlan = {
   updated_at: string;
 };
 
-export type FeePayment = {
+type FeePayment = {
   id: string;
   fee_charge_id: string;
   amount_piastres: number;
@@ -561,7 +556,7 @@ export type SharedInvoice = { issued_at: string; issued_by_name: string; snapsho
 /** What a squad's invoice run did, and who it had nothing to ask. */
 export type InvoiceRun = { items: FeeInvoice[]; skipped: number };
 
-export type PlayerContact = {
+type PlayerContact = {
   id: string;
   player_id: string;
   name: string;
@@ -591,7 +586,7 @@ export type PlayerPersonalDetails = {
 };
 
 /** One charge on a family's record, with what has been paid against it. */
-export type PlayerFeeCharge = FeeCharge & {
+type PlayerFeeCharge = FeeCharge & {
   payments: FeePayment[];
   /** Sessions attended in the month this covers; null for a one-off charge. */
   sessions_attended: number | null;
@@ -623,7 +618,7 @@ export type PlayerLeaderRow = {
 /** A five-match strip, newest first. */
 export type FormResult = 'W' | 'D' | 'L';
 
-export type HeadToHeadMeeting = {
+type HeadToHeadMeeting = {
   match_id: string;
   kickoff_datetime: string;
   competition: Competition | null;
@@ -664,7 +659,7 @@ export type PlayerAward = { metric: AwardMetric; label: string; player: Player; 
 
 /** One row of the ranking behind an award; rank 1 is the award's winner. */
 export type AwardRank = { rank: number; player: Player; team: Team; value: number; unit: string; appearances: number };
-export type TeamAward = { label: string; team: Team; value: number; unit: string };
+type TeamAward = { label: string; team: Team; value: number; unit: string };
 
 export type SeasonAwards = {
   competition: Competition;
@@ -672,7 +667,7 @@ export type SeasonAwards = {
   team_awards: TeamAward[];
 };
 
-export type TrainingAwardMetric = {
+type TrainingAwardMetric = {
   key: string;
   label: string;
   kind: 'rating' | 'count';
@@ -711,7 +706,7 @@ export type AuditEntry = {
 export type LeaderMetric = 'goals' | 'assists' | 'cards';
 
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
-export type ExtraEventType = 'own_goal' | 'penalty_missed';
+type ExtraEventType = 'own_goal' | 'penalty_missed';
 export type SubstitutionReason = 'tactical' | 'injury' | 'concussion' | 'disciplinary' | 'other';
 export type PenaltyOutcome = 'saved' | 'off_target';
 
@@ -729,7 +724,7 @@ export const PENALTY_OUTCOMES: { label: string; value: PenaltyOutcome }[] = [
   { label: 'Off target', value: 'off_target' },
 ];
 
-export type TeamStaff = { coach: string | null; assistant_coach: string | null; competition_id: string | null; competition_group_id: string | null };
+type TeamStaff = { coach: string | null; assistant_coach: string | null; competition_id: string | null; competition_group_id: string | null };
 
 /**
  * Which badge a team wears, kept apart from `is_aimz` so a league of peer clubs
@@ -808,7 +803,7 @@ export function totalMatchMinutes(structure: MatchTimeStructure): number {
   return regulation + (structure.has_extra_time ? EXTRA_TIME_PERIODS * structure.extra_time_half_length_minutes : 0);
 }
 
-export type MatchEventExtras = {
+type MatchEventExtras = {
   is_penalty: boolean;
   // Not in the generated schema yet; catches up on the next `npm run api:types`.
   substitution_reason: SubstitutionReason | null;
@@ -828,7 +823,7 @@ export type MatchEvent = MatchEventExtras & Omit<
 };
 
 // Not in the generated schema yet; catches up on the next `npm run api:types`.
-export type LineupCaptain = { is_captain: boolean };
+type LineupCaptain = { is_captain: boolean };
 
 export type LineupEntry = LineupCaptain & Omit<
   Schema['LineupEntryRead'],

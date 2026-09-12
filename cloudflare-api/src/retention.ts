@@ -1,10 +1,10 @@
 /** How long an activity record is kept before it is deleted for good. */
-export const AUDIT_RETENTION_DAYS = 30;
+const AUDIT_RETENTION_DAYS = 30;
 
 const DAY_MS = 86_400_000;
 
 /** The moment before which activity is no longer kept. */
-export function auditCutoff(now: Date): string {
+function auditCutoff(now: Date): string {
   return new Date(now.getTime() - AUDIT_RETENTION_DAYS * DAY_MS).toISOString();
 }
 
