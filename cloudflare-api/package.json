@@ -16,6 +16,7 @@
     "db:migrate:local": "wrangler d1 migrations apply aimz-staging-db --local",
     "db:migrate:remote": "wrangler d1 migrations apply aimz-staging-db --remote",
     "typecheck": "tsc --noEmit",
+    "parity": "node scripts/check-parity.mjs",
     "types": "wrangler types worker-configuration.d.ts --include-runtime false"
   },
   "dependencies": {
