@@ -9,7 +9,6 @@ import { ChoiceField } from '@/src/components/ChoiceField';
 import { CollapsibleCard } from '@/src/components/CollapsibleCard';
 import { FlatCard } from '@/src/components/FlatCard';
 import { FormField } from '@/src/components/FormField';
-import { SegmentedControl } from '@/src/components/SegmentedControl';
 import { EmptyState, ErrorState, LoadingState } from '@/src/components/StateView';
 import { copy } from '@/src/i18n/en';
 import { api, ApiError } from '@/src/lib/api';
@@ -18,26 +17,24 @@ import { formatEgyptDateTime } from '@/src/lib/egyptTime';
 import { showMessage } from '@/src/lib/platformAlert';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
-import { KIT_SIZES, type KitOrder, type KitSize } from '@/src/types/api';
+import { KIT_ORDER_SIZES, type KitOrder, type KitOrderSize } from '@/src/types/api';
 
-const sizeOptions = KIT_SIZES.map((size) => ({ label: size, value: size }));
-const kinds = [{ label: 'Outfield', value: 'player' }, { label: 'Goalkeeper', value: 'goalkeeper' }] as const;
-const deliveries = [{ label: 'At the branch', value: 'branch' }, { label: 'Home delivery', value: 'home' }] as const;
+const sizeLabels: Record<KitOrderSize, string> = { S: 'Small', M: 'Medium', L: 'Large', XL: 'X Large' };
+const sizeOptions = KIT_ORDER_SIZES.map((size) => ({ label: sizeLabels[size], value: size }));
 const statusWord: Record<KitOrder['status'], string> = { ordered: 'Ordered', fulfilled: 'Ready', cancelled: 'Cancelled' };
 
 type Draft = {
-  teamLabel: string; kind: 'player' | 'goalkeeper'; shirtName: string; shirtNumber: string;
-  kitSize: KitSize | ''; hoodieSize: KitSize | ''; outwearSize: KitSize | ''; delivery: 'branch' | 'home';
+  shirtName: string; shirtNumber: string;
+  kitSize: KitOrderSize | ''; hoodieSize: KitOrderSize | ''; outwearSize: KitOrderSize | '';
 };
-const empty: Draft = { teamLabel: '', kind: 'player', shirtName: '', shirtNumber: '', kitSize: '', hoodieSize: '', outwearSize: '', delivery: 'branch' };
+const empty: Draft = { shirtName: '', shirtNumber: '', kitSize: '', hoodieSize: '', outwearSize: '' };
 
 /**
  * Ordering kit, for the family it is for.
  *
  * The order names a roster player rather than repeating a child's name and
- * date of birth into a form, which is the whole reason this moved off the old
- * public page. The team is typed rather than chosen from the squads here: the
- * names the supplier works to are not the squads this app rosters.
+ * date of birth into a form. The server also reads the player's squad and
+ * position from that same roster record, so neither can drift from the profile.
  */
 export function KitSection() {
   const styles = useThemedStyles(stylesheet);
@@ -59,14 +56,11 @@ export function KitSection() {
       if (!playerId) throw new ApiError('No player to order for.', 403);
       return api.orderKit({
         player_id: playerId,
-        team_label: draft.teamLabel.trim(),
-        kind: draft.kind,
         shirt_name: draft.shirtName.trim(),
         shirt_number: draft.shirtNumber.trim() ? Number(draft.shirtNumber) : null,
-        kit_size: draft.kitSize as KitSize,
-        hoodie_size: draft.hoodieSize as KitSize,
-        outwear_size: draft.outwearSize as KitSize,
-        delivery: draft.delivery,
+        kit_size: draft.kitSize as KitOrderSize,
+        hoodie_size: draft.hoodieSize as KitOrderSize,
+        outwear_size: draft.outwearSize as KitOrderSize,
       });
     },
     onSuccess: async () => {
@@ -82,10 +76,9 @@ export function KitSection() {
   if (!playerId) return <EmptyState body={copy.accountNotLinked} title="Account not linked" />;
 
   const submit = () => {
-    // Every field is the supplier's to fill an order from, so none of them can
-    // be guessed at later — an incomplete order is one that cannot be made.
+    // Squad, playing type and collection method are authoritative server-side;
+    // only the personalisation and sizes entered here need local validation.
     const next: typeof errors = {};
-    if (draft.teamLabel.trim().length < 1) next.teamLabel = 'Enter the team name your coach uses.';
     if (draft.shirtName.trim().length < 1) next.shirtName = 'Enter the name to print on the shirt.';
     if (draft.shirtNumber.trim() && !/^\d{1,2}$/u.test(draft.shirtNumber.trim())) next.shirtNumber = 'A number between 0 and 99.';
     for (const field of ['kitSize', 'hoodieSize', 'outwearSize'] as const) if (!draft[field]) next[field] = 'Choose a size.';
@@ -103,14 +96,15 @@ export function KitSection() {
 
     <CollapsibleCard summary="Sizes, the name on the shirt, and where to collect it." title="Order kit" tone="raised">
       <View style={styles.stack}>
-        <FormField error={errors.teamLabel} hint="The name your coach uses, not the AIMZ squad." label="Team" onChangeText={(value) => set('teamLabel', value)} value={draft.teamLabel} />
-        <SegmentedControl label="Outfield or goalkeeper" onChange={(value) => set('kind', value)} options={kinds} value={draft.kind} />
         <FormField error={errors.shirtName} label="Name on the shirt" onChangeText={(value) => set('shirtName', value)} value={draft.shirtName} />
         <FormField error={errors.shirtNumber} keyboardType="number-pad" label="Number on the shirt (optional)" onChangeText={(value) => set('shirtNumber', value)} value={draft.shirtNumber} />
         <ChoiceField error={errors.kitSize} label="Kit size" onChange={(value) => set('kitSize', value)} options={sizeOptions} value={draft.kitSize} />
         <ChoiceField error={errors.hoodieSize} label="Hoodie size" onChange={(value) => set('hoodieSize', value)} options={sizeOptions} value={draft.hoodieSize} />
         <ChoiceField error={errors.outwearSize} label="Outwear size" onChange={(value) => set('outwearSize', value)} options={sizeOptions} value={draft.outwearSize} />
-        <SegmentedControl label="Where to receive it" onChange={(value) => set('delivery', value)} options={deliveries} value={draft.delivery} />
+        <View accessible accessibilityLabel="Collection, At the branch" style={styles.fixedField}>
+          <Text style={styles.fieldLabel}>Collection</Text>
+          <View style={styles.fieldValue}><Text style={styles.fieldText}>At the branch</Text></View>
+        </View>
         <AppButton label="Place the order" loading={place.isPending} onPress={submit} />
       </View>
     </CollapsibleCard>
@@ -136,6 +130,10 @@ export function KitSection() {
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({
   stack: { gap: theme.spacing.md },
   heading: { color: colors.textPrimary, fontFamily: theme.font.bold, fontSize: theme.type.heading },
+  fixedField: { gap: theme.spacing.xs },
+  fieldLabel: { color: colors.textSecondary, fontFamily: theme.font.semibold, fontSize: theme.type.label },
+  fieldValue: { backgroundColor: colors.surface, borderColor: colors.border, borderRadius: theme.radius.md, borderWidth: 1, justifyContent: 'center', minHeight: theme.size.field, paddingHorizontal: theme.spacing.md },
+  fieldText: { color: colors.textPrimary, fontFamily: theme.font.regular, fontSize: theme.type.body },
   order: { gap: 4, padding: theme.spacing.md },
   orderHead: { alignItems: 'center', flexDirection: 'row', gap: theme.spacing.sm, justifyContent: 'space-between' },
   orderName: { color: colors.textPrimary, fontFamily: theme.font.semibold },

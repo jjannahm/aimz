@@ -1,11 +1,12 @@
 import type { Hono } from "hono";
 import { ApiProblem, adminUser, currentUser, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
+import { isGoalkeeper } from "./goalkeeping";
 import { linkedPlayerIds } from "./team-access";
 import type { UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
 
-const SIZES = ["4", "6", "8", "10", "12", "14", "16", "S", "M", "L", "XL"] as const;
+const SIZES = ["S", "M", "L", "XL"] as const;
 const STATUSES = ["ordered", "fulfilled", "cancelled"] as const;
 
 /**
@@ -64,27 +65,28 @@ export function registerKitRoutes(app: App): void {
     if (allowed !== "all" && !allowed.includes(playerId)) {
       throw new ApiProblem(403, "player_access_denied", "You can only order kit for your own family.");
     }
-    const player = await c.env.DB.prepare("SELECT id FROM players WHERE id=? AND is_active=1").bind(playerId).first();
+    const player = await c.env.DB.prepare(`SELECT p.id, p.position, t.name team_label
+      FROM players p JOIN teams t ON t.id=p.team_id
+      WHERE p.id=? AND p.is_active=1`).bind(playerId).first<{ id: string; position: string; team_label: string }>();
     if (!player) throw new ApiProblem(422, "player_not_found", "That player is not on the roster.");
 
     const number = body.shirt_number === null || body.shirt_number === undefined ? null : body.shirt_number;
     if (number !== null && (typeof number !== "number" || !Number.isInteger(number) || number < 0 || number > 99)) {
       throw new ApiProblem(422, "validation_error", "A shirt number is between 0 and 99.");
     }
-    const kind = body.kind === "goalkeeper" ? "goalkeeper" : "player";
-    const delivery = body.delivery === "home" ? "home" : "branch";
+    const kind = isGoalkeeper(player.position) ? "goalkeeper" : "player";
     const order = {
       id: crypto.randomUUID(),
       player_id: playerId,
       ordered_by_id: user.id,
-      team_label: stringField(body, "team_label", { min: 1, max: 120 })!,
+      team_label: player.team_label,
       kind,
       shirt_name: stringField(body, "shirt_name", { min: 1, max: 60 })!,
       shirt_number: number,
       kit_size: size(body, "kit_size"),
       hoodie_size: size(body, "hoodie_size"),
       outwear_size: size(body, "outwear_size"),
-      delivery,
+      delivery: "branch",
       status: "ordered",
       notes: typeof body.notes === "string" && body.notes.trim() ? body.notes.trim().slice(0, 500) : null,
       created_at: nowIso(),

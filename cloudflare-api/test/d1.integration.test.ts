@@ -1818,15 +1818,15 @@ describe('the newcomer pipeline', () => {
 
 describe('kit orders', () => {
   async function squad(admin: { token: string }) {
-    const team = await (await request('/api/v1/teams', json('POST', { name: `Kit ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true }, admin.token))).json<{ id: string }>();
+    const team = await (await request('/api/v1/teams', json('POST', { name: `Kit ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true }, admin.token))).json<{ id: string; name: string }>();
     const mine = await (await request('/api/v1/players', json('POST', { name: 'Jana Sherif', team_id: team.id, position: 'ST' }, admin.token))).json<{ id: string }>();
     const theirs = await (await request('/api/v1/players', json('POST', { name: 'Somebody Else', team_id: team.id, position: 'GK' }, admin.token))).json<{ id: string }>();
     return { team, mine, theirs };
   }
 
   const order = (playerId: string, over: Record<string, unknown> = {}) => ({
-    player_id: playerId, team_label: 'Senzo 2013', kind: 'player', shirt_name: 'JANA',
-    shirt_number: 10, kit_size: '12', hoodie_size: 'S', outwear_size: 'S', delivery: 'branch', ...over,
+    player_id: playerId, shirt_name: 'JANA', shirt_number: 10,
+    kit_size: 'L', hoodie_size: 'S', outwear_size: 'S', ...over,
   });
 
   /**
@@ -1836,13 +1836,25 @@ describe('kit orders', () => {
    */
   it('takes an order from a parent for their own child, and names the player from the roster', async () => {
     const admin = await seedUser('admin');
-    const { mine } = await squad(admin);
+    const { team, mine } = await squad(admin);
     const parent = await seedUser('parent');
     await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, mine.id, now).run();
 
     const created = await request('/api/v1/kit-orders', json('POST', order(mine.id), parent.token));
     expect(created.status, await created.clone().text()).toBe(201);
-    expect(await created.json()).toMatchObject({ player_name: 'Jana Sherif', team_label: 'Senzo 2013', status: 'ordered', shirt_number: 10 });
+    expect(await created.json()).toMatchObject({
+      player_name: 'Jana Sherif', team_label: team.name, kind: 'player', delivery: 'branch', status: 'ordered', shirt_number: 10,
+    });
+  });
+
+  it('derives goalkeeper kit, squad and branch collection from the roster even when the client tries to override them', async () => {
+    const admin = await seedUser('admin');
+    const { team, theirs } = await squad(admin);
+    const created = await request('/api/v1/kit-orders', json('POST', order(theirs.id, {
+      team_label: 'Wrong team', kind: 'player', delivery: 'home',
+    }), admin.token));
+    expect(created.status, await created.clone().text()).toBe(201);
+    expect(await created.json()).toMatchObject({ team_label: team.name, kind: 'goalkeeper', delivery: 'branch' });
   });
 
   it('refuses an order for a child who is not theirs', async () => {

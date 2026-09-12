@@ -44,17 +44,19 @@ describe('ordering kit as a family', () => {
    */
   it('sends the roster player rather than asking for a name and birth date', async () => {
     const screen = await open();
-    await fireEvent.changeText(screen.getByLabelText('Team'), 'Senzo 2013');
     await fireEvent.changeText(screen.getByLabelText('Name on the shirt'), 'JANA');
 
-    // Nothing on this form asks who the child is beyond which player it is for.
+    // Profile-owned facts and delivery cannot be changed from the order form.
     expect(screen.queryByLabelText(/date of birth/iu)).toBeNull();
     expect(screen.queryByLabelText(/full name/iu)).toBeNull();
+    expect(screen.queryByLabelText('Team')).toBeNull();
+    expect(screen.queryByLabelText('Outfield or goalkeeper')).toBeNull();
+    expect(screen.queryByText('Home delivery')).toBeNull();
+    expect(screen.getByLabelText('Collection, At the branch')).toBeTruthy();
   });
 
   it('will not place an order missing a size the supplier needs', async () => {
     const screen = await open();
-    await fireEvent.changeText(screen.getByLabelText('Team'), 'Senzo 2013');
     await fireEvent.changeText(screen.getByLabelText('Name on the shirt'), 'JANA');
 
     await fireEvent.press(screen.getByText('Place the order'));
@@ -65,7 +67,6 @@ describe('ordering kit as a family', () => {
 
   it('refuses a shirt number that is not one', async () => {
     const screen = await open();
-    await fireEvent.changeText(screen.getByLabelText('Team'), 'Senzo 2013');
     await fireEvent.changeText(screen.getByLabelText('Name on the shirt'), 'JANA');
     await fireEvent.changeText(screen.getByLabelText('Number on the shirt (optional)'), '100');
 
@@ -73,6 +74,27 @@ describe('ordering kit as a family', () => {
 
     expect(await screen.findByText('A number between 0 and 99.')).toBeTruthy();
     expect(api.orderKit).not.toHaveBeenCalled();
+  });
+
+  it('offers only the four named sizes and submits no profile-owned fields', async () => {
+    const screen = await open();
+    await fireEvent.changeText(screen.getByLabelText('Name on the shirt'), 'JANA');
+
+    for (const [field, option] of [['Kit size', 'Small'], ['Hoodie size', 'Medium'], ['Outwear size', 'X Large']] as const) {
+      await fireEvent.press(screen.getByLabelText(field));
+      expect(screen.getByLabelText('Small')).toBeTruthy();
+      expect(screen.getByLabelText('Medium')).toBeTruthy();
+      expect(screen.getByLabelText('Large')).toBeTruthy();
+      expect(screen.getByLabelText('X Large')).toBeTruthy();
+      expect(screen.queryByText('12')).toBeNull();
+      await fireEvent.press(screen.getByLabelText(option));
+    }
+
+    await fireEvent.press(screen.getByText('Place the order'));
+    await waitFor(() => expect(api.orderKit).toHaveBeenCalledWith({
+      player_id: 'p-1', shirt_name: 'JANA', shirt_number: null,
+      kit_size: 'S', hoodie_size: 'M', outwear_size: 'XL',
+    }));
   });
 
   it('says so plainly when the account has no player behind it', async () => {
@@ -86,7 +108,7 @@ describe('ordering kit as a family', () => {
       items: [{
         id: 'k-1', player_id: 'p-1', player_name: 'Jana Sherif', team_id: 't-1', squad_name: 'AIMZ U13',
         ordered_by_id: 'u-1', team_label: 'Senzo 2013', kind: 'player', shirt_name: 'JANA', shirt_number: 10,
-        kit_size: '12', hoodie_size: 'S', outwear_size: 'S', delivery: 'home', status: 'fulfilled',
+        kit_size: 'L', hoodie_size: 'S', outwear_size: 'S', delivery: 'home', status: 'fulfilled',
         notes: null, created_at: '2026-09-10T08:00:00.000Z', updated_at: '2026-09-10T08:00:00.000Z',
       }], total: 1, limit: 50, offset: 0,
     } as never);
@@ -94,6 +116,6 @@ describe('ordering kit as a family', () => {
 
     expect(await screen.findByText('Jana Sherif')).toBeTruthy();
     expect(screen.getByText('Ready')).toBeTruthy();
-    await waitFor(() => expect(screen.getByText(/Kit 12 · Hoodie S · Outwear S/u)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Kit L · Hoodie S · Outwear S/u)).toBeTruthy());
   });
 });
