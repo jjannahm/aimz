@@ -47,9 +47,12 @@ export type Newcomer = Omit<NewcomerApplicationPayload, 'consent'> & {
   closed_at: string | null; redacted_at: string | null; created_at: string; updated_at: string;
   duplicate_likely: boolean; notes: NewcomerNote[];
 };
-/** The sizes the kit supplier makes: children's by age, then adult letters. */
+/** Historical orders may still contain the former children's age sizes. */
 export const KIT_SIZES = ['4', '6', '8', '10', '12', '14', '16', 'S', 'M', 'L', 'XL'] as const;
 export type KitSize = (typeof KIT_SIZES)[number];
+/** The four sizes accepted for new kit orders. */
+export const KIT_ORDER_SIZES = ['S', 'M', 'L', 'XL'] as const;
+export type KitOrderSize = (typeof KIT_ORDER_SIZES)[number];
 export type KitStatus = 'ordered' | 'fulfilled' | 'cancelled';
 
 /**
@@ -69,10 +72,10 @@ export type KitOrder = {
 };
 
 export type KitOrderPayload = {
-  player_id: string; team_label: string; kind: 'player' | 'goalkeeper';
+  player_id: string;
   shirt_name: string; shirt_number: number | null;
-  kit_size: KitSize; hoodie_size: KitSize; outwear_size: KitSize;
-  delivery: 'branch' | 'home'; notes?: string;
+  kit_size: KitOrderSize; hoodie_size: KitOrderSize; outwear_size: KitOrderSize;
+  notes?: string;
 };
 
 export type PresignResponse = Contract.PresignResponse;
