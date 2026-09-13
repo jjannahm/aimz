@@ -40,7 +40,7 @@ describe('the kit book', () => {
   // underneath would bury them.
   it('opens on the orders still to be paid for', async () => {
     const screen = await render(<KitOrdersManager />, { wrapper });
-    await waitFor(() => expect(api.kitOrders).toHaveBeenCalledWith('?status=ordered&limit=100'));
+    await waitFor(() => expect(api.kitOrders).toHaveBeenCalledWith('?status=ordered'));
     expect(screen.getByRole('tab', { name: 'Orders' }).props.accessibilityState.selected).toBe(true);
   });
 
@@ -63,7 +63,7 @@ describe('the kit book', () => {
   it('reads a different queue when one is chosen', async () => {
     const screen = await render(<KitOrdersManager />, { wrapper });
     await fireEvent.press(await screen.findByRole('tab', { name: 'Cancelled' }));
-    await waitFor(() => expect(api.kitOrders).toHaveBeenCalledWith('?status=cancelled&limit=100'));
+    await waitFor(() => expect(api.kitOrders).toHaveBeenCalledWith('?status=cancelled'));
   });
 
   // A paid order offers no "mark as paid", or pressing it would say nothing new.

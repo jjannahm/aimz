@@ -12,7 +12,7 @@ import { cacheKeys } from '@/src/lib/cache';
  * asking costs nothing.
  */
 export function useSquadPlaysMatches(teamId: string | null | undefined): boolean {
-  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
+  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams() });
   if (!teamId) return false;
   return Boolean(teams.data?.items.find((team) => team.id === teamId)?.competition_id);
 }
@@ -39,7 +39,7 @@ export function useMyTeamIds(): { teamIds: string[] | null; isLoading: boolean }
  * the tab is drawn at all.
  */
 export function useHasCompetition(): { hasCompetition: boolean; isLoading: boolean } {
-  const competitions = useQuery({ queryKey: cacheKeys.competitions, queryFn: () => api.competitions('?limit=100') });
+  const competitions = useQuery({ queryKey: cacheKeys.competitions, queryFn: () => api.competitions() });
   return {
     hasCompetition: (competitions.data?.items ?? []).some((competition) => competition.type !== 'friendly'),
     isLoading: competitions.isLoading,

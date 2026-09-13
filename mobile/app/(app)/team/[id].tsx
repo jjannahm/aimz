@@ -86,7 +86,7 @@ function FixtureRow({ match, teamId }: { match: Match; teamId: string }) {
  */
 export function Squad({ teamId, search = '', onResultCount }: { teamId: string; search?: string; onResultCount?: (count: number) => void }) {
   const styles = useThemedStyles(stylesheet);
-  const players = useQuery({ queryKey: [...cacheKeys.players, 'team', teamId], queryFn: () => api.players(`?team_id=${encodeURIComponent(teamId)}&limit=100`) });
+  const players = useQuery({ queryKey: [...cacheKeys.players, 'team', teamId], queryFn: () => api.players(`?team_id=${encodeURIComponent(teamId)}`) });
   const stats = useQuery({ queryKey: ['squad-stats', teamId], queryFn: () => api.squadStats(teamId) });
   const roster = narrowBySearch(byPosition(players.data?.items ?? []), search, (player) => `${player.name} ${player.position} ${player.jersey_number ?? ''}`);
   useEffect(() => onResultCount?.(roster.length), [onResultCount, roster.length]);
@@ -207,10 +207,10 @@ export function TeamProfile({ id, asTab = false, above, title }: { id: string | 
   const colors = useColors();
   const dismiss = asTab ? undefined : <CloseButton />;
   const [view, setView] = useState<'all' | 'results' | 'upcoming'>('all');
-  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=200') });
+  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams() });
   const team = teams.data?.items.find((item) => item.id === id);
   const table = useQuery({ queryKey: ['standings', team?.competition_id], queryFn: () => api.standings(team!.competition_id!), enabled: Boolean(team?.competition_id) });
-  const matches = useQuery({ queryKey: ['matches', 'team', id], queryFn: () => api.matches(`?team_id=${encodeURIComponent(id!)}&limit=100`), enabled: Boolean(id) });
+  const matches = useQuery({ queryKey: ['matches', 'team', id], queryFn: () => api.matches(`?team_id=${encodeURIComponent(id!)}`), enabled: Boolean(id) });
 
   const row = table.data?.find((entry) => entry.team.id === id);
   const played = useMemo(() => playedMatches(matches.data?.items ?? [], id ?? ''), [matches.data, id]);

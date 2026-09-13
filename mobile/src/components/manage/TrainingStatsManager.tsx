@@ -34,7 +34,7 @@ export function TrainingStatsManager({ teams }: { teams: Team[] }) {
 
   const sessions = useQuery({
     queryKey: [...cacheKeys.training, 'team', teamId],
-    queryFn: () => api.trainingSessions(`?team_id=${encodeURIComponent(teamId)}&limit=100`),
+    queryFn: () => api.trainingSessions(`?team_id=${encodeURIComponent(teamId)}`),
     enabled: Boolean(teamId),
   });
   const performance = useQuery({

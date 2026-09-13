@@ -58,7 +58,7 @@ export default function LiveScoringScreen() {
   const { user } = useAuth();
   const client = useQueryClient();
   const matchQuery = useQuery({ queryKey: ['live-match', id], queryFn: () => api.live(id), enabled: Boolean(id), refetchInterval: 12_000 });
-  const playersQuery = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
+  const playersQuery = useQuery({ queryKey: ['players'], queryFn: () => api.players() });
   const [teamId, setTeamId] = useState(''); const [playerId, setPlayerId] = useState(''); const [minute, setMinute] = useState(''); const [group, setGroup] = useState<EventGroup>('goal'); const [cardType, setCardType] = useState<CardType | null>(null); const [isPenalty, setIsPenalty] = useState(false); const [offPlayerId, setOffPlayerId] = useState(''); const [minuteEdited, setMinuteEdited] = useState(false); const [reason, setReason] = useState<SubstitutionReason | null>(null); const [outcome, setOutcome] = useState<PenaltyOutcome | null>(null); const [goalKind, setGoalKind] = useState<GoalKind>('scored');
   const selectedCard = group === 'cards' ? cardChoices.find((choice) => choice.value === cardType) : undefined;
   // Cards submit as the card that was picked; every other group is its own type.

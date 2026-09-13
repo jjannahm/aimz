@@ -28,7 +28,7 @@ export default function LineupScreen() {
   const { user } = useAuth();
   const client = useQueryClient();
   const matchQuery = useQuery({ queryKey: ['live-match', id], queryFn: () => api.live(id), enabled: Boolean(id) });
-  const playersQuery = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
+  const playersQuery = useQuery({ queryKey: ['players'], queryFn: () => api.players() });
   const [format, setFormat] = useState<LineupFormat | null>(null);
   /** Who stands in each place, by slot id. */
   const [placed, setPlaced] = useState<Record<string, string>>({});
@@ -55,7 +55,7 @@ export default function LineupScreen() {
     // `match_status` is the name both APIs accept; plain `status` is ignored by
     // FastAPI, which would quietly return unplayed matches too.
     queryKey: ['matches', 'previous', squad?.id],
-    queryFn: () => api.matches(`?match_status=finished&team_id=${squad!.id}&limit=100`),
+    queryFn: () => api.matches(`?match_status=finished&team_id=${squad!.id}`),
     enabled: Boolean(squad?.id),
   });
   const previousMatch = useMemo(() => {

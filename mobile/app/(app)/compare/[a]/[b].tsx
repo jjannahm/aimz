@@ -97,14 +97,14 @@ function RecentColumn({ team, played }: { team: Team; played: PlayedMatch[] }) {
 export default function CompareTeamsScreen() {
   const styles = useThemedStyles(stylesheet);
   const { a, b } = useLocalSearchParams<{ a: string; b: string }>();
-  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=200') });
+  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams() });
   const teamA = teams.data?.items.find((item) => item.id === a);
   const teamB = teams.data?.items.find((item) => item.id === b);
 
   const tableA = useQuery({ queryKey: ['standings', teamA?.competition_id], queryFn: () => api.standings(teamA!.competition_id!), enabled: Boolean(teamA?.competition_id) });
   const tableB = useQuery({ queryKey: ['standings', teamB?.competition_id], queryFn: () => api.standings(teamB!.competition_id!), enabled: Boolean(teamB?.competition_id) });
-  const matchesA = useQuery({ queryKey: ['matches', 'team', a], queryFn: () => api.matches(`?team_id=${encodeURIComponent(a!)}&limit=100`), enabled: Boolean(a) });
-  const matchesB = useQuery({ queryKey: ['matches', 'team', b], queryFn: () => api.matches(`?team_id=${encodeURIComponent(b!)}&limit=100`), enabled: Boolean(b) });
+  const matchesA = useQuery({ queryKey: ['matches', 'team', a], queryFn: () => api.matches(`?team_id=${encodeURIComponent(a!)}`), enabled: Boolean(a) });
+  const matchesB = useQuery({ queryKey: ['matches', 'team', b], queryFn: () => api.matches(`?team_id=${encodeURIComponent(b!)}`), enabled: Boolean(b) });
   const record = useQuery({ queryKey: ['head-to-head', a, b], queryFn: () => api.headToHead(a!, b!), enabled: Boolean(a && b) });
 
   const playedA = useMemo(() => playedMatches(matchesA.data?.items ?? [], a ?? ''), [matchesA.data, a]);

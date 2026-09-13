@@ -44,12 +44,12 @@ const freshSchedule = (): ScheduleDraft => ({ teamId: '', startsAt: new Date().t
 export function ScheduleManager({ teams }: { teams: Team[] }) {
   const styles = useThemedStyles(stylesheet);
   const client = useQueryClient();
-  const sessions = useQuery({ queryKey: ['training', 'admin'], queryFn: () => api.trainingSessions('?limit=100') });
+  const sessions = useQuery({ queryKey: ['training', 'admin'], queryFn: () => api.trainingSessions() });
   // Which sessions somebody has asked to be corrected, so the list says where
   // to go. One read for the whole list rather than one per row, and the API
   // hands back only what this account may answer — an administrator the
   // academy's, a coach her own squads'.
-  const pending = useQuery({ queryKey: [...cacheKeys.attendanceRequests, 'pending'], queryFn: () => api.attendanceRequests('?status=pending&limit=100') });
+  const pending = useQuery({ queryKey: [...cacheKeys.attendanceRequests, 'pending'], queryFn: () => api.attendanceRequests('?status=pending') });
   const waiting = React.useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of pending.data?.items ?? []) counts.set(row.training_session_id, (counts.get(row.training_session_id) ?? 0) + 1);
@@ -198,7 +198,7 @@ function describeAudience(announcement: Announcement): string {
 export function AnnouncementsManager({ teams }: { teams: Team[] }) {
   const styles = useThemedStyles(stylesheet);
   const client = useQueryClient();
-  const announcements = useQuery({ queryKey: ['announcements', 'admin'], queryFn: () => api.announcements('?limit=100') });
+  const announcements = useQuery({ queryKey: ['announcements', 'admin'], queryFn: () => api.announcements() });
   const [draft, setDraft] = React.useState<AnnouncementDraft>(blankAnnouncement);
   // Whether the audience is being addressed whole or in part. Held apart from
   // the draft because it is a question about the form rather than about the
@@ -206,7 +206,7 @@ export function AnnouncementsManager({ teams }: { teams: Team[] }) {
   const [reach, setReach] = React.useState<'all' | 'some'>('all');
   const squadPlayers = useQuery({
     queryKey: ['players', 'team', draft.teamId],
-    queryFn: () => api.players(`?team_id=${encodeURIComponent(draft.teamId)}&limit=200`),
+    queryFn: () => api.players(`?team_id=${encodeURIComponent(draft.teamId)}`),
     enabled: draft.audience === 'team' && Boolean(draft.teamId),
   });
   const coaches = useQuery({

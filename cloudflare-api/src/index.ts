@@ -15,7 +15,7 @@ import { registerNewcomerRoutes } from "./newcomers";
 import { registerInvoiceRoutes } from "./invoices";
 import { registerMatchReportRoutes } from "./match-reports";
 import { registerReportRoutes } from "./reports";
-import { purgeExpiredAudit } from "./retention";
+import { purgeExpiredAudit, purgeSpentSessions } from "./retention";
 import { registerAttendanceRequestRoutes } from "./attendance-requests";
 import { registerBranchRoutes } from "./branches";
 import { registerPlayerInformationRoutes } from "./player-information";
@@ -129,9 +129,12 @@ export { app };
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(purgeExpiredAudit(env).then(
-      (deleted) => { if (deleted) console.log(JSON.stringify({ message: "purged expired activity", deleted })); },
-      (error: unknown) => { console.error(JSON.stringify({ message: "activity purge failed", error: error instanceof Error ? error.message : String(error) })); },
-    ));
+    const sweep = async () => {
+      const [activity, sessions] = await Promise.all([purgeExpiredAudit(env), purgeSpentSessions(env)]);
+      if (activity || sessions) console.log(JSON.stringify({ message: "nightly purge", activity, sessions }));
+    };
+    ctx.waitUntil(sweep().catch((error: unknown) => {
+      console.error(JSON.stringify({ message: "nightly purge failed", error: error instanceof Error ? error.message : String(error) }));
+    }));
   },
 } satisfies ExportedHandler<Env>;

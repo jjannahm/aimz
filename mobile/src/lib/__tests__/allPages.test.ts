@@ -23,7 +23,7 @@ describe('list endpoints paginate', () => {
       .mockResolvedValueOnce(page(first, 101))
       .mockResolvedValueOnce(page(second, 101));
 
-    const result = await api.players('?limit=100');
+    const result = await api.players();
 
     expect(result.items).toHaveLength(101);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -40,11 +40,39 @@ describe('list endpoints paginate', () => {
 
   it('keeps caller filters and never duplicates the limit', async () => {
     fetchMock.mockResolvedValueOnce(page([], 0));
-    await api.players('?active=&limit=50');
+    await api.players('?active=');
     const url = String(fetchMock.mock.calls[0]![0]);
     expect(url).toContain('active=');
     expect(url.match(/limit=/gu)).toHaveLength(1);
     expect(url).toContain('limit=100');
+  });
+
+  /**
+   * A caller's own limit is a slice they asked for, not a page size — the
+   * matches feed on the home tab wants the latest fifty and polls for them
+   * every twelve seconds. Walking every page there would multiply that poll by
+   * however many matches the academy has ever played.
+   */
+  it('honours a deliberate slice instead of walking past it', async () => {
+    fetchMock.mockResolvedValueOnce(page(Array.from({ length: 50 }, (_, i) => player(i)), 500));
+
+    const result = await api.matches('?match_status=live&limit=50');
+
+    expect(result.items).toHaveLength(50);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('limit=50');
+  });
+
+  // A slice larger than one page still stops where the caller said.
+  it('stops at the slice even when it spans pages', async () => {
+    fetchMock
+      .mockResolvedValueOnce(page(Array.from({ length: 100 }, (_, i) => player(i)), 900))
+      .mockResolvedValueOnce(page(Array.from({ length: 100 }, (_, i) => player(100 + i)), 900));
+
+    const result = await api.matches('?limit=150');
+
+    expect(result.items).toHaveLength(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('does not loop forever if the server reports a total it will not serve', async () => {

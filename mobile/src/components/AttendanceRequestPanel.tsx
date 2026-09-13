@@ -41,7 +41,7 @@ export function AttendanceRequestPanel({ session }: { session: TrainingSession }
 
   const requests = useQuery({
     queryKey: [...cacheKeys.attendanceRequests, session.id],
-    queryFn: () => api.attendanceRequests(`?training_session_id=${encodeURIComponent(session.id)}&limit=100`),
+    queryFn: () => api.attendanceRequests(`?training_session_id=${encodeURIComponent(session.id)}`),
     enabled: Boolean(session.id),
   });
   const context = useQuery({

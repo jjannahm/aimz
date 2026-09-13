@@ -61,7 +61,7 @@ export function StandingsSection() {
   const styles = useThemedStyles(stylesheet);
   const { user } = useAuth();
   const client = useQueryClient();
-  const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
+  const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions() });
   const running = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
   const seasons = useMemo(() => allSeasons(running), [running]);
   const [season, setSeason] = useState<string | null>(null);

@@ -17,7 +17,7 @@ export function AnnouncementsSection() {
   const linked = user?.role === 'parent' || Boolean(user?.player_id);
   // No team is named: the server answers with the squad this account is on, or
   // with every squad a parent's children are on.
-  const query = useQuery({ queryKey: ['announcements', 'mine'], queryFn: () => api.announcements('?limit=100'), enabled: linked });
+  const query = useQuery({ queryKey: ['announcements', 'mine'], queryFn: () => api.announcements(), enabled: linked });
   if (!linked) return <EmptyState body="Ask an AIMZ administrator to link your account to your squad player." title="Account not linked" />;
   if (query.isLoading) return <LoadingState label="Loading announcements" />;
   if (query.isError) return <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} />;

@@ -27,7 +27,7 @@ export default function MatchDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const query = useQuery({ queryKey: ['live-match', id], queryFn: () => api.live(id), enabled: Boolean(id), refetchInterval: (state) => state.state.data?.match.status === 'finished' ? false : 12_000 });
-  const players = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
+  const players = useQuery({ queryKey: ['players'], queryFn: () => api.players() });
   const playerNames = new Map(players.data?.items.map((player) => [player.id, player.name]));
   const clock = useMatchClock(query.data?.match);
   const opponentOnly = isOpponentOnly(query.data?.match);
