@@ -345,7 +345,29 @@ export function registerAuthRoutes(app: App): void {
   });
   app.delete("/api/v1/users/me", async (c) => {
     const user = await currentUser(c);
-    await c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id).run();
+    const redactedAt = nowIso();
+    // Keep only the non-identifying operational outcome and consent record.
+    // D1 batch is transactional, so the login is not deleted unless the
+    // linked application and its free-form notes are redacted first.
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `UPDATE newcomer_notes SET body='[redacted]'
+         WHERE application_id IN (SELECT id FROM newcomer_applications WHERE user_id=?)`,
+      ).bind(user.id),
+      c.env.DB.prepare(
+        `UPDATE newcomer_applications SET
+           branch='[redacted]', full_name='[redacted]', mobile='[redacted]',
+           email='redacted-' || id || '@invalid.local', whatsapp_mobile='[redacted]',
+           date_of_birth='1900-01-01', nationality='[redacted]', address='[redacted]',
+           previous_academy='[redacted]', school_university='[redacted]',
+           father_name='[redacted]', father_mobile='[redacted]',
+           mother_name='[redacted]', mother_mobile='[redacted]',
+           medical_concerns='[redacted]', medications='[redacted]',
+           redacted_at=?, updated_at=?
+         WHERE user_id=?`,
+      ).bind(redactedAt, redactedAt, user.id),
+      c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id),
+    ]);
     return c.body(null, 204);
   });
 

@@ -20,6 +20,11 @@ jest.mock('@/src/components/CalendarSubscription', () => {
 });
 let mockParams: { from?: string } = {};
 jest.mock('expo-router', () => ({
+  Link: ({ children, ...props }: { children: ReactNode }) => {
+    const React = jest.requireActual('react');
+    const { Text } = jest.requireActual('react-native');
+    return React.createElement(Text, { ...props, accessibilityRole: 'link' }, children);
+  },
   router: { back: jest.fn(), canGoBack: jest.fn(), push: jest.fn(), replace: jest.fn() },
   useLocalSearchParams: () => mockParams,
   usePathname: () => '/standings',
@@ -39,6 +44,9 @@ describe('SettingsScreen header', () => {
     expect(screen.getByLabelText('Close')).toBeTruthy();
     expect(screen.queryByLabelText('Settings')).toBeNull();
     expect(screen.getByText('Calendar subscription card')).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Privacy policy' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Terms and conditions' })).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Cookie and storage policy' })).toBeTruthy();
   });
 
   /** The audit log lives under Manage · Activity now, not folded in here. */
