@@ -22,7 +22,7 @@ jest.mock('@/src/lib/api', () => ({ api: { announcements: jest.fn() }, ApiError:
 jest.mock('@/src/components/myTeam/AnnouncementsSection', () => {
   const React = jest.requireActual('react');
   const { Text } = jest.requireActual('react-native');
-  return { AnnouncementsSection: () => React.createElement(Text, null, 'Announcement content') };
+  return { AnnouncementsSection: () => React.createElement(Text, null, 'Announcement content'), HUB_ANNOUNCEMENTS: '?limit=50' };
 });
 
 function wrapper({ children }: { children: ReactNode }) {
@@ -76,6 +76,20 @@ describe('HubScreen navigation', () => {
 
     await fireEvent.press(screen.getByRole('tab', { name: 'Announcements, urgent unread' }));
     await waitFor(() => expect(screen.queryByTestId('segmented-control-dot-announcements')).toBeNull());
+  });
+
+  /**
+   * Every family opens the Hub, so this is the one announcements read that
+   * scales with users rather than with administrators. It asks for a bounded
+   * slice — one request, whatever the academy's history has grown to — and the
+   * urgent dot still works because the server sorts urgent notices first.
+   */
+  it('asks for one bounded page rather than the whole history', async () => {
+    jest.mocked(api.announcements).mockResolvedValue(page([announcement('a-1', 'urgent')]) as never);
+    await render(<HubScreen />, { wrapper });
+
+    await waitFor(() => expect(api.announcements).toHaveBeenCalledWith('?limit=50'));
+    expect(jest.mocked(api.announcements).mock.calls.every(([query]) => query === '?limit=50')).toBe(true);
   });
 
   it('leaves the tab unmarked for an ordinary notice', async () => {

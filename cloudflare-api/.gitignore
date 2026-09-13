@@ -3,3 +3,6 @@ node_modules/
 .wrangler/
 dist/
 .staging.env
+
+# Load-test logins: real staging credentials, never committed.
+loadtest/accounts.json

@@ -1,0 +1,5 @@
+[
+  { "email": "load01@aimz.example", "password": "replace-me" },
+  { "email": "load02@aimz.example", "password": "replace-me" },
+  { "email": "load03@aimz.example", "password": "replace-me" }
+]
