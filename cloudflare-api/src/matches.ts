@@ -9,7 +9,7 @@ import { getJoinedMatch, joinedMatch } from "./domain";
 import { MatchPhaseTransitionError, transitionMatchPhase } from "./match-clock";
 import { POSITION_CODES } from "./positions";
 import type { CompetitionRow, CompetitionStatus, EventRow, LineupRow, MatchRow, PlayerRow, StatRow, TeamRow } from "./types";
-import { guardMatch, manageMatch } from "./team-access";
+import { guardMatch, manageMatch, visibleMatchRevision } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -167,10 +167,19 @@ export function registerMatchRoutes(app: App): void {
   });
 
   app.get("/api/v1/matches/:id/live", async (c) => {
-    await guardMatch(c, c.req.param("id"));
-    const match = await getJoinedMatch(c.env, c.req.param("id"));
-    const etag = `W/\"${match.id}-${match.revision}\"`;
-    if (c.req.header("If-None-Match") === etag) return c.body(null, 304);
+    const matchId = c.req.param("id");
+    // Who is asking, whether they may see this match, and what its revision
+    // is — one statement rather than five. Visibility is settled before the
+    // ETag is looked at, so a 304 can never tell somebody outside the squad
+    // that the match has moved on.
+    const revision = await visibleMatchRevision(c, matchId);
+    const etag = `W/\"${matchId}-${revision}\"`;
+    if (c.req.header("If-None-Match") === etag) {
+      c.header("ETag", etag);
+      c.header("Cache-Control", "private, no-cache");
+      return c.body(null, 304);
+    }
+    const match = await getJoinedMatch(c.env, matchId);
     const [events, lineup] = await Promise.all([
       c.env.DB.prepare("SELECT * FROM match_events WHERE match_id = ? ORDER BY COALESCE(minute, 999), created_at").bind(match.id).all<EventRow>(),
       c.env.DB.prepare("SELECT * FROM match_lineup_entries WHERE match_id = ? ORDER BY is_starter DESC, jersey_number, player_id").bind(match.id).all<LineupRow>(),

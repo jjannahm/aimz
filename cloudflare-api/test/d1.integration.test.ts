@@ -2864,6 +2864,164 @@ describe('sign-in sessions are swept up', () => {
   });
 });
 
+describe('the live poll, and who may hear that a match has moved', () => {
+  /**
+   * The poll answers in one statement now, but it must refuse exactly the
+   * people it refused before, with exactly the same status codes — and a 304
+   * is an answer, so it may only ever reach somebody allowed to see the match.
+   */
+  const world = async () => {
+    const admin = await seedUser('admin');
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: `Poll ${crypto.randomUUID().slice(0, 6)}`, season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const ours = await (await request('/api/v1/teams', json('POST', { name: `Ours ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true, age_group: 'U12', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const theirs = await (await request('/api/v1/teams', json('POST', { name: `Theirs ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true, age_group: 'U13', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const opponent = await (await request('/api/v1/teams', json('POST', { name: `Rivals ${crypto.randomUUID().slice(0, 6)}`, is_aimz: false, competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const mine = await (await request('/api/v1/players', json('POST', { name: 'Ours Player', team_id: ours.id, position: 'CM', jersey_number: 8 }, admin.token))).json<{ id: string }>();
+    const other = await (await request('/api/v1/players', json('POST', { name: 'Their Player', team_id: theirs.id, position: 'CM', jersey_number: 9 }, admin.token))).json<{ id: string }>();
+    const match = await (await request('/api/v1/matches', json('POST', { competition_id: competition.id, home_team_id: ours.id, away_team_id: opponent.id, kickoff_datetime: now, venue: 'Poll Ground', status: 'scheduled' }, admin.token))).json<{ id: string }>();
+    return { admin, ours, theirs, opponent, mine, other, match, competition };
+  };
+
+  const poll = (matchId: string, token?: string, etag?: string) =>
+    app.request(`http://aimz.test/api/v1/matches/${matchId}/live`, {
+      method: 'GET',
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(etag ? { 'If-None-Match': etag } : {}) },
+    }, testEnv);
+
+  it('lets a parent of a player on the squad watch, and refuses a parent outside it', async () => {
+    const it_ = await world();
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, it_.mine.id, now).run();
+    const outsider = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(outsider.id, it_.other.id, now).run();
+
+    expect((await poll(it_.match.id, parent.token)).status).toBe(200);
+    // Not found, never forbidden: the two must be indistinguishable.
+    expect((await poll(it_.match.id, outsider.token)).status).toBe(404);
+  });
+
+  it('lets a player watch her own squad and no other', async () => {
+    const it_ = await world();
+    const hers = await seedUser('player', it_.mine.id);
+    const stranger = await seedUser('player', it_.other.id);
+
+    expect((await poll(it_.match.id, hers.token)).status).toBe(200);
+    expect((await poll(it_.match.id, stranger.token)).status).toBe(404);
+  });
+
+  it('keeps a coach to the squads assigned to her', async () => {
+    const it_ = await world();
+    const coach = await seedUser('coach');
+    await assignSquad(coach.id, it_.ours.id);
+    const elsewhere = await seedUser('coach');
+    await assignSquad(elsewhere.id, it_.theirs.id);
+
+    expect((await poll(it_.match.id, coach.token)).status).toBe(200);
+    expect((await poll(it_.match.id, elsewhere.token)).status).toBe(404);
+  });
+
+  it('lets an administrator watch anything, and says not found for a match that is not there', async () => {
+    const it_ = await world();
+    expect((await poll(it_.match.id, it_.admin.token)).status).toBe(200);
+    expect((await poll(crypto.randomUUID(), it_.admin.token)).status).toBe(404);
+  });
+
+  it('refuses an account with nothing linked to it, as before', async () => {
+    const it_ = await world();
+    const unlinkedParent = await seedUser('parent');
+    const unlinkedPlayer = await seedUser('player');
+    const unassignedCoach = await seedUser('coach');
+
+    const parentAnswer = await poll(it_.match.id, unlinkedParent.token);
+    expect(parentAnswer.status).toBe(403);
+    expect(await parentAnswer.json()).toMatchObject({ detail: { code: 'player_link_required' } });
+
+    const playerAnswer = await poll(it_.match.id, unlinkedPlayer.token);
+    expect(playerAnswer.status).toBe(403);
+    expect(await playerAnswer.json()).toMatchObject({ detail: { code: 'player_link_required' } });
+
+    const coachAnswer = await poll(it_.match.id, unassignedCoach.token);
+    expect(coachAnswer.status).toBe(403);
+    expect(await coachAnswer.json()).toMatchObject({ detail: { code: 'team_assignment_required' } });
+  });
+
+  it('turns away a signed-out, deactivated or expired account', async () => {
+    const it_ = await world();
+    expect((await poll(it_.match.id)).status).toBe(401);
+
+    // A player may be claimed by one account only, so each of these gets its
+    // own roster record on the same squad.
+    const spare = async (name: string) => (await (await request('/api/v1/players', json('POST', { name, team_id: it_.ours.id, position: 'CM', jersey_number: null }, it_.admin.token))).json<{ id: string }>()).id;
+
+    const deactivated = await seedUser('player', await spare('Deactivated Player'));
+    await testEnv.DB.prepare('UPDATE users SET is_active=0 WHERE id=?').bind(deactivated.id).run();
+    const gone = await poll(it_.match.id, deactivated.token);
+    expect(gone.status).toBe(401);
+    expect(await gone.json()).toMatchObject({ detail: { code: 'invalid_token' } });
+
+    const expired = await seedUser('player', await spare('Expired Player'));
+    await testEnv.DB.prepare('INSERT INTO account_expiry (user_id, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .bind(expired.id, '2020-01-01T00:00:00.000Z', now, now).run();
+    const spent = await poll(it_.match.id, expired.token);
+    expect(spent.status).toBe(401);
+    expect(await spent.json()).toMatchObject({ detail: { code: 'account_expired' } });
+  });
+
+  /**
+   * The point of the whole change: a 304 is only ever served to somebody who
+   * has just been proved able to see the match. Anyone else gets the same
+   * refusal they would have got without an ETag, so the header cannot be used
+   * to find out whether a private match is being scored.
+   */
+  it('never answers 304 to somebody who may not see the match', async () => {
+    const it_ = await world();
+    const hers = await seedUser('player', it_.mine.id);
+    const stranger = await seedUser('player', it_.other.id);
+
+    const first = await poll(it_.match.id, hers.token);
+    const etag = first.headers.get('ETag')!;
+    expect(etag).toBeTruthy();
+
+    // The rightful reader gets her 304 back.
+    expect((await poll(it_.match.id, hers.token, etag)).status).toBe(304);
+    // Holding her ETag buys an outsider nothing.
+    expect((await poll(it_.match.id, stranger.token, etag)).status).toBe(404);
+    // And neither does holding it after being removed from the squad.
+    await testEnv.DB.prepare('UPDATE users SET is_active=0 WHERE id=?').bind(hers.id).run();
+    expect((await poll(it_.match.id, hers.token, etag)).status).toBe(401);
+  });
+
+  it('answers 304 while nothing changes, and the whole match once it does', async () => {
+    const it_ = await world();
+    const hers = await seedUser('player', it_.mine.id);
+
+    const first = await poll(it_.match.id, hers.token);
+    expect(first.status).toBe(200);
+    const etag = first.headers.get('ETag')!;
+    const body = await first.json<{ match: { id: string }; events: unknown[]; lineup: unknown[]; revision: number }>();
+    expect(body.match.id).toBe(it_.match.id);
+
+    // Unchanged: no body at all.
+    const again = await poll(it_.match.id, hers.token, etag);
+    expect(again.status).toBe(304);
+    expect(await again.text()).toBe('');
+
+    // Something happens, and the same ETag stops matching.
+    await request(`/api/v1/matches/${it_.match.id}/phase`, json('POST', { action: 'start_match' }, it_.admin.token));
+    const changed = await poll(it_.match.id, hers.token, etag);
+    expect(changed.status).toBe(200);
+    const after = await changed.json<{ revision: number; match: { id: string } }>();
+    expect(after.revision).toBeGreaterThan(body.revision);
+    expect(after.match.id).toBe(it_.match.id);
+  });
+
+  it('reads a stale ETag as a change rather than trusting it', async () => {
+    const it_ = await world();
+    const hers = await seedUser('player', it_.mine.id);
+    expect((await poll(it_.match.id, hers.token, 'W/"nonsense-0"')).status).toBe(200);
+  });
+});
+
 describe('the minutes a match ends up recording', () => {
   /**
    * One afternoon, one answer.
