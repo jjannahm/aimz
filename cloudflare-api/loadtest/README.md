@@ -89,6 +89,37 @@ The auth test, separately and never concurrently:
 k6 run loadtest/auth-limits.js -e BASE=$BASE -e ACCOUNTS=./accounts.json
 ```
 
+## Running it in Grafana Cloud
+
+No VM, no laptop. The same script, the same scenario, generated from Grafana's
+infrastructure.
+
+**Credentials never leave your machine as a file.** Locally the pool is read
+from `accounts.json` because `-e ACCOUNTS=` names it. In the cloud you leave
+`ACCOUNTS` unset and the pool comes from the stack's secret store instead —
+which also keeps `accounts.json` out of the uploaded archive, since `open()` is
+what pulls a file into it. k6 redacts secret values from logs.
+
+```bash
+# once: point the CLI at your stack (opens a browser)
+k6 cloud login
+
+# once: store the pool as a single secret, read straight from the file
+k6 secret create --name LOADTEST_ACCOUNTS --value "$(cat loadtest/accounts.json)"
+
+# then, per run — note ACCOUNTS is NOT set
+k6 cloud run loadtest/match-day.js -e SHAPE=step -e VUS=1000 -e HOLD=8m   -e BASE=https://aimz-api-staging.shared-links.workers.dev   -e MATCH_ID=... -e PLAYER_ID=...
+```
+
+Results open in the browser automatically, and stay in Grafana Cloud under
+Testing & synthetics → Performance.
+
+**Check your allowance first.** Free includes 500 VU-hours a month. A 1,000-VU
+run of this shape costs ~158 VUh and a 1,500-VU run ~237 VUh — 395 together, so
+both fit, but with little room for a repeat. The per-test VU ceiling is not
+published and is set per account: Testing & synthetics → Performance →
+Settings → **Stack limits**. If it is below 1,000, no script change helps.
+
 ## The load generator
 
 **Do not run the upper rungs from a laptop.** At 1,500 VUs you would be
