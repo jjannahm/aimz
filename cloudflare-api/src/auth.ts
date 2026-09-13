@@ -13,7 +13,7 @@ import {
   publicUser,
   verifyPassword,
 } from "./security";
-import { linkedPlayerIds, quietTeamScope, requireAimzTeam } from "./team-access";
+import { linkedPlayerIds, quietScopeOf, quietTeamScope, requireAimzTeam, scopedCaller } from "./team-access";
 import type { InviteKind, InviteRow, UserRole, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -340,12 +340,14 @@ export function registerAuthRoutes(app: App): void {
   app.post("/api/v1/auth/password-reset/confirm", () => { throw new ApiProblem(503, "password_reset_disabled", "Password reset is disabled in staging. Contact an AIMZ administrator."); });
 
   app.get("/api/v1/users/me", async (c) => {
-    const user = await currentUser(c);
+    // One read for the account and the squads it may open, rather than two.
+    const caller = await scopedCaller(c);
+    const user = caller.user;
     // The squads this account is attached to, so the app can draw its
     // navigation from the same fact the API enforces rather than guessing at
     // it from a list. Null for an administrator, who is attached to none
     // because they may open all of them.
-    return c.json({ ...publicUser(user), team_ids: await quietTeamScope(c.env, user) });
+    return c.json({ ...publicUser(caller.user), team_ids: quietScopeOf(caller) });
   });
   // The roster players a parent speaks for. A player account answers with the
   // one player it is, so the caller has a single shape either way.

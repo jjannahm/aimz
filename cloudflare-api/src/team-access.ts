@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { ApiProblem, bearerSubject, currentUser, nowIso } from "./helpers";
+import { ApiProblem, assertNotExpired, bearerSubject, currentUser, nowIso } from "./helpers";
 import type { UserRow } from "./types";
 
 const NO_LINK = "Ask an AIMZ administrator to link your account to a squad player.";
@@ -91,8 +91,10 @@ export async function quietTeamScope(env: Env, user: UserRow): Promise<TeamScope
  * loud, because there the caller has named something specific.
  */
 export async function callerScope(c: Context<{ Bindings: Env }>): Promise<{ scope: TeamScope; user: UserRow }> {
-  const user = await currentUser(c);
-  return { scope: await quietTeamScope(c.env, user), user };
+  // One statement rather than two. Every list endpoint that scopes itself
+  // through here got half its authorisation round trips back for free.
+  const caller = await scopedCaller(c);
+  return { scope: quietScopeOf(caller), user: caller.user };
 }
 
 /** True when the account may open this squad, which an administrator always may. */
@@ -248,6 +250,120 @@ export async function visibleMatchRevision(c: Context<{ Bindings: Env }>, matchI
   return row.revision;
 }
 
+/**
+ * Who is asking, what they may see, and — when a player is named — whether
+ * they may see that player. One statement.
+ *
+ * The same five questions the helpers above answer one round trip at a time.
+ * D1 executes each of them in a fraction of a millisecond and sits in another
+ * continent, so the cost was never the work; it was asking four times and
+ * waiting four times. Under a thousand concurrent readers those waits queued
+ * until the database refused them outright — `D1 DB is overloaded. Requests
+ * queued for too long.` — which is what this exists to stop.
+ *
+ * Nothing is cached and nothing is carried in a token: every request still
+ * reads the live rows, so a deactivation, an expiry, a squad move or an
+ * unassignment takes effect on the very next request, exactly as before.
+ *
+ * The raw counts come back alongside the resolved lists so the callers below
+ * can raise the *same* refusals as `linkedPlayerIds`, `managedTeamIds` and
+ * `linkedTeamIds` — a parent with no children and a parent whose children have
+ * been taken off the roster are different failures, and both are preserved.
+ */
+export interface Caller {
+  user: UserRow;
+  /** The roster players this account speaks for. */
+  playerIds: string[];
+  /** The squads it may open. Empty for an administrator, who is not scoped. */
+  teamIds: string[];
+  /** Rows behind the links, so an empty list can be told from a missing one. */
+  children: number;
+  squads: number;
+  /** Whether the player named in the call is visible. Null when none was. */
+  playerVisible: boolean | null;
+}
+
+const split = (value: string | null): string[] => (value ? value.split(",").filter(Boolean) : []);
+
+export async function scopedCaller(c: Context<{ Bindings: Env }>, playerId?: string): Promise<Caller> {
+  const userId = await bearerSubject(c);
+  const row = await c.env.DB.prepare(`
+    WITH me AS (
+      SELECT u.*, ae.expires_at AS account_expires_at
+      FROM users u LEFT JOIN account_expiry ae ON ae.user_id = u.id
+      WHERE u.id = ?1 AND u.is_active = 1
+    ),
+    scope AS (
+      SELECT p.team_id AS team_id FROM me JOIN players p ON p.id = me.player_id WHERE me.role = 'player'
+      UNION
+      SELECT p.team_id FROM me
+        JOIN user_children uc ON uc.user_id = me.id
+        JOIN players p ON p.id = uc.player_id
+        WHERE me.role = 'parent'
+      UNION
+      SELECT ut.team_id FROM me JOIN user_teams ut ON ut.user_id = me.id WHERE me.role = 'coach'
+    )
+    SELECT
+      me.*,
+      (SELECT group_concat(pid) FROM (
+        SELECT me.player_id AS pid FROM me WHERE me.role <> 'parent' AND me.player_id IS NOT NULL
+        UNION
+        SELECT uc.player_id FROM me JOIN user_children uc ON uc.user_id = me.id WHERE me.role = 'parent'
+      )) AS player_csv,
+      (SELECT group_concat(team_id) FROM scope) AS team_csv,
+      (SELECT COUNT(*) FROM me JOIN user_children uc ON uc.user_id = me.id) AS children,
+      (SELECT COUNT(*) FROM me JOIN user_teams ut ON ut.user_id = me.id) AS squads,
+      CASE
+        WHEN ?2 IS NULL THEN NULL
+        WHEN me.role = 'admin' THEN 1
+        WHEN (SELECT p.team_id FROM players p WHERE p.id = ?2) IN (SELECT team_id FROM scope) THEN 1
+        ELSE 0
+      END AS player_visible
+    FROM me
+  `).bind(userId, playerId ?? null).first<Record<string, unknown>>();
+
+  if (!row) throw new ApiProblem(401, "invalid_token", "Your account is unavailable.");
+  const user = { ...row, expires_at: (row.account_expires_at as string | null) ?? null } as unknown as UserRow;
+  assertNotExpired(user);
+  return {
+    user,
+    playerIds: split(row.player_csv as string | null),
+    teamIds: split(row.team_csv as string | null),
+    children: Number(row.children ?? 0),
+    squads: Number(row.squads ?? 0),
+    playerVisible: row.player_visible === null || row.player_visible === undefined ? null : Boolean(row.player_visible),
+  };
+}
+
+/** The roster players an account speaks for, refusing as `linkedPlayerIds` does. */
+export function callerPlayerIds(caller: Caller): string[] {
+  if (caller.user.role === "parent" && !caller.children) throw new ApiProblem(403, "player_link_required", NO_LINK);
+  if (caller.user.role !== "parent" && !caller.user.player_id) throw new ApiProblem(403, "player_link_required", NO_LINK);
+  return caller.playerIds;
+}
+
+/** The squads a coach runs, refusing as `managedTeamIds` does. */
+export function callerSquadIds(caller: Caller): string[] {
+  if (!caller.squads) throw new ApiProblem(403, "team_assignment_required", NO_SQUAD);
+  return caller.teamIds;
+}
+
+/** The scope, refusing as `teamScope` does. Null for an administrator. */
+export function callerScopeOf(caller: Caller): TeamScope {
+  if (caller.user.role === "admin") return null;
+  if (caller.user.role === "coach") return callerSquadIds(caller);
+  callerPlayerIds(caller);
+  if (!caller.teamIds.length) {
+    throw new ApiProblem(403, "player_link_required", "Your linked player is no longer on the roster. Ask an AIMZ administrator for help.");
+  }
+  return caller.teamIds;
+}
+
+/** The scope as the navigation asks for it: empty rather than refused. */
+export function quietScopeOf(caller: Caller): TeamScope {
+  try { return callerScopeOf(caller); } catch { return []; }
+}
+
 /* ------------------------------------------------------------------------ *
  *  Guarding a single resource
  *
@@ -363,9 +479,15 @@ export async function guardMatch(c: Context<{ Bindings: Env }>, matchId: string)
 }
 
 export async function guardPlayer(c: Context<{ Bindings: Env }>, playerId: string): Promise<UserRow> {
-  const user = await currentUser(c);
-  await assertPlayerVisible(c.env, user, playerId);
-  return user;
+  // The account, its scope and whether this player is inside it, together.
+  // Refuses exactly as the three separate reads did: 401 for an account that
+  // is gone or out of time, the three 403s for one that is linked to nothing,
+  // and 404 — never 403 — for a player outside the scope.
+  const caller = await scopedCaller(c, playerId);
+  const scope = callerScopeOf(caller);
+  if (scope === null) return caller.user;
+  if (!caller.playerVisible) throw new ApiProblem(404, "player_not_found", "Player not found.");
+  return caller.user;
 }
 
 export async function guardCompetition(c: Context<{ Bindings: Env }>, competitionId: string): Promise<UserRow> {
