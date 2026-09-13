@@ -7,6 +7,10 @@ Two scripts, deliberately separate:
 - **`auth-limits.js`** — the sign-in brakes. Its purpose is to earn 429s, so it
   must never run at the same time as the capacity test.
 
+> **Paths in `-e ACCOUNTS=` are relative to the script**, not to your shell:
+> k6's `open()` resolves from `loadtest/`. `./accounts.json` is correct;
+> `./loadtest/accounts.json` looks right and is not.
+
 ## Accounts
 
 Both scripts read a pool of staging logins from `accounts.json`, which is
@@ -70,19 +74,19 @@ export PLAYER_ID=...     # a player on that squad
 
 | Stage | Command |
 | --- | --- |
-| smoke | `k6 run loadtest/match-day.js -e SHAPE=smoke -e BASE=$BASE -e ACCOUNTS=./loadtest/accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
-| 100 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=100 -e HOLD=5m -e BASE=$BASE -e ACCOUNTS=./loadtest/accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
-| 300 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=300 -e HOLD=5m -e BASE=$BASE -e ACCOUNTS=./loadtest/accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
-| 500 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=500 -e HOLD=5m -e BASE=$BASE -e ACCOUNTS=./loadtest/accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
-| 1,000 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=1000 -e HOLD=8m -e BASE=$BASE -e ACCOUNTS=./loadtest/accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
-| 1,500 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=1500 -e HOLD=8m -e BASE=$BASE -e ACCOUNTS=./loadtest/accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| smoke | `k6 run loadtest/match-day.js -e SHAPE=smoke -e BASE=$BASE -e ACCOUNTS=./accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 100 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=100 -e HOLD=5m -e BASE=$BASE -e ACCOUNTS=./accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 300 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=300 -e HOLD=5m -e BASE=$BASE -e ACCOUNTS=./accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 500 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=500 -e HOLD=5m -e BASE=$BASE -e ACCOUNTS=./accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 1,000 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=1000 -e HOLD=8m -e BASE=$BASE -e ACCOUNTS=./accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 1,500 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=1500 -e HOLD=8m -e BASE=$BASE -e ACCOUNTS=./accounts.json -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
 
 PowerShell: `$env:BASE = "..."`, then `-e BASE=$env:BASE`.
 
 The auth test, separately and never concurrently:
 
 ```bash
-k6 run loadtest/auth-limits.js -e BASE=$BASE -e ACCOUNTS=./loadtest/accounts.json
+k6 run loadtest/auth-limits.js -e BASE=$BASE -e ACCOUNTS=./accounts.json
 ```
 
 ## The load generator

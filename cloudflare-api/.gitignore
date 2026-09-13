@@ -6,3 +6,4 @@ dist/
 
 # Load-test logins: real staging credentials, never committed.
 loadtest/accounts.json
+loadtest/dataset.json
