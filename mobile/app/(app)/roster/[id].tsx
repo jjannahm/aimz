@@ -24,7 +24,7 @@ export default function PrivateRosterDetailsScreen() {
   const { user } = useAuth();
   const { id } = useLocalSearchParams<{ id: string }>();
   const client = useQueryClient();
-  const player = useQuery({ queryKey: ['players', id], queryFn: async () => (await api.players('?limit=100')).items.find((item) => item.id === id) ?? null, enabled: Boolean(id) && user?.role === 'admin' });
+  const player = useQuery({ queryKey: ['players', id], queryFn: async () => (await api.players()).items.find((item) => item.id === id) ?? null, enabled: Boolean(id) && user?.role === 'admin' });
   const details = useQuery({ queryKey: ['roster-details', id], queryFn: () => api.playerRosterDetails(id), enabled: Boolean(id) && user?.role === 'admin' });
   // Kept, loaded and written back though it is no longer edited here, so that
   // saving this screen cannot quietly erase a date already on the record.

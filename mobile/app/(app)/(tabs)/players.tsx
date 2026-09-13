@@ -155,8 +155,8 @@ function PlayerRow({ player, subtitle, spoken, trailing, last, onApp }: { player
 function useRoster() {
   // The same keys the rest of the app reads these two lists under, so a tab
   // opened second is served from cache rather than fetching them again.
-  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
-  const players = useQuery({ queryKey: cacheKeys.players, queryFn: () => api.players('?limit=100') });
+  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams() });
+  const players = useQuery({ queryKey: cacheKeys.players, queryFn: () => api.players() });
   // Squads are whatever the admin has created, so a new one shows up here
   // without a code change or a restart.
   const squads = useMemo(() => {
@@ -303,7 +303,7 @@ function AwardRow({ award, competitionId }: { award: PlayerAward; competitionId:
 
 function MatchAwardsSection() {
   const styles = useThemedStyles(stylesheet);
-  const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
+  const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions() });
   const eligible = useMemo(() => competitions.data?.items.filter((item) => item.type !== 'friendly') ?? [], [competitions.data]);
   const [chosen, setChosen] = useState<string | null>(null);
   const competition = eligible.find((item) => item.id === chosen) ?? eligible[0];
@@ -378,7 +378,7 @@ function TrainingAwardRow({ award, teamId }: { award: TrainingAwardRank; teamId:
 
 function TrainingAwardsSection() {
   const styles = useThemedStyles(stylesheet);
-  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
+  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams() });
   const eligible = useMemo(() => teams.data?.items.filter((team) => team.is_aimz && team.is_active && team.age_group) ?? [], [teams.data]);
   const [chosen, setChosen] = useState<string | null>(null);
   const team = eligible.find((item) => item.id === chosen) ?? eligible[0];

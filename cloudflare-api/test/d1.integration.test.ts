@@ -3,7 +3,7 @@ import { applyD1Migrations } from 'cloudflare:test';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { app } from '../src/index';
-import { purgeExpiredAudit } from '../src/retention';
+import { purgeExpiredAudit, purgeSpentSessions } from '../src/retention';
 import { createAccessToken } from '../src/security';
 
 const testEnv = env as Env & { TEST_MIGRATIONS: string };
@@ -2727,6 +2727,42 @@ describe('activity retention', () => {
     expect(kept?.id).toBe(team.id);
     const gone = await testEnv.DB.prepare('SELECT id FROM audit_log WHERE id=?').bind('stale').first();
     expect(gone).toBeNull();
+  });
+});
+
+describe('sign-in sessions are swept up', () => {
+  /**
+   * Every login writes a row and every refresh rotates one, so the table grows
+   * by roughly a hundred rows per account per day and nothing used to remove
+   * them. Only rows that cannot sign anybody in are taken.
+   */
+  const writeSession = async (id: string, expiresAt: string, revokedAt: string | null) => {
+    const user = await seedUser('player');
+    await testEnv.DB.prepare('INSERT INTO refresh_sessions (id, user_id, token_hash, expires_at, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .bind(id, user.id, `hash-${id}`, expiresAt, now, revokedAt).run();
+  };
+
+  it('takes the spent ones and leaves a live session alone', async () => {
+    const today = new Date('2026-09-13T09:00:00.000Z');
+    await writeSession('live', '2026-10-13T09:00:00.000Z', null);
+    await writeSession('expired', '2026-09-01T09:00:00.000Z', null);
+    await writeSession('revoked-long-ago', '2026-10-13T09:00:00.000Z', '2026-08-01T09:00:00.000Z');
+    await writeSession('revoked-just-now', '2026-10-13T09:00:00.000Z', '2026-09-12T09:00:00.000Z');
+
+    await purgeSpentSessions(testEnv, today);
+
+    const left = await testEnv.DB.prepare("SELECT id FROM refresh_sessions WHERE id IN ('live','expired','revoked-long-ago','revoked-just-now') ORDER BY id")
+      .all<{ id: string }>();
+    // The just-revoked row stays inside its grace period; the other two go.
+    expect(left.results.map((row) => row.id)).toEqual(['live', 'revoked-just-now']);
+  });
+
+  it('cannot sign anybody out by mistake', async () => {
+    const admin = await seedUser('admin');
+    const before = await testEnv.DB.prepare('SELECT COUNT(*) n FROM refresh_sessions WHERE user_id=? AND revoked_at IS NULL').bind(admin.id).first<{ n: number }>();
+    await purgeSpentSessions(testEnv, new Date('2026-09-13T09:00:00.000Z'));
+    const after = await testEnv.DB.prepare('SELECT COUNT(*) n FROM refresh_sessions WHERE user_id=? AND revoked_at IS NULL').bind(admin.id).first<{ n: number }>();
+    expect(after?.n).toBe(before?.n);
   });
 });
 

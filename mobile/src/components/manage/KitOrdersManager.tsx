@@ -28,7 +28,7 @@ export function KitOrdersManager() {
   const styles = useThemedStyles(stylesheet);
   const client = useQueryClient();
   const [queue, setQueue] = useState<KitStatus>('ordered');
-  const orders = useQuery({ queryKey: [...cacheKeys.kitOrders, queue], queryFn: () => api.kitOrders(`?status=${queue}&limit=100`) });
+  const orders = useQuery({ queryKey: [...cacheKeys.kitOrders, queue], queryFn: () => api.kitOrders(`?status=${queue}`) });
   const setStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: KitStatus }) => api.setKitStatus(id, status),
     onSuccess: async () => { await invalidateAfterWrite(client, 'kit'); },

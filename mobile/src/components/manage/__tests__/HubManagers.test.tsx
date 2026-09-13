@@ -61,7 +61,7 @@ describe('AnnouncementsManager', () => {
   it('addresses a squad through Teams, not from the audience list itself', async () => {
     const screen = await render(<AnnouncementsManager teams={teams} />, { wrapper });
     await screen.findByText('Post announcement');
-    await waitFor(() => expect(api.announcements).toHaveBeenCalledWith('?limit=100'));
+    await waitFor(() => expect(api.announcements).toHaveBeenCalledWith());
     await fireEvent.press(screen.getByRole('button', { name: 'Show post announcement form' }));
 
     // The first dropdown is the kind of audience, never a squad by name.
@@ -101,7 +101,7 @@ describe('AnnouncementsManager', () => {
     await waitFor(() => expect(screen.getByTestId('choice-value-Audience').props.children).toBe('team'));
     fireEvent.press(screen.getByRole('button', { name: 'U11' }));
     // The squad's own players, read from the roster rather than typed in.
-    await waitFor(() => expect(api.players).toHaveBeenCalledWith('?team_id=team-u11&limit=200'));
+    await waitFor(() => expect(api.players).toHaveBeenCalledWith('?team_id=team-u11'));
     fireEvent.press(screen.getByRole('button', { name: 'Specific players' }));
     await waitFor(() => expect(screen.getByTestId('choice-value-Send to').props.children).toBe('some'));
 

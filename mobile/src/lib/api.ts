@@ -187,12 +187,14 @@ const PAGE_SIZE = 100;
  * offering them. Callers that need the whole set use this instead.
  */
 async function allPages<T>(path: string, query = ''): Promise<Page<T>> {
-  // Callers pass their own filters and often a limit; paging is decided here,
-  // so any incoming limit/offset is dropped rather than duplicated.
   const params = new URLSearchParams(query.replace(/^\?/u, ''));
-  params.delete('limit');
+  // A caller's own `limit` is a deliberate slice — "the latest fifty", which
+  // some screens poll — and is kept as a ceiling. Without one, the whole
+  // collection is wanted and every page is walked. `offset` is ours either way.
+  const asked = Number(params.get('limit'));
+  const ceiling = Number.isInteger(asked) && asked > 0 ? asked : Number.POSITIVE_INFINITY;
   params.delete('offset');
-  params.set('limit', String(PAGE_SIZE));
+  params.set('limit', String(Math.min(PAGE_SIZE, ceiling)));
 
   const pageAt = (offset: number) => {
     params.set('offset', String(offset));
@@ -201,7 +203,8 @@ async function allPages<T>(path: string, query = ''): Promise<Page<T>> {
 
   const first = await pageAt(0);
   const items = [...first.items];
-  while (items.length < first.total) {
+  const wanted = Math.min(first.total, ceiling);
+  while (items.length < wanted) {
     const next = await pageAt(items.length);
     if (!next.items.length) break; // Defensive: never spin if the server disagrees.
     items.push(...next.items);
@@ -245,7 +248,7 @@ export const api = {
   createTeam: (payload: Partial<Team>) => request<Team>('/api/v1/teams', { method: 'POST', body: payload }),
   updateTeam: (id: string, payload: Partial<Team>) => request<Team>(`/api/v1/teams/${id}`, { method: 'PATCH', body: payload }),
   deleteTeam: (id: string) => request<void>(`/api/v1/teams/${id}`, { method: 'DELETE' }),
-  competitions: (query = '') => request<Page<Competition>>(`/api/v1/competitions${query}`),
+  competitions: (query = '') => allPages<Competition>('/api/v1/competitions', query),
   completeSeason: (competitionId: string) => request<Competition>(`/api/v1/competitions/${competitionId}/complete`, { method: 'POST', body: {} }),
   reopenSeason: (competitionId: string) => request<Competition>(`/api/v1/competitions/${competitionId}/reopen`, { method: 'POST', body: {} }),
   startNextSeason: (competitionId: string, season: string, carry_teams: boolean) =>
@@ -260,7 +263,7 @@ export const api = {
     request<Player[]>('/api/v1/players/bulk', { method: 'POST', body: { team_id, players } }),
   updatePlayer: (id: string, payload: Partial<Player>) => request<Player>(`/api/v1/players/${id}`, { method: 'PATCH', body: payload }),
   deletePlayer: (id: string) => request<void>(`/api/v1/players/${id}`, { method: 'DELETE' }),
-  matches: (query = '') => request<Page<Match>>(`/api/v1/matches${query}`),
+  matches: (query = '') => allPages<Match>('/api/v1/matches', query),
   createMatch: (payload: Partial<Match>) => request<Match>('/api/v1/matches', { method: 'POST', body: payload }),
   updateMatch: (id: string, payload: Partial<Match>) => request<Match>(`/api/v1/matches/${id}`, { method: 'PATCH', body: payload }),
   setMatchResult: (id: string, home_score: number, away_score: number) => request<Match>(`/api/v1/matches/${id}/result`, { method: 'POST', body: { home_score, away_score } }),
@@ -305,17 +308,17 @@ export const api = {
   // Where the academy trains, with the side of the city each is on, plus any
   // branch an older application recorded that is no longer offered.
   branches: () => request<{ items: { name: string; area: string | null }[] }>('/api/v1/branches'),
-  newcomers: (query = '?queue=active') => request<Page<Newcomer>>(`/api/v1/admin/newcomers${query}`),
+  newcomers: (query = '?queue=active') => allPages<Newcomer>('/api/v1/admin/newcomers', query),
   newcomer: (id: string) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`),
   updateNewcomer: (id: string, body: Partial<{ stage: NewcomerStage; outcome: NewcomerOutcome; last_contacted_at: string | null; next_follow_up_at: string | null }>) => request<Newcomer>(`/api/v1/admin/newcomers/${id}`, { method: 'PATCH', body }),
   addNewcomerNote: (id: string, body: string) => request(`/api/v1/admin/newcomers/${id}/notes`, { method: 'POST', body: { body } }),
   assignNewcomer: (id: string, body: { team_id: string; position: string; jersey_number: number | null }) => request<{ application: Newcomer; player_id: string; invitation: RegistrationInvite | null }>(`/api/v1/admin/newcomers/${id}/assign-and-confirm`, { method: 'POST', body }),
-  kitOrders: (query = '') => request<Page<KitOrder>>(`/api/v1/kit-orders${query}`),
+  kitOrders: (query = '') => allPages<KitOrder>('/api/v1/kit-orders', query),
   orderKit: (body: KitOrderPayload) => request<KitOrder>('/api/v1/kit-orders', { method: 'POST', body }),
   setKitStatus: (id: string, status: KitStatus) => request<KitOrder>(`/api/v1/admin/kit-orders/${id}`, { method: 'PATCH', body: { status } }),
   deleteMe: () => request<void>('/api/v1/users/me', { method: 'DELETE' }),
   myChildren: () => request<{ items: LinkedChild[] }>('/api/v1/users/me/children'),
-  adminUsers: (query = '?limit=100') => request<Page<AdminAccount>>(`/api/v1/admin/users${query}`),
+  adminUsers: (query = '') => allPages<AdminAccount>('/api/v1/admin/users', query),
   linkUserPlayer: (id: string, player_id: string | null) => request<User>(`/api/v1/admin/users/${id}`, { method: 'PATCH', body: { player_id } }),
   createUser: (body: { name: string; email: string; password: string; role: UserRole; expires_at: string | null }) =>
     request<User>('/api/v1/admin/users', { method: 'POST', body }),
@@ -323,19 +326,19 @@ export const api = {
   /** The squad a coach account runs. Null unassigns, which leaves the login alone. */
   setUserTeam: (id: string, team_id: string | null, staff_role: StaffRole = 'coach') =>
     request<{ id: string; team_id: string | null; staff_role: StaffRole | null }>(`/api/v1/admin/users/${id}/team`, { method: 'PUT', body: { team_id, staff_role } }),
-  trainingSessions: (query = '') => request<Page<TrainingSession>>(`/api/v1/training-sessions${query}`),
+  trainingSessions: (query = '') => allPages<TrainingSession>('/api/v1/training-sessions', query),
   trainingSession: (id: string) => request<TrainingSession>(`/api/v1/training-sessions/${id}`),
   createTrainingSessions: (payload: { team_id: string; venue: string; notes: string | null; duration_minutes: number; occurrences: string[] }) => request<TrainingSession[]>('/api/v1/training-sessions', { method: 'POST', body: payload }),
   updateTrainingSession: (id: string, payload: Partial<Pick<TrainingSession, 'starts_at' | 'duration_minutes' | 'venue' | 'notes'>>) => request<TrainingSession>(`/api/v1/training-sessions/${id}`, { method: 'PATCH', body: payload }),
   deleteTrainingSession: (id: string, scope: 'one' | 'series' = 'one') => request<void>(`/api/v1/training-sessions/${id}?scope=${scope}`, { method: 'DELETE' }),
-  announcements: (query = '') => request<Page<Announcement>>(`/api/v1/announcements${query}`),
+  announcements: (query = '') => allPages<Announcement>('/api/v1/announcements', query),
   // The coaches a notice can be addressed to, from the accounts that already
   // exist rather than a list of names kept somewhere else.
   announcementCoaches: () => request<{ items: CoachAccount[] }>('/api/v1/announcements/coaches'),
   createAnnouncement: (payload: Partial<Announcement>) => request<Announcement>('/api/v1/announcements', { method: 'POST', body: payload }),
   updateAnnouncement: (id: string, payload: Partial<Announcement>) => request<Announcement>(`/api/v1/announcements/${id}`, { method: 'PATCH', body: payload }),
   deleteAnnouncement: (id: string) => request<void>(`/api/v1/announcements/${id}`, { method: 'DELETE' }),
-  playerReports: (query = '') => request<Page<PlayerReport>>(`/api/v1/player-reports${query}`),
+  playerReports: (query = '') => allPages<PlayerReport>('/api/v1/player-reports', query),
   playerReport: (id: string) => request<PlayerReport>(`/api/v1/player-reports/${id}`),
   createPlayerReport: (body: { player_id: string; title: string; period_start: string; period_end: string; coach_feedback?: string }) =>
     request<PlayerReport>('/api/v1/player-reports', { method: 'POST', body }),
@@ -356,7 +359,7 @@ export const api = {
   deleteFeePlan: (id: string) => request<void>(`/api/v1/fee-plans/${id}`, { method: 'DELETE' }),
   generateFees: (id: string, period: string) =>
     request<FeeGeneration>(`/api/v1/fee-plans/${id}/generate`, { method: 'POST', body: { period } }),
-  feeCharges: (query = '') => request<Page<FeeCharge>>(`/api/v1/fee-charges${query}`),
+  feeCharges: (query = '') => allPages<FeeCharge>('/api/v1/fee-charges', query),
   feeCharge: (id: string) => request<FeeCharge>(`/api/v1/fee-charges/${id}`),
   createFeeCharge: (body: { player_id: string; label: string; amount_piastres: number; due_on: string }) =>
     request<FeeCharge>('/api/v1/fee-charges', { method: 'POST', body }),
@@ -375,7 +378,7 @@ export const api = {
   trainingAttendance: (id: string) => request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`),
   // Asking for a register to be corrected, and answering the ask. The official
   // record is only ever written by an approval, never by the request itself.
-  attendanceRequests: (query = '') => request<Page<AttendanceRequest>>(`/api/v1/attendance-requests${query}`),
+  attendanceRequests: (query = '') => allPages<AttendanceRequest>('/api/v1/attendance-requests', query),
   attendanceRequestContext: (sessionId: string) => request<AttendanceRequestContext>(`/api/v1/training-sessions/${sessionId}/attendance-request-context`),
   requestAttendanceChange: (sessionId: string, body: { player_id?: string; requested_status: AttendanceStatus; reason?: string | null }) =>
     request<AttendanceRequest>(`/api/v1/training-sessions/${sessionId}/attendance-requests`, { method: 'POST', body }),

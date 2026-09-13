@@ -74,7 +74,7 @@ export function TrainingStatsPanel({ playerId }: { playerId: string }) {
   // ask, so only a family reads them here.
   const requests = useQuery({
     queryKey: [...cacheKeys.attendanceRequests, 'player', playerId],
-    queryFn: () => api.attendanceRequests(`?player_id=${encodeURIComponent(playerId)}&limit=100`),
+    queryFn: () => api.attendanceRequests(`?player_id=${encodeURIComponent(playerId)}`),
     enabled: Boolean(playerId) && speaksFor,
   });
 

@@ -290,10 +290,10 @@ export default function ManageScreen() {
   /** Knockouts created in this sitting, whose next save completes their setup. */
   const [drawnUp, setDrawnUp] = React.useState<string[]>([]);
   const pageRef = React.useRef<ScrollView | null>(null);
-  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
-  const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions('?limit=100') });
-  const players = useQuery({ queryKey: ['players'], queryFn: () => api.players('?limit=100') });
-  const matches = useQuery({ queryKey: ['matches', 'admin'], queryFn: () => api.matches('?limit=100') });
+  const teams = useQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams() });
+  const competitions = useQuery({ queryKey: ['competitions'], queryFn: () => api.competitions() });
+  const players = useQuery({ queryKey: ['players'], queryFn: () => api.players() });
+  const matches = useQuery({ queryKey: ['matches', 'admin'], queryFn: () => api.matches() });
   const invites = useQuery({ queryKey: ['invites'], queryFn: api.invites, enabled: user?.role === 'admin' });
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: defaults });
   const isCoach = user?.role === 'coach';

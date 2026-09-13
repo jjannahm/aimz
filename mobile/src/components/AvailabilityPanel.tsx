@@ -29,7 +29,7 @@ export function AvailabilityPanel({ session }: { session: TrainingSession }) {
   const availability = useQuery({ queryKey: ['training-availability', session.id], queryFn: () => api.trainingAvailability(session.id) });
   const players = useQuery({ // One squad's players, so not the shared ['players'] list: same key,
     // different rows would have each overwrite the other's cache.
-    queryKey: [...cacheKeys.players, 'team', session.team_id], queryFn: () => api.players(`?team_id=${encodeURIComponent(session.team_id)}&limit=100`), enabled: user?.role === 'admin' });
+    queryKey: [...cacheKeys.players, 'team', session.team_id], queryFn: () => api.players(`?team_id=${encodeURIComponent(session.team_id)}`), enabled: user?.role === 'admin' });
   const [note, setNote] = React.useState('');
   // Only the player answers. An admin reads the replies rather than filling
   // them in on a player's behalf, which is how a register stops meaning

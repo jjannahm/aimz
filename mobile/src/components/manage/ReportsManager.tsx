@@ -38,8 +38,8 @@ export function ReportsManager({ teams }: { teams: Team[] }) {
   const [formOpen, setFormOpen] = React.useState(false);
   const [draft, setDraft] = React.useState({ playerIds: [] as string[], title: '', start: monthsAgo(3), end: iso(new Date()), feedback: '' });
 
-  const players = useQuery({ queryKey: [...cacheKeys.players, 'team', teamId], queryFn: () => api.players(`?team_id=${encodeURIComponent(teamId)}&limit=100`), enabled: Boolean(teamId) });
-  const reports = useQuery({ queryKey: [...cacheKeys.reports, 'team', teamId], queryFn: () => api.playerReports(`?team_id=${encodeURIComponent(teamId)}&limit=100`), enabled: Boolean(teamId) });
+  const players = useQuery({ queryKey: [...cacheKeys.players, 'team', teamId], queryFn: () => api.players(`?team_id=${encodeURIComponent(teamId)}`), enabled: Boolean(teamId) });
+  const reports = useQuery({ queryKey: [...cacheKeys.reports, 'team', teamId], queryFn: () => api.playerReports(`?team_id=${encodeURIComponent(teamId)}`), enabled: Boolean(teamId) });
 
   const create = useMutation({
     mutationFn: () => {

@@ -19,9 +19,9 @@ function useWarmLists(ready: boolean) {
   const client = useQueryClient();
   useEffect(() => {
     if (!ready) return;
-    void client.prefetchQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams('?limit=100') });
-    void client.prefetchQuery({ queryKey: cacheKeys.players, queryFn: () => api.players('?limit=100') });
-    void client.prefetchQuery({ queryKey: cacheKeys.competitions, queryFn: () => api.competitions('?limit=100') });
+    void client.prefetchQuery({ queryKey: cacheKeys.teams, queryFn: () => api.teams() });
+    void client.prefetchQuery({ queryKey: cacheKeys.players, queryFn: () => api.players() });
+    void client.prefetchQuery({ queryKey: cacheKeys.competitions, queryFn: () => api.competitions() });
   }, [client, ready]);
 }
 

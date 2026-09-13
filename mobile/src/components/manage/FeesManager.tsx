@@ -59,7 +59,7 @@ function PlayerLedger({ playerId, name, outstanding, status, paymentInstructions
   const [open, setOpen] = React.useState(false);
   const charges = useQuery({
     queryKey: [...cacheKeys.fees, 'player', playerId],
-    queryFn: () => api.feeCharges(`?player_id=${encodeURIComponent(playerId)}&limit=100`),
+    queryFn: () => api.feeCharges(`?player_id=${encodeURIComponent(playerId)}`),
     enabled: open,
   });
   return <View style={styles.card}>
@@ -177,7 +177,7 @@ export function FeesManager({ teams }: { teams: Team[] }) {
   const squad = teams.find((team) => team.id === teamId) ?? null;
   const plans = useQuery({ queryKey: [...cacheKeys.fees, 'plans', teamId], queryFn: () => api.feePlans(`?team_id=${encodeURIComponent(teamId)}`), enabled: Boolean(teamId) });
   const summary = useQuery({ queryKey: [...cacheKeys.fees, 'summary', teamId, period], queryFn: () => api.teamFeeSummary(teamId, period), enabled: Boolean(teamId) });
-  const players = useQuery({ queryKey: [...cacheKeys.players, 'team', teamId], queryFn: () => api.players(`?team_id=${encodeURIComponent(teamId)}&limit=100`), enabled: Boolean(teamId) });
+  const players = useQuery({ queryKey: [...cacheKeys.players, 'team', teamId], queryFn: () => api.players(`?team_id=${encodeURIComponent(teamId)}`), enabled: Boolean(teamId) });
   const livePlan = plans.data?.items.find((item) => item.is_active) ?? null;
 
   const savePlan = useMutation({
