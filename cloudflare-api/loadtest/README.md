@@ -110,6 +110,27 @@ limit before starting:
 ulimit -n 65535
 ```
 
+### Preflight
+
+On the VM, from the `loadtest` directory, after copying `accounts.json` across:
+
+```bash
+./preflight.sh https://aimz-api-staging.shared-links.workers.dev
+```
+
+It refuses a production-looking URL, then checks k6, vCPU, free RAM, the socket
+limit (raising it for that shell where it can), the ephemeral port range, that
+the API and its database answer, and that **every pooled account can sign in** —
+paced so the burst never meets `LOGIN_BY_IP`. It stops at the first thing that
+would make a run untrustworthy.
+
+Getting the files across, without ever committing credentials:
+
+```bash
+scp cloudflare-api/loadtest/{match-day.js,auth-limits.js,preflight.sh,README.md} user@vm:~/loadtest/
+scp cloudflare-api/loadtest/accounts.json user@vm:~/loadtest/accounts.json
+```
+
 ### Telling generator problems apart from Cloudflare problems
 
 The run fails on `dropped_iterations > 0` — k6 could not start iterations on
