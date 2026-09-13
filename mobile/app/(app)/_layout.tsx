@@ -31,7 +31,7 @@ export default function AppLayout() {
   const { isReady, user } = useAuth();
   useWarmLists(isReady && Boolean(user));
   if (!isReady) return <View style={styles.loading}><ActivityIndicator color={colors.accent} /></View>;
-  if (!user) return <Redirect href="/(auth)/login" />;
+  if (!user) return <Redirect href={'/welcome' as never} />;
   return <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }} />;
 }
 const stylesheet = (colors: ThemeColors) => StyleSheet.create({ loading: { alignItems: 'center', backgroundColor: colors.background, flex: 1, justifyContent: 'center' } });

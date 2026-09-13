@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "web": "expo start --web",
-    "web:export": "expo export --platform web --clear && node scripts/inject-web-branding.mjs && node scripts/copy-web-fonts.mjs && node scripts/verify-web-export.mjs",
+    "web:export": "expo export --platform web --clear && node scripts/inject-web-branding.mjs && node scripts/copy-web-fonts.mjs && node scripts/generate-web-discovery.mjs && node scripts/verify-web-export.mjs",
     "web:export:staging": "EXPO_PUBLIC_API_URL=https://aimz-api-staging.shared-links.workers.dev EXPO_PUBLIC_APP_ENV=staging EXPO_PUBLIC_ENABLE_MEDIA=true EXPO_PUBLIC_ENABLE_PASSWORD_RESET=false npm run web:export",
     "web:deploy:cloudflare": "wrangler pages deploy dist --project-name aimz-egypt-staging --branch main",
     "typecheck": "tsc --noEmit",
@@ -17,6 +17,7 @@
     "test:watch": "jest --watch"
   },
   "dependencies": {
+    "@babel/runtime": "^8.0.5",
     "@expo-google-fonts/roboto": "^0.4.3",
     "@expo-google-fonts/roboto-mono": "^0.4.2",
     "@expo/vector-icons": "^15.1.1",
@@ -32,7 +33,9 @@
     "expo-linking": "~57.0.10",
     "expo-router": "~57.0.21",
     "expo-secure-store": "^57.0.4",
+    "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.1",
+    "expo-system-ui": "~57.0.4",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-hook-form": "^7.85.0",

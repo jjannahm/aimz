@@ -8,6 +8,7 @@ import { useAuth } from '@/src/auth/AuthProvider';
 import { AppButton } from '@/src/components/AppButton';
 import { AuthShell } from '@/src/components/AuthShell';
 import { FormField } from '@/src/components/FormField';
+import { SeoHead } from '@/src/components/SeoHead';
 import { appConfig } from '@/src/config';
 import { ApiError } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -24,7 +25,8 @@ export default function LoginScreen() {
     try { await signIn(values.email, values.password); }
     catch (error) { setError('root', { message: error instanceof ApiError ? error.message : 'Could not sign in.' }); }
   });
-  return <AuthShell title="Welcome back" subtitle="Follow every AIMZ match, table and player performance.">
+  return <AuthShell title="Welcome back" subtitle="Sign in to your AIMZ account.">
+    <SeoHead noIndex title="Sign in | AIMZ Egypt" description="Sign in to your private AIMZ Egypt account." path="login" />
     <View style={styles.form}>
       {errors.root ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{errors.root.message}</Text> : null}
       <Controller control={control} name="email" render={({ field }) => <FormField autoCapitalize="none" autoComplete="email" error={errors.email?.message} keyboardType="email-address" label="Email" onBlur={field.onBlur} onChangeText={field.onChange} value={field.value} />} />

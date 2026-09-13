@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BrandMark } from '@/src/components/BrandMark';
 import { ConnectionStatus } from '@/src/components/ConnectionStatus';
+import { LegalFooter } from '@/src/components/LegalScreen';
 import { appConfig } from '@/src/config';
 import { theme, type ThemeColors } from '@/src/theme';
 import { useThemedStyles } from '@/src/theme/ThemeProvider';
@@ -21,6 +22,7 @@ export function AuthShell({ title, subtitle, children }: PropsWithChildren<{ tit
               <View style={styles.heading}><Text accessibilityRole="header" style={styles.title}>{title}</Text><Text style={styles.subtitle}>{subtitle}</Text></View>
               {children}
             </View>
+            <LegalFooter />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

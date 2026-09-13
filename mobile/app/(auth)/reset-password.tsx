@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { AppButton } from '@/src/components/AppButton';
 import { AuthShell } from '@/src/components/AuthShell';
 import { FormField } from '@/src/components/FormField';
+import { SeoHead } from '@/src/components/SeoHead';
 import { appConfig } from '@/src/config';
 import { ApiError, api } from '@/src/lib/api';
 import { theme, type ThemeColors } from '@/src/theme';
@@ -32,6 +33,7 @@ export default function ResetPasswordScreen() {
   const codeRequested = code.length > 0;
   if (!appConfig.enablePasswordReset) return <Redirect href="/(auth)/login" />;
   return <AuthShell title="Reset password" subtitle="We will email a six-digit code if the account exists.">
+    <SeoHead noIndex title="Reset password | AIMZ Egypt" description="Request or enter an AIMZ Egypt password reset code." path="reset-password" />
     <View style={styles.form}>
       {errors.root ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{errors.root.message}</Text> : null}
       <Controller control={control} name="email" render={({ field }) => <FormField autoCapitalize="none" autoComplete="email" error={errors.email?.message} keyboardType="email-address" label="Email" onChangeText={field.onChange} value={field.value} />} />
