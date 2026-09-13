@@ -4,7 +4,7 @@ import { ApiProblem, publicCompetition, publicPlayer, publicStat, publicTeam } f
 import { summariseMilestones } from "./milestones";
 import { applyStanding, AWARDS, FORM_LENGTH, outcome, type AwardDefinition } from "./scoring-rules";
 import type { AwardTotals, CompetitionGroupRow, CompetitionRow, MatchRow, PlayerRow, StandingAccumulator, StatRow, TeamRow } from "./types";
-import { guardCompetition, guardPlayer, guardTeam } from "./team-access";
+import { callerScope, guardCompetition, guardPlayer, guardTeam, matchScopeClause, quietTeamScope, visibleCompetitionIds } from "./team-access";
 import { attendedSql, lateSql } from "./attendance";
 
 type App = Hono<{ Bindings: Env }>;
@@ -102,11 +102,18 @@ export function registerStatsRoutes(app: App): void {
     const teamId = c.req.param("teamId");
     const opponentId = c.req.param("opponentId");
     if (teamId === opponentId) throw new ApiProblem(422, "same_team", "Pick two different teams.");
+    // Held to the same rules as the fixture list: the caller must be able to
+    // open the team, and only meetings they could already see are counted.
+    // Unguarded, any account could read every result between any two clubs.
+    const user = await guardTeam(c, teamId);
+    // Quiet is safe here: guardTeam has already refused an account attached to nothing.
+    const visible = matchScopeClause(await quietTeamScope(c.env, user));
     const teamMap = await teamsByIds(c.env, [teamId, opponentId]);
     const team = teamMap.get(teamId);
     const opponent = teamMap.get(opponentId);
     if (!team || !opponent) throw new ApiProblem(404, "team_not_found", "Team not found.");
-    const meetings = await c.env.DB.prepare("SELECT * FROM matches WHERE status='finished' AND ((home_team_id=? AND away_team_id=?) OR (home_team_id=? AND away_team_id=?)) ORDER BY kickoff_datetime DESC").bind(teamId, opponentId, opponentId, teamId).all<MatchRow>();
+    const meetings = await c.env.DB.prepare(`SELECT m.* FROM matches m WHERE m.status='finished' AND ((m.home_team_id=? AND m.away_team_id=?) OR (m.home_team_id=? AND m.away_team_id=?))${visible ? ` AND ${visible.sql}` : ""} ORDER BY m.kickoff_datetime DESC`)
+      .bind(teamId, opponentId, opponentId, teamId, ...(visible?.values ?? [])).all<MatchRow>();
     const competitionIds = [...new Set(meetings.results.map((match) => match.competition_id))];
     const competitions = competitionIds.length
       ? await c.env.DB.prepare(`SELECT * FROM competitions WHERE id IN (${competitionIds.map(() => "?").join(",")})`).bind(...competitionIds).all<CompetitionRow>()
@@ -143,6 +150,16 @@ export function registerStatsRoutes(app: App): void {
     const limit = Math.min(Math.max(Number.parseInt(params.get("limit") ?? "20", 10) || 20, 1), 100);
     const values: unknown[] = []; const filters: string[] = [];
     const seasonJoin = season ? " JOIN competitions cp ON cp.id=m.competition_id" : "";
+    // A leaderboard names children and shows their photos, so a restricted
+    // account only ranks the competitions its own squads are in — the same set
+    // its standings and awards already show. An administrator ranks them all.
+    const { scope } = await callerScope(c);
+    if (scope !== null) {
+      const competitions = await visibleCompetitionIds(c.env, scope);
+      if (!competitions.length) return c.json([]);
+      filters.push(`m.competition_id IN (${competitions.map(() => "?").join(",")})`);
+      values.push(...competitions);
+    }
     if (ageGroup) { filters.push("t.age_group=?"); values.push(ageGroup); }
     if (competitionId) { filters.push("m.competition_id=?"); values.push(competitionId); }
     if (season) { filters.push("cp.season=?"); values.push(season); }

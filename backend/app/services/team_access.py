@@ -7,13 +7,17 @@ record on ``users.player_id``; a parent speaks for every child on
 started as.
 """
 
-from sqlalchemy import select
+from fastapi import HTTPException
+from sqlalchemy import ColumnElement, false, or_, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import api_error
-from app.db.models import Player, Team, TeamStaff, User, UserChild, UserRole
+from app.db.models import Match, Player, Team, TeamStaff, User, UserChild, UserRole
 
 NO_LINK = "Ask an AIMZ administrator to link your account to a squad player."
+
+# The squads an account may see, or None for an administrator, who may see all.
+TeamScope = list[str] | None
 
 
 async def linked_player_ids(session: AsyncSession, user: User) -> list[str]:
@@ -93,6 +97,106 @@ async def can_open_team(session: AsyncSession, user: User, team_id: str) -> bool
     if user.role == UserRole.admin:
         return True
     return team_id in await linked_team_ids(session, user)
+
+
+async def team_scope(session: AsyncSession, user: User) -> TeamScope:
+    """The squads an account may see: None for an administrator, its own otherwise.
+
+    Loud: an account not linked to anything yet is refused, which is right for a
+    resource asked for by id.
+    """
+    if user.role == UserRole.admin:
+        return None
+    return await linked_team_ids(session, user)
+
+
+async def quiet_team_scope(session: AsyncSession, user: User) -> TeamScope:
+    """The same scope, but empty rather than refused for an unlinked account.
+
+    For lists: an account waiting to be linked gets the app's own empty states
+    rather than a 403 on its opening screen.
+    """
+    try:
+        return await team_scope(session, user)
+    except HTTPException:
+        return []
+
+
+def match_scope_clause(scope: TeamScope) -> ColumnElement[bool] | None:
+    """Whether a match is visible: one of its two teams is the caller's.
+
+    One rule for every kind of fixture, the Worker's rule, so the two backends
+    answer the same question the same way. None means unrestricted.
+    """
+    if scope is None:
+        return None
+    if not scope:
+        return false()
+    return or_(Match.home_team_id.in_(scope), Match.away_team_id.in_(scope))
+
+
+async def visible_competition_ids(session: AsyncSession, scope: list[str]) -> list[str]:
+    """The competitions a scope may see: the ones its squads are entered in, plus
+    any their fixtures belong to — a friendly has no entrants, only fixtures."""
+    if not scope:
+        return []
+    entered = select(Team.competition_id.label("id")).where(
+        Team.id.in_(scope), Team.competition_id.is_not(None)
+    )
+    played = select(Match.competition_id.label("id")).where(match_scope_clause(scope))
+    return [row for row in (await session.scalars(union(entered, played))).all() if row]
+
+
+async def assert_team_visible(session: AsyncSession, user: User, team_id: str) -> None:
+    """Refuse a team outside the caller's squads, unless their squad has met it.
+
+    404 rather than 403, so the reply cannot confirm another squad's team exists.
+    """
+    scope = await team_scope(session, user)
+    if scope is None or team_id in scope:
+        return
+    met = await session.scalar(
+        select(Match.id)
+        .where(
+            match_scope_clause(scope),
+            or_(Match.home_team_id == team_id, Match.away_team_id == team_id),
+        )
+        .limit(1)
+    )
+    if met is None:
+        raise api_error(404, "team_not_found", "Team not found.")
+
+
+async def assert_match_visible(session: AsyncSession, user: User, match_id: str) -> None:
+    scope = await team_scope(session, user)
+    if scope is None:
+        return
+    visible = await session.scalar(
+        select(Match.id).where(Match.id == match_id, match_scope_clause(scope)).limit(1)
+    )
+    if visible is None:
+        raise api_error(404, "match_not_found", "Match not found.")
+
+
+async def assert_player_visible(session: AsyncSession, user: User, player_id: str) -> None:
+    scope = await team_scope(session, user)
+    if scope is None:
+        return
+    visible = await session.scalar(
+        select(Player.id).where(Player.id == player_id, Player.team_id.in_(scope)).limit(1)
+    )
+    if visible is None:
+        raise api_error(404, "player_not_found", "Player not found.")
+
+
+async def assert_competition_visible(
+    session: AsyncSession, user: User, competition_id: str
+) -> None:
+    scope = await team_scope(session, user)
+    if scope is None:
+        return
+    if competition_id not in await visible_competition_ids(session, scope):
+        raise api_error(404, "competition_not_found", "Competition not found.")
 
 
 async def require_aimz_team(session: AsyncSession, team_id: str) -> None:

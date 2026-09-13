@@ -39,6 +39,7 @@ from app.schemas import (
     PublicNewcomerCreate,
 )
 from app.services.invitations import unique_invite_code
+from app.services.rate_limit import client_address
 from app.services.turnstile import verify_newcomer_token
 
 public_router = APIRouter()
@@ -133,7 +134,10 @@ async def submit_public_application(
             stage=existing.stage,
             duplicate_likely=await is_duplicate(session, existing),
         )
-    remote_ip = request.client.host if request.client else "unknown"
+    # The address as the outermost trusted proxy saw it. The socket peer behind
+    # the load balancer is the balancer itself, which put every applicant in
+    # the academy into one shared five-a-quarter-hour budget.
+    remote_ip = client_address(request) or "unknown"
     await verify_newcomer_token(payload.turnstile_token, remote_ip)
     await enforce_rate_limit(session, remote_ip)
     item = NewcomerApplication(

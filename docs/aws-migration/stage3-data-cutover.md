@@ -32,6 +32,24 @@ be just "point back".
   stage) — rebuild/redeploy the API if it predates that.
 - Local tools: `wrangler`, `sqlite3`, `awscli` v2, `jq`.
 
+## 0.1 Share the encryption key before importing
+
+Health notes are sealed at rest with `DATA_ENCRYPTION_KEY`, in the same format
+on both sides. The stack generates its own key (`EncryptionKeySecretArn`
+output); rows sealed by the Worker only open with the Worker's key. Before the
+first import, set the AWS secret to the Worker's value, then recycle the
+instances so they read it:
+
+```sh
+aws secretsmanager put-secret-value --secret-id "$ENCRYPTION_KEY_SECRET_ARN" \
+  --secret-string "{\"DATA_ENCRYPTION_KEY\":\"<the Worker's key>\"}"
+./redeploy-api.sh production
+```
+
+Never change the key once real data is sealed with it. After the import,
+`run-migrations.sh` runs `aimz-seal-health-data`, which seals any rows the
+Worker wrote before its own key was set.
+
 ## 1. Freeze writes (short window)
 
 Put the Worker into read-only for the cutover, or simply pick a quiet window.
@@ -78,8 +96,12 @@ squad's roster, a finished match's scoreline and its goalkeeper's clean sheets.
 
 ## 5. Point clients at AWS
 
-- Mobile app: set `EXPO_PUBLIC_API_URL` to the ALB/ApiUrl output and ship an
-  update (or flip it server-side if the app reads it remotely).
+- Mobile app: set `EXPO_PUBLIC_API_URL` to the CloudFront `WebUrl` output
+  (HTTPS; the API is served under `/api/*`) and ship an update. Release builds
+  refuse an `http://` API address, so the raw `ApiUrl` only works once the ALB
+  has a certificate (`-c apiCertificateArn=...`); the API also counts sign-in
+  rate limits per client assuming CloudFront sits in front
+  (`TRUSTED_PROXY_HOPS=2`).
 - Web: `deploy-web.sh` publishes the SPA to the web S3 bucket behind CloudFront.
 
 ## 6. Retire Cloudflare

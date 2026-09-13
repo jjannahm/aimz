@@ -41,7 +41,7 @@ from app.services.scoring import (
     squads_for_match,
     update_event,
 )
-from app.services.team_access import can_open_team
+from app.services.team_access import assert_match_visible, can_open_team
 
 router = APIRouter()
 
@@ -218,8 +218,11 @@ async def set_man_of_the_match(
 
 
 @router.get("/{match_id}/events", response_model=list[MatchEventRead])
-async def list_events(match_id: str, _: CurrentUser, session: SessionDep) -> list[MatchEvent]:
+async def list_events(
+    match_id: str, current_user: CurrentUser, session: SessionDep
+) -> list[MatchEvent]:
     await require_match(session, match_id)
+    await assert_match_visible(session, current_user, match_id)
     return list(
         (
             await session.scalars(
@@ -299,8 +302,11 @@ async def delete_event(
 
 
 @router.get("/{match_id}/lineup", response_model=list[LineupEntryRead])
-async def get_lineup(match_id: str, _: CurrentUser, session: SessionDep) -> list[MatchLineupEntry]:
+async def get_lineup(
+    match_id: str, current_user: CurrentUser, session: SessionDep
+) -> list[MatchLineupEntry]:
     await require_match(session, match_id)
+    await assert_match_visible(session, current_user, match_id)
     return list(
         (
             await session.scalars(
@@ -364,9 +370,10 @@ async def replace_lineup(
 
 @router.get("/{match_id}/player-stats", response_model=list[PlayerMatchStatRead])
 async def get_player_stats(
-    match_id: str, _: CurrentUser, session: SessionDep
+    match_id: str, current_user: CurrentUser, session: SessionDep
 ) -> list[PlayerMatchStat]:
     await require_match(session, match_id)
+    await assert_match_visible(session, current_user, match_id)
     return list(
         (
             await session.scalars(
@@ -429,11 +436,13 @@ async def update_player_stats(
 @router.get("/{match_id}/live", response_model=LiveMatchSnapshot)
 async def live_snapshot(
     match_id: str,
-    _: CurrentUser,
+    current_user: CurrentUser,
     session: SessionDep,
     response: Response,
     if_none_match: str | None = Header(default=None),
 ) -> LiveMatchSnapshot | Response:
+    # Checked before the ETag, so a 304 cannot confirm another squad's match exists.
+    await assert_match_visible(session, current_user, match_id)
     match = await load_match_detail(session, match_id)
     if match is None:
         raise api_error(404, "match_not_found", "Match not found.")

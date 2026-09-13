@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import Any, TypeVar
 
 from fastapi import APIRouter, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import false, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 
@@ -34,6 +34,12 @@ from app.services.competitions import require_open_competition
 from app.services.knockout import generate_structure
 from app.services.knockout_shape import Shape, ShapeError, resolve_shape
 from app.services.match_clock import apply_legacy_status_change, apply_phase_action
+from app.services.team_access import (
+    assert_match_visible,
+    match_scope_clause,
+    quiet_team_scope,
+    visible_competition_ids,
+)
 
 router = APIRouter()
 ModelT = TypeVar("ModelT")
@@ -53,7 +59,7 @@ async def commit_or_conflict(session: SessionDep, message: str) -> None:
 
 @router.get("/teams", response_model=Page[TeamRead])
 async def list_teams(
-    _: CurrentUser,
+    current_user: CurrentUser,
     session: SessionDep,
     limit: int = 50,
     offset: int = 0,
@@ -65,7 +71,19 @@ async def list_teams(
     limit, offset = page_args(limit, offset)
     query = select(Team)
     count_query = select(func.count()).select_from(Team)
+    # A restricted account sees its own squads and the clubs they play, which is
+    # what a fixture list needs to name an opponent. Nothing else.
+    scope = await quiet_team_scope(session, current_user)
+    visible = None
+    if scope is not None:
+        played = match_scope_clause(scope)
+        visible = or_(
+            Team.id.in_(scope),
+            Team.id.in_(select(Match.home_team_id).where(played)),
+            Team.id.in_(select(Match.away_team_id).where(played)),
+        )
     for condition in [
+        visible,
         Team.is_aimz == is_aimz if is_aimz is not None else None,
         Team.branch == branch if branch else None,
         Team.season == season if season else None,
@@ -114,11 +132,20 @@ async def delete_team(team_id: str, _: AdminUser, session: SessionDep) -> Respon
 
 @router.get("/competitions", response_model=Page[CompetitionRead])
 async def list_competitions(
-    _: CurrentUser, session: SessionDep, limit: int = 50, offset: int = 0, season: str | None = None
+    current_user: CurrentUser,
+    session: SessionDep,
+    limit: int = 50,
+    offset: int = 0,
+    season: str | None = None,
 ) -> Page[CompetitionRead]:
     limit, offset = page_args(limit, offset)
     query = select(Competition)
     count_query = select(func.count()).select_from(Competition)
+    # Only the competitions the caller's squads are in or have fixtures in.
+    scope = await quiet_team_scope(session, current_user)
+    if scope is not None:
+        visible = Competition.id.in_(await visible_competition_ids(session, scope))
+        query, count_query = query.where(visible), count_query.where(visible)
     if season:
         query, count_query = (
             query.where(Competition.season == season),
@@ -343,7 +370,7 @@ async def start_next_season(
 
 @router.get("/players", response_model=Page[PlayerRead])
 async def list_players(
-    _: CurrentUser,
+    current_user: CurrentUser,
     session: SessionDep,
     limit: int = 50,
     offset: int = 0,
@@ -354,6 +381,13 @@ async def list_players(
     limit, offset = page_args(limit, offset)
     query = select(Player)
     count_query = select(func.count()).select_from(Player)
+    # The roster is the names of children. Held to the caller's own squads
+    # before any filter they asked for, so a team_id naming somebody else's
+    # squad narrows the list to nothing rather than opening it.
+    scope = await quiet_team_scope(session, current_user)
+    if scope is not None:
+        own = Player.team_id.in_(scope) if scope else false()
+        query, count_query = query.where(own), count_query.where(own)
     if team_id:
         query, count_query = (
             query.where(Player.team_id == team_id),
@@ -419,7 +453,7 @@ def match_options() -> tuple[Any, ...]:
 
 @router.get("/matches", response_model=Page[MatchRead])
 async def list_matches(
-    _: CurrentUser,
+    current_user: CurrentUser,
     session: SessionDep,
     limit: int = 30,
     offset: int = 0,
@@ -433,6 +467,8 @@ async def list_matches(
     query = select(Match).options(*match_options())
     count_query = select(func.count()).select_from(Match)
     conditions = [
+        # One rule for every kind of fixture: the caller's squad is playing in it.
+        match_scope_clause(await quiet_team_scope(session, current_user)),
         Match.status == match_status if match_status else None,
         or_(Match.home_team_id == team_id, Match.away_team_id == team_id) if team_id else None,
         Match.competition_id == competition_id if competition_id else None,
@@ -454,7 +490,8 @@ async def list_matches(
 
 
 @router.get("/matches/{match_id}", response_model=MatchRead)
-async def get_match(match_id: str, _: CurrentUser, session: SessionDep) -> Match:
+async def get_match(match_id: str, current_user: CurrentUser, session: SessionDep) -> Match:
+    await assert_match_visible(session, current_user, match_id)
     row = await session.scalar(select(Match).where(Match.id == match_id).options(*match_options()))
     if not row:
         raise api_error(404, "match_not_found", "Match not found.")

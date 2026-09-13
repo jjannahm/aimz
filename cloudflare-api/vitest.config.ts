@@ -14,6 +14,8 @@ export default defineConfig({
         ADMIN_PASSWORD: '',
         INITIAL_INVITE_CODE: '',
         JWT_SECRET: 'integration-test-secret-that-is-at-least-thirty-two-characters',
+        // On for the whole suite, so every newcomer test also runs against sealed health notes.
+        DATA_ENCRYPTION_KEY: 'integration-test-encryption-key-of-at-least-32-chars',
         REFRESH_TOKEN_DAYS: '30',
         TEST_MIGRATIONS: JSON.stringify(migrations),
       },

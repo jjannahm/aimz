@@ -111,7 +111,9 @@ class RegisterRequest(BaseModel):
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    # Bounded like every other password field: Argon2 over an unbounded string is
+    # a way to make one request cost the server seconds.
+    password: str = Field(min_length=1, max_length=128)
 
 
 class TokenResponse(BaseModel):
@@ -123,7 +125,7 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(min_length=16, max_length=256)
 
 
 class PasswordResetRequest(BaseModel):
@@ -137,7 +139,7 @@ class PasswordResetConfirm(BaseModel):
 
 
 class PasswordChange(BaseModel):
-    current_password: str
+    current_password: str = Field(min_length=1, max_length=128)
     new_password: str = Field(min_length=8, max_length=128)
 
 
@@ -146,7 +148,10 @@ class UserUpdate(BaseModel):
 
 
 class AdminUserCreate(RegisterRequest):
-    role: UserRole = UserRole.admin
+    # Named outright. It used to default to administrator, so a missing or
+    # mistyped role handed out the keys to the academy. A coach account comes
+    # from a squad invitation, never from here.
+    role: Literal[UserRole.player, UserRole.parent, UserRole.admin]
     invite_code: str = "unused"
     # An optional deadline for the account. Validated future-dated in the route.
     expires_at: datetime | None = None

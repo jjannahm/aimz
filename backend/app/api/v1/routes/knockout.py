@@ -22,6 +22,7 @@ from app.services.knockout_shape import (
     round_label,
     rounds_for,
 )
+from app.services.team_access import assert_competition_visible
 
 router = APIRouter()
 
@@ -94,8 +95,9 @@ async def _read_bracket(session: SessionDep, competition: Competition) -> Bracke
 
 @router.get("/competitions/{competition_id}/groups", response_model=list[GroupRead])
 async def list_groups(
-    competition_id: str, _: CurrentUser, session: SessionDep
+    competition_id: str, current_user: CurrentUser, session: SessionDep
 ) -> list[GroupRead]:
+    await assert_competition_visible(session, current_user, competition_id)
     competition = await _competition_or_404(session, competition_id)
     if competition.team_count is None:
         return []
@@ -193,8 +195,9 @@ async def set_group_teams(
 
 @router.get("/competitions/{competition_id}/bracket", response_model=BracketRead)
 async def get_bracket(
-    competition_id: str, _: CurrentUser, session: SessionDep
+    competition_id: str, current_user: CurrentUser, session: SessionDep
 ) -> BracketRead:
+    await assert_competition_visible(session, current_user, competition_id)
     return await _read_bracket(session, await _competition_or_404(session, competition_id))
 
 

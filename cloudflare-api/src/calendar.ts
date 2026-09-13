@@ -25,9 +25,21 @@ const WINDOW_DAYS_AHEAD = 365;
  */
 const WINDOW_DAYS_BEHIND = 1;
 
-/** RFC 5545 §3.3.11: these four characters carry meaning inside a value. */
+/**
+ * RFC 5545 §3.3.11: these four characters carry meaning inside a value.
+ *
+ * Every kind of line break becomes the escaped newline, a lone carriage return
+ * included. Many calendar clients end a line on a bare CR, so one left in a
+ * venue or a note typed by staff would end the property there and let the rest
+ * of the text be read as properties of its own — a whole invented event in a
+ * family's calendar. Other control characters have no place in a calendar and
+ * are dropped.
+ */
 function escapeText(value: string): string {
-  return value.replace(/\\/gu, "\\\\").replace(/;/gu, "\\;").replace(/,/gu, "\\,").replace(/\r?\n/gu, "\\n");
+  return value
+    .replace(/\\/gu, "\\\\").replace(/;/gu, "\\;").replace(/,/gu, "\\,")
+    .replace(/\r\n|\r|\n/gu, "\\n")
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, "");
 }
 
 /**

@@ -4,9 +4,13 @@ A feed is a full-state document: whatever it returns is the whole truth, and a
 client reconciles to it. A deleted fixture simply stops being published.
 """
 
+import re
 from datetime import UTC, datetime
 
 from app.db.models import Match, TrainingSession
+
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -14,14 +18,16 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def escape_text(value: str) -> str:
-    """RFC 5545 §3.3.11: backslash, semicolon, comma and newline carry meaning."""
-    return (
-        value.replace("\\", "\\\\")
-        .replace(";", "\\;")
-        .replace(",", "\\,")
-        .replace("\r\n", "\\n")
-        .replace("\n", "\\n")
-    )
+    """RFC 5545 §3.3.11: backslash, semicolon, comma and newline carry meaning.
+
+    Every kind of line break becomes the escaped newline, a lone carriage return
+    included. Many calendar clients end a line on a bare CR, so one left in a
+    venue or note typed by staff would end the property there and let the rest
+    of the text be read as properties of its own. Other control characters have
+    no place in a calendar and are dropped.
+    """
+    escaped = value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+    return _CONTROL.sub("", _LINE_BREAK.sub("\\\\n", escaped))
 
 
 def fold(line: str) -> str:

@@ -27,11 +27,19 @@
   // loose: a whole squad's parents behind one school's wifi, or an Egyptian
   // carrier's NAT, are one address to us, and locking them out together would
   // be a worse outage than the abuse it prevents.
+  //
+  // Invitation codes are credentials as well, so looking one up and spending
+  // one on registration are held per address; a password change is held per
+  // account, so a session picked up from an unlocked phone cannot be used to
+  // guess the password behind it.
   "ratelimits": [
     { "name": "LOGIN_BY_ACCOUNT", "namespace_id": "2001", "simple": { "limit": 10, "period": 60 } },
     { "name": "LOGIN_BY_IP", "namespace_id": "2002", "simple": { "limit": 100, "period": 60 } },
     { "name": "REFRESH_BY_TOKEN", "namespace_id": "2003", "simple": { "limit": 10, "period": 60 } },
-    { "name": "REFRESH_BY_IP", "namespace_id": "2004", "simple": { "limit": 300, "period": 60 } }
+    { "name": "REFRESH_BY_IP", "namespace_id": "2004", "simple": { "limit": 300, "period": 60 } },
+    { "name": "INVITE_BY_IP", "namespace_id": "2005", "simple": { "limit": 30, "period": 60 } },
+    { "name": "REGISTER_BY_IP", "namespace_id": "2006", "simple": { "limit": 20, "period": 60 } },
+    { "name": "PASSWORD_BY_ACCOUNT", "namespace_id": "2007", "simple": { "limit": 5, "period": 60 } }
   ],
   "d1_databases": [
     {

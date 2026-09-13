@@ -19,6 +19,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.core.field_crypto import EncryptedText
 from app.db.base import Base
 
 
@@ -644,8 +645,11 @@ class NewcomerApplication(TimestampMixin, Base):
     father_mobile: Mapped[str] = mapped_column(String(60))
     mother_name: Mapped[str] = mapped_column(String(160))
     mother_mobile: Mapped[str] = mapped_column(String(60))
-    medical_concerns: Mapped[str] = mapped_column(Text)
-    medications: Mapped[str] = mapped_column(Text)
+    # Sealed at rest; the database column is still plain TEXT, so no migration.
+    medical_concerns: Mapped[str] = mapped_column(
+        EncryptedText("newcomer_applications.medical_concerns")
+    )
+    medications: Mapped[str] = mapped_column(EncryptedText("newcomer_applications.medications"))
     consent_version: Mapped[str] = mapped_column(String(40))
     consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_contacted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -677,6 +681,21 @@ class NewcomerNote(Base):
 
 class NewcomerRateLimit(Base):
     __tablename__ = "newcomer_rate_limits"
+
+    key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+
+
+class AuthRateLimit(Base):
+    """Attempts against the doors into an account, counted per window.
+
+    ``key_hash`` is an HMAC of the rule and its subject (an address, an email or
+    an account id), so the table records how often somebody tried without ever
+    recording who. See app/services/rate_limit.py.
+    """
+
+    __tablename__ = "auth_rate_limits"
 
     key_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
     window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

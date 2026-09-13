@@ -17,12 +17,48 @@ ${publicPaths.map((path) => `  <url><loc>${origin}${path}</loc></url>`).join('\n
 </urlset>
 `;
 
+// The app is never meant to be framed: `frame-ancestors` and X-Frame-Options
+// keep another site from overlaying it to steal a tap on "Delete account" or
+// a scoring button. HSTS keeps every later visit on HTTPS.
+const policy = (extra = {}) => Object.entries({
+  'default-src': "'self'",
+  'connect-src': `'self' ${apiOrigin}`,
+  'img-src': "'self' data: blob: https:",
+  'font-src': "'self' data:",
+  'style-src': "'self' 'unsafe-inline'",
+  'script-src': "'self'",
+  'frame-src': "'none'",
+  'manifest-src': "'self'",
+  'worker-src': "'self'",
+  'object-src': "'none'",
+  'base-uri': "'self'",
+  'form-action': "'self'",
+  'frame-ancestors': "'none'",
+  ...extra,
+}).map(([directive, value]) => `${directive} ${value}`).join('; ');
+
+// The static application form is the one page that loads Cloudflare
+// Turnstile. "!" drops the site-wide policy first: Pages joins two policies
+// set for the same path, and a browser enforces both.
+const turnstile = { 'script-src': "'self' https://challenges.cloudflare.com", 'frame-src': 'https://challenges.cloudflare.com' };
+
 const headers = `/*
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
-  Permissions-Policy: camera=(), microphone=(), geolocation=()
-  Content-Security-Policy: default-src 'self'; connect-src 'self' ${apiOrigin}; img-src 'self' data: blob: https:; font-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'self'
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  X-Frame-Options: DENY
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy: ${policy()}
 ${production ? '' : '  X-Robots-Tag: noindex, nofollow\n'}
+/apply
+  ! Content-Security-Policy
+  Content-Security-Policy: ${policy(turnstile)}
+
+/apply/*
+  ! Content-Security-Policy
+  Content-Security-Policy: ${policy(turnstile)}
+
 /_expo/static/*
   Cache-Control: public, max-age=31536000, immutable
 

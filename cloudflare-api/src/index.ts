@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { registerAuditRoutes } from "./audit";
 import { registerAnnouncementRoutes } from "./announcements";
@@ -6,11 +8,12 @@ import { registerAuthRoutes } from "./auth";
 import { registerCalendarRoutes } from "./calendar";
 import { registerDomainRoutes } from "./domain";
 import { registerFeeRoutes } from "./fees";
-import { ApiProblem, currentUser, errorResponse } from "./helpers";
+import { encryptionConfigured, sealLegacyHealthData } from "./field-crypto";
+import { ApiProblem, currentUser, errorResponse, isProduction } from "./helpers";
 import { registerKitRoutes } from "./kit";
 import { registerKnockoutRoutes } from "./knockout";
 import { registerMatchRoutes } from "./matches";
-import { registerMediaRoutes } from "./media";
+import { maxUploadBytes, registerMediaRoutes } from "./media";
 import { registerNewcomerRoutes } from "./newcomers";
 import { registerInvoiceRoutes } from "./invoices";
 import { registerMatchReportRoutes } from "./match-reports";
@@ -26,12 +29,84 @@ import { registerTrainingStatsRoutes } from "./training-stats";
 
 const app = new Hono<{ Bindings: Env }>();
 
+const LOOPBACK_HOST = /^(localhost|127\.0\.0\.1|\[::1\])$/u;
+const MEDIA_READ = /^\/api\/v1\/media\/(?!uploads(\/|$))/u;
+/** Room for every JSON body the app sends; a bulk squad or a register is a few kilobytes. */
+const JSON_BODY_LIMIT = 1_048_576;
+
+/**
+ * Headers every response carries, whatever route produced it.
+ *
+ * The API serves JSON, a calendar file and images, and none of them is ever a
+ * page: nothing here should run script, be framed, or send a referrer. Images
+ * are the one thing the app's own origin embeds with <img>, so only they may
+ * be read cross-origin, and they are sandboxed in case one is ever opened on
+ * its own.
+ */
+function applySecurityHeaders(c: Context): void {
+  const headers = c.res.headers;
+  const media = c.req.method === "GET" && MEDIA_READ.test(c.req.path);
+  headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("X-Frame-Options", "DENY");
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+  headers.set("Cross-Origin-Resource-Policy", media ? "cross-origin" : "same-origin");
+  headers.set("Content-Security-Policy", media
+    ? "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; sandbox"
+    : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+}
+
+app.use("*", async (c, next) => {
+  // Plain HTTP is refused before anything reads the request, so a password or
+  // a token never travels unencrypted even once. `cf` is attached by
+  // Cloudflare's edge: a request without it is the test harness calling the
+  // app directly, and loopback is local development.
+  const url = new URL(c.req.url);
+  if (url.protocol === "http:" && c.req.raw.cf && !LOOPBACK_HOST.test(url.hostname)) {
+    if (c.req.method !== "GET" && c.req.method !== "HEAD") {
+      return errorResponse(c, new ApiProblem(403, "https_required", "Use HTTPS to reach the AIMZ API."));
+    }
+    url.protocol = "https:";
+    return c.redirect(url.toString(), 308);
+  }
+  await next();
+  applySecurityHeaders(c);
+});
+
 app.use("/api/*", async (c, next) => cors({
-  origin: (origin) => origin === c.env.FRONTEND_ORIGIN || origin === c.env.PUBLIC_FORM_ORIGIN || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u.test(origin) ? origin : c.env.FRONTEND_ORIGIN,
+  // Local browser development may call a staging API; nothing on a developer's
+  // machine may call production.
+  origin: (origin) => origin === c.env.FRONTEND_ORIGIN || origin === c.env.PUBLIC_FORM_ORIGIN
+    || (!isProduction(c.env) && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/u.test(origin)) ? origin : c.env.FRONTEND_ORIGIN,
   allowHeaders: ["Authorization", "Content-Type", "If-None-Match"],
-  exposeHeaders: ["ETag"],
+  exposeHeaders: ["ETag", "Retry-After"],
   allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
   maxAge: 86400,
+})(c, next));
+
+/**
+ * Production refuses to run half-configured.
+ *
+ * A short signing secret can be brute-forced into forged sessions, and without
+ * the encryption key health notes would be written in the clear. Either is
+ * worse than an API that answers 503 until somebody sets the secret, and the
+ * readiness probe a deploy runs fails the same way, so it is caught there.
+ */
+app.use("/api/*", async (c, next) => {
+  if (!isProduction(c.env) || c.req.path === "/api/v1/health") return next();
+  const missing = [
+    ...(c.env.JWT_SECRET?.length >= 32 ? [] : ["JWT_SECRET"]),
+    ...(encryptionConfigured(c.env) ? [] : ["DATA_ENCRYPTION_KEY"]),
+  ];
+  if (!missing.length) return next();
+  console.error(JSON.stringify({ message: "production secrets missing or too short", secrets: missing }));
+  throw new ApiProblem(503, "service_misconfigured", "The AIMZ API is not ready yet.");
+});
+
+app.use("/api/*", async (c, next) => bodyLimit({
+  maxSize: c.req.path === "/api/v1/media/uploads" ? maxUploadBytes(c.env) + 65_536 : JSON_BODY_LIMIT,
+  onError: (context) => errorResponse(context, new ApiProblem(413, "payload_too_large", "That request is too large.")),
 })(c, next));
 
 /**
@@ -122,16 +197,18 @@ app.onError((error, c) => {
 
 /**
  * The worker itself: the API, plus the timer that keeps the activity log to a
- * month. The Hono app is exported by name as well, because the integration
- * tests drive it through `app.request` rather than through `fetch`.
+ * month, sweeps spent sessions, and seals any health notes written before
+ * encryption was switched on. The Hono app is exported by name as well,
+ * because the integration tests drive it through `app.request` rather than
+ * through `fetch`.
  */
 export { app };
 export default {
   fetch: app.fetch,
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
     const sweep = async () => {
-      const [activity, sessions] = await Promise.all([purgeExpiredAudit(env), purgeSpentSessions(env)]);
-      if (activity || sessions) console.log(JSON.stringify({ message: "nightly purge", activity, sessions }));
+      const [activity, sessions, sealed] = await Promise.all([purgeExpiredAudit(env), purgeSpentSessions(env), sealLegacyHealthData(env)]);
+      if (activity || sessions || sealed) console.log(JSON.stringify({ message: "nightly purge", activity, sessions, sealed }));
     };
     ctx.waitUntil(sweep().catch((error: unknown) => {
       console.error(JSON.stringify({ message: "nightly purge failed", error: error instanceof Error ? error.message : String(error) }));

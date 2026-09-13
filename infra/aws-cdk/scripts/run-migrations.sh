@@ -36,8 +36,8 @@ CMD_ID=$(aws ssm send-command \
   --region "${REGION}" \
   --instance-ids "${INSTANCE_ID}" \
   --document-name "AWS-RunShellScript" \
-  --comment "AIMZ alembic upgrade + seed" \
-  --parameters 'commands=["docker exec aimz-api sh -c \"alembic upgrade head && aimz-seed\""]' \
+  --comment "AIMZ alembic upgrade + seed + seal health notes" \
+  --parameters 'commands=["docker exec aimz-api sh -c \"alembic upgrade head && aimz-seed && aimz-seal-health-data\""]' \
   --query "Command.CommandId" --output text)
 
 echo "==> Waiting for command ${CMD_ID} to finish..."

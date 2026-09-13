@@ -2,7 +2,8 @@ import type { Context } from "hono";
 import { ApiProblem } from "./helpers";
 
 /**
- * Guards on the two endpoints anybody can reach without being signed in.
+ * Guards on the endpoints anybody can reach without being signed in, and on
+ * the one place a signed-in session can guess at a password.
  *
  * Cloudflare's rate limiting binding counts per location rather than globally,
  * so these are a brake on abuse and not an accounting system: a distributed
@@ -24,6 +25,12 @@ export interface RateLimiters {
   REFRESH_BY_TOKEN?: RateLimit;
   /** One address refreshing. Looser still — a household has several devices. */
   REFRESH_BY_IP?: RateLimit;
+  /** One address looking up invitation codes, which are credentials too. */
+  INVITE_BY_IP?: RateLimit;
+  /** One address registering, which also spends an invitation code. */
+  REGISTER_BY_IP?: RateLimit;
+  /** One signed-in account guessing at its own current password. */
+  PASSWORD_BY_ACCOUNT?: RateLimit;
 }
 
 /**

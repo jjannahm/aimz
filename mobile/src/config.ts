@@ -32,10 +32,29 @@ const required = (name: string, value: string | undefined, fallback: string) => 
   return fallback;
 };
 
+/**
+ * Passwords, sessions and children's details all travel to this address, so a
+ * release build refuses one that is not HTTPS. Loopback is exempt because it
+ * never leaves the machine; anything else over plain HTTP would put every sign-in
+ * on the network in the clear, which is exactly what an ALB address without a
+ * certificate would do.
+ */
+export const requireSecureApiUrl = (value: string, release: boolean) => {
+  // Matched as text rather than parsed with URL, whose getters are not
+  // implemented on every React Native runtime this bundle may start on.
+  const secure = /^https:\/\/[^/\s]+/iu.test(value);
+  const loopback = /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/iu.test(value);
+  if (release && !secure && !loopback) {
+    throw new Error(`EXPO_PUBLIC_API_URL must use HTTPS in a release build (got ${value.split('/').slice(0, 3).join('/')}).`);
+  }
+  return value;
+};
+
 export const appConfig = {
-  apiBaseUrl: normalizeBaseUrl(
+  apiBaseUrl: normalizeBaseUrl(requireSecureApiUrl(
     required('EXPO_PUBLIC_API_URL', process.env.EXPO_PUBLIC_API_URL, 'http://127.0.0.1:8000'),
-  ),
+    isReleaseBundle,
+  )),
   environment: appEnvironment,
   /**
    * Where this app is served from, which is what a shared report link points

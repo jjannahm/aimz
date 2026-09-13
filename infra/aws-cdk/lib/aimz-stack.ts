@@ -155,6 +155,22 @@ export class AimzStack extends cdk.Stack {
       },
     });
 
+    // Seals health notes at rest (backend/app/core/field_crypto.py). Its own
+    // secret because a template generates only one value, and retained come what
+    // may: a lost key makes every sealed row unreadable. Before importing D1
+    // data, set this to the Worker's DATA_ENCRYPTION_KEY so imported rows open.
+    const encryptionSecret = new secretsmanager.Secret(this, "EncryptionKey", {
+      secretName: `aimz/${props.envName}/encryption`,
+      description: "AIMZ field encryption key (DATA_ENCRYPTION_KEY). Never rotate once data is sealed.",
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({}),
+        generateStringKey: "DATA_ENCRYPTION_KEY",
+        excludePunctuation: true,
+        passwordLength: 64,
+      },
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     // ---------------------------------------------------------------------
     // Data tier: RDS Postgres
     // ---------------------------------------------------------------------
@@ -226,7 +242,10 @@ export class AimzStack extends cdk.Stack {
         cacheSubnetGroupName: redisSubnets.ref,
         securityGroupIds: [dataSg.securityGroupId],
         atRestEncryptionEnabled: true,
-        transitEncryptionEnabled: false,
+        // Encrypted on the wire too: nothing between the API and the cache should
+        // travel in the clear. An existing unencrypted cache is replaced on the
+        // next deploy, which loses nothing — the app does not use it yet.
+        transitEncryptionEnabled: true,
         port: 6379,
       });
       redis.addDependency(redisSubnets);
@@ -236,24 +255,14 @@ export class AimzStack extends cdk.Stack {
     // ---------------------------------------------------------------------
     // Media bucket (private; API presigns objects)
     // ---------------------------------------------------------------------
+    const mediaBucketName = `aimz-${props.envName}-media-${this.account}`;
     const mediaBucket = new s3.Bucket(this, "MediaBucket", {
-      bucketName: `aimz-${props.envName}-media-${this.account}`,
+      bucketName: mediaBucketName,
       encryption: s3.BucketEncryption.S3_MANAGED,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
-      cors: [
-        {
-          allowedMethods: [
-            s3.HttpMethods.GET,
-            s3.HttpMethods.PUT,
-            s3.HttpMethods.HEAD,
-          ],
-          allowedOrigins: ["*"], // tighten to your web origin once the domain is fixed
-          allowedHeaders: ["*"],
-          exposedHeaders: ["ETag"],
-          maxAge: 3000,
-        },
-      ],
+      // CORS is added once the CloudFront domain exists (below), so only the
+      // web app's own origin may read or post to the bucket from a browser.
       removalPolicy: bucketRemoval,
       // No auto-delete Lambda: during bring-up the buckets are empty, so a
       // DESTROY policy removes them on rollback without a flaky custom resource.
@@ -282,6 +291,7 @@ export class AimzStack extends cdk.Stack {
     });
     dbCredentials.grantRead(instanceRole);
     appSecret.grantRead(instanceRole);
+    encryptionSecret.grantRead(instanceRole);
     mediaBucket.grantReadWrite(instanceRole);
     apiImage.repository.grantPull(instanceRole);
 
@@ -292,22 +302,33 @@ export class AimzStack extends cdk.Stack {
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
       "set -euo pipefail",
+      // Every file this script writes holds secrets; none should be readable by
+      // any account on the instance but root.
+      "umask 077",
       "dnf install -y docker jq || yum install -y docker jq",
       "systemctl enable --now docker",
       `aws ecr get-login-password --region ${region} | docker login --username AWS --password-stdin ${this.account}.dkr.ecr.${region}.amazonaws.com`,
       `DB_SECRET=$(aws secretsmanager get-secret-value --region ${region} --secret-id ${dbCredentials.secretArn} --query SecretString --output text)`,
       `APP_SECRET=$(aws secretsmanager get-secret-value --region ${region} --secret-id ${appSecret.secretArn} --query SecretString --output text)`,
+      `ENCRYPTION_SECRET=$(aws secretsmanager get-secret-value --region ${region} --secret-id ${encryptionSecret.secretArn} --query SecretString --output text)`,
       `DB_USER=$(echo "$DB_SECRET" | jq -r .username)`,
       `DB_PASS=$(echo "$DB_SECRET" | jq -r .password)`,
-      `DATABASE_URL="postgresql+asyncpg://$DB_USER:$DB_PASS@${database.dbInstanceEndpointAddress}:5432/aimz"`,
-      ...(redisEndpoint ? [`REDIS_URL="redis://${redisEndpoint}:6379/0"`] : []),
+      // TLS to Postgres is required, not merely preferred, so a misconfigured
+      // parameter group can never quietly downgrade the connection.
+      `DATABASE_URL="postgresql+asyncpg://$DB_USER:$DB_PASS@${database.dbInstanceEndpointAddress}:5432/aimz?ssl=require"`,
+      ...(redisEndpoint ? [`REDIS_URL="rediss://${redisEndpoint}:6379/0"`] : []),
       "echo \"$APP_SECRET\" | jq -r 'to_entries[] | \"\\(.key)=\\(.value)\"' > /etc/aimz.env",
+      "echo \"$ENCRYPTION_SECRET\" | jq -r 'to_entries[] | \"\\(.key)=\\(.value)\"' >> /etc/aimz.env",
       "echo \"DATABASE_URL=$DATABASE_URL\" >> /etc/aimz.env",
       ...(redisEndpoint ? ['echo "REDIS_URL=$REDIS_URL" >> /etc/aimz.env'] : []),
       `echo "ENVIRONMENT=${props.envName}" >> /etc/aimz.env`,
       `echo "S3_BUCKET=${mediaBucket.bucketName}" >> /etc/aimz.env`,
       `echo "S3_REGION=${region}" >> /etc/aimz.env`,
       "echo 'MEDIA_ENABLED=true' >> /etc/aimz.env",
+      // CloudFront then the ALB each append to X-Forwarded-For, so the client
+      // is two entries from the end; sign-in rate limits count per client.
+      "echo 'TRUSTED_PROXY_HOPS=2' >> /etc/aimz.env",
+      "chmod 600 /etc/aimz.env",
       `docker pull ${apiImage.imageUri}`,
       "docker rm -f aimz-api 2>/dev/null || true",
       `docker run -d --restart always --name aimz-api -p 8000:8000 --env-file /etc/aimz.env ${apiImage.imageUri}`
@@ -338,11 +359,21 @@ export class AimzStack extends cdk.Stack {
     });
 
     const httpsEnabled = Boolean(props.apiCertificateArn);
+    if (!httpsEnabled && props.envName === "production") {
+      cdk.Annotations.of(this).addWarningV2(
+        "aimz:api-listener-plain-http",
+        "The API load balancer has no certificate, so its own address serves plain HTTP. " +
+          "Point every client at the CloudFront WebUrl (HTTPS, /api/*) — release app builds refuse " +
+          "an http:// API — or pass -c apiCertificateArn=... to serve the ALB over HTTPS.",
+      );
+    }
     const listener = alb.addListener("ApiListener", {
       port: httpsEnabled ? 443 : 80,
       protocol: httpsEnabled
         ? elbv2.ApplicationProtocol.HTTPS
         : elbv2.ApplicationProtocol.HTTP,
+      // TLS 1.2 and above only, with the current recommended ciphers.
+      sslPolicy: httpsEnabled ? elbv2.SslPolicy.RECOMMENDED_TLS : undefined,
       certificates: httpsEnabled
         ? [
             certificatemanager.Certificate.fromCertificateArn(
@@ -421,19 +452,78 @@ export class AimzStack extends cdk.Stack {
       ),
     });
 
+    // Headers for the web app's pages, which the S3 origin cannot set itself.
+    // The API behaviour below sets its own (backend/app/main.py). Media is read
+    // and uploaded straight from the bucket on presigned URLs, so its two
+    // hostnames are the only other places the page may fetch from.
+    //
+    // Spelled out from the bucket's fixed name rather than read off the bucket:
+    // the bucket's CORS rule already names this distribution, and a policy on
+    // the distribution naming the bucket back would be a cycle CloudFormation
+    // refuses to deploy.
+    const mediaOrigins =
+      `https://${mediaBucketName}.s3.${region}.${cdk.Aws.URL_SUFFIX} ` +
+      `https://${mediaBucketName}.s3.${cdk.Aws.URL_SUFFIX}`;
+    const pageHeaders = (id: string, contentSecurityPolicy: string) =>
+      new cloudfront.ResponseHeadersPolicy(this, id, {
+        securityHeadersBehavior: {
+          contentSecurityPolicy: { contentSecurityPolicy, override: true },
+          contentTypeOptions: { override: true },
+          frameOptions: { frameOption: cloudfront.HeadersFrameOption.DENY, override: true },
+          referrerPolicy: {
+            referrerPolicy: cloudfront.HeadersReferrerPolicy.STRICT_ORIGIN_WHEN_CROSS_ORIGIN,
+            override: true,
+          },
+          strictTransportSecurity: {
+            accessControlMaxAge: cdk.Duration.days(365),
+            includeSubdomains: true,
+            override: true,
+          },
+        },
+        customHeadersBehavior: {
+          customHeaders: [
+            { header: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()", override: true },
+            { header: "Cross-Origin-Opener-Policy", value: "same-origin", override: true },
+          ],
+        },
+      });
+    const appHeaders = pageHeaders(
+      "WebAppHeaders",
+      `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${mediaOrigins}; ` +
+        `font-src 'self' data:; connect-src 'self' ${mediaOrigins}; manifest-src 'self'; worker-src 'self'; ` +
+        "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    );
+    // The static application form is the one page that loads Cloudflare Turnstile.
+    const applyHeaders = pageHeaders(
+      "ApplyFormHeaders",
+      "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; " +
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; " +
+        "base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    );
+    const webOrigin = origins.S3BucketOrigin.withOriginAccessControl(webBucket);
+    const spaRouting = [
+      {
+        function: spaRouter,
+        eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
+      },
+    ];
+
     const distribution = new cloudfront.Distribution(this, "WebCdn", {
       defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(webBucket),
+        origin: webOrigin,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        functionAssociations: [
-          {
-            function: spaRouter,
-            eventType: cloudfront.FunctionEventType.VIEWER_REQUEST,
-          },
-        ],
+        responseHeadersPolicy: appHeaders,
+        functionAssociations: spaRouting,
       },
       additionalBehaviors: {
+        "/apply/*": {
+          origin: webOrigin,
+          viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          responseHeadersPolicy: applyHeaders,
+          functionAssociations: spaRouting,
+        },
         "/api/*": {
           origin: albOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
@@ -453,6 +543,19 @@ export class AimzStack extends cdk.Stack {
             )
           : undefined,
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100,
+    });
+
+    // Only the web app's own origin may read from or post to the media bucket
+    // from a browser. POST is the presigned upload the API hands out.
+    mediaBucket.addCorsRule({
+      allowedMethods: [s3.HttpMethods.GET, s3.HttpMethods.HEAD, s3.HttpMethods.POST, s3.HttpMethods.PUT],
+      allowedOrigins: [
+        `https://${distribution.distributionDomainName}`,
+        ...(props.webDomainName ? [`https://${props.webDomainName}`] : []),
+      ],
+      allowedHeaders: ["*"],
+      exposedHeaders: ["ETag"],
+      maxAge: 3000,
     });
 
     // ---------------------------------------------------------------------
@@ -481,6 +584,10 @@ export class AimzStack extends cdk.Stack {
     }
     new cdk.CfnOutput(this, "DbSecretArn", { value: dbCredentials.secretArn });
     new cdk.CfnOutput(this, "AppSecretArn", { value: appSecret.secretArn });
+    new cdk.CfnOutput(this, "EncryptionKeySecretArn", {
+      value: encryptionSecret.secretArn,
+      description: "DATA_ENCRYPTION_KEY. Set it to the Worker's key before importing D1 data.",
+    });
     new cdk.CfnOutput(this, "AsgName", {
       value: asg.autoScalingGroupName,
       description: "Auto Scaling Group name (used by run-migrations.sh).",

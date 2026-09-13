@@ -47,12 +47,18 @@ web fixes stop reaching the preview, check this first.
 
 Set these with `wrangler secret put` or `wrangler secret bulk`; never place their values in source, GitHub, logs, or the web bundle:
 
-- `JWT_SECRET`
+- `JWT_SECRET` (at least 32 random characters)
 - `ADMIN_EMAIL`
 - `ADMIN_PASSWORD`
 - `INITIAL_INVITE_CODE`
+- `TURNSTILE_SECRET`
+- `DATA_ENCRYPTION_KEY` (at least 32 random characters; seals health notes at rest — generate with `openssl rand -base64 48`)
 
 The Worker seeds the initial admin and invitation idempotently when authentication is first used.
+
+A Worker deployed with `ENVIRONMENT=production` answers `503 service_misconfigured` on every route except `/api/v1/health` until `JWT_SECRET` (32+ characters) and `DATA_ENCRYPTION_KEY` are both set, so a post-deploy readiness probe fails rather than serving with a weak secret. Staging encrypts health notes once the key is set, and the nightly timer seals rows written before then. Never change `DATA_ENCRYPTION_KEY` once real data is sealed with it: rows sealed under the old key would no longer open. The FastAPI backend uses the same key and format, so set the identical value in AWS before importing D1 data.
+
+Sign-in and refresh, invitation-code lookup, registration and password changes are rate limited through the `ratelimits` bindings in `wrangler.jsonc` (per address, per account, or per token).
 
 ### Verify and deploy
 
