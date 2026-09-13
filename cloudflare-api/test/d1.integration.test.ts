@@ -2730,6 +2730,66 @@ describe('activity retention', () => {
   });
 });
 
+describe('the doors that open without a session', () => {
+  /**
+   * Sign-in runs 100,000 rounds of PBKDF2 before it can say no, which is what
+   * makes it worth hammering. The limiter is asked before that work happens.
+   *
+   * The binding does not exist in this environment — Miniflare has no rate
+   * limiter — so a stub stands in, which also proves the other half: with no
+   * binding at all the endpoint runs unguarded rather than failing closed.
+   */
+  const withLimiter = (allow: number) => {
+    let seen = 0;
+    return { ...testEnv, LOGIN_BY_ACCOUNT: { limit: async () => ({ success: seen++ < allow }) } } as unknown as Env & { TEST_MIGRATIONS: string };
+  };
+
+  const signIn = (env: unknown, email: string, password: string) =>
+    app.request('http://aimz.test/api/v1/auth/login', json('POST', { email, password }), env as never);
+
+  it('refuses with 429 once an account has been tried too often', async () => {
+    const email = `limit-${crypto.randomUUID().slice(0, 8)}@aimz.test`;
+    await testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
+      .bind(crypto.randomUUID(), 'Rate Limited', email, 'unused', 'player', now, now).run();
+    const env = withLimiter(2);
+
+    // Wrong password: the point is the status, not the credentials.
+    expect((await signIn(env, email, 'wrong-password')).status).toBe(401);
+    expect((await signIn(env, email, 'wrong-password')).status).toBe(401);
+    const blocked = await signIn(env, email, 'wrong-password');
+    expect(blocked.status).toBe(429);
+    expect(await blocked.json()).toMatchObject({ detail: { code: 'rate_limited' } });
+  });
+
+  it('runs unguarded where no limiter is bound, rather than locking everybody out', async () => {
+    const email = `unguarded-${crypto.randomUUID().slice(0, 8)}@aimz.test`;
+    await testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)')
+      .bind(crypto.randomUUID(), 'No Limiter', email, 'unused', 'player', now, now).run();
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      expect((await signIn(testEnv, email, 'wrong-password')).status).toBe(401);
+    }
+  });
+
+  /**
+   * A rotation hands back a new token each time, so a client refreshing every
+   * fifteen minutes never presents the same key twice. Normal use must pass.
+   */
+  it('lets a normal rotation through', async () => {
+    const email = `rotate-${crypto.randomUUID().slice(0, 8)}@aimz.test`;
+    const password = 'a-good-enough-password';
+    const admin = await seedUser('admin');
+    await request('/api/v1/admin/users', json('POST', { name: 'Rotating', email, password, role: 'player' }, admin.token));
+
+    let refresh = (await (await signIn(testEnv, email, password)).json<{ refresh_token: string }>()).refresh_token;
+    for (let round = 0; round < 3; round += 1) {
+      const next = await app.request('http://aimz.test/api/v1/auth/refresh', json('POST', { refresh_token: refresh }), testEnv);
+      expect(next.status).toBe(200);
+      refresh = (await next.json<{ refresh_token: string }>()).refresh_token;
+    }
+  });
+});
+
 describe('sign-in sessions are swept up', () => {
   /**
    * Every login writes a row and every refresh rotates one, so the table grows
