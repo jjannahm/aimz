@@ -2864,6 +2864,167 @@ describe('sign-in sessions are swept up', () => {
   });
 });
 
+describe('the collapsed authorisation read', () => {
+  /**
+   * Phase 3 asks the account, its links and its scope in one statement instead
+   * of up to four. Nothing about who may see what is allowed to move, so this
+   * walks every role and every refusal across the endpoints that changed.
+   */
+  const world = async () => {
+    const admin = await seedUser('admin');
+    const competition = await (await request('/api/v1/competitions', json('POST', { name: `Scope ${crypto.randomUUID().slice(0, 6)}`, season: '2026/27', type: 'league' }, admin.token))).json<{ id: string }>();
+    const ours = await (await request('/api/v1/teams', json('POST', { name: `Ours ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true, age_group: 'U12', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const theirs = await (await request('/api/v1/teams', json('POST', { name: `Theirs ${crypto.randomUUID().slice(0, 6)}`, is_aimz: true, age_group: 'U13', competition_id: competition.id }, admin.token))).json<{ id: string }>();
+    const mine = await (await request('/api/v1/players', json('POST', { name: 'Scope Mine', team_id: ours.id, position: 'CM', jersey_number: 5 }, admin.token))).json<{ id: string }>();
+    const other = await (await request('/api/v1/players', json('POST', { name: 'Scope Other', team_id: theirs.id, position: 'CM', jersey_number: 6 }, admin.token))).json<{ id: string }>();
+    return { admin, ours, theirs, mine, other };
+  };
+
+  const get = (path: string, token?: string) =>
+    app.request(`http://aimz.test${path}`, { method: 'GET', headers: token ? { Authorization: `Bearer ${token}` } : {} }, testEnv);
+
+  it('gives every role the squads it actually has, and no others', async () => {
+    const it_ = await world();
+    const player = await seedUser('player', it_.mine.id);
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, it_.mine.id, now).run();
+    const coach = await seedUser('coach');
+    await assignSquad(coach.id, it_.ours.id);
+
+    for (const account of [player, parent, coach]) {
+      const me = await (await get('/api/v1/users/me', account.token)).json<{ team_ids: string[] }>();
+      expect(me.team_ids).toEqual([it_.ours.id]);
+    }
+    // An administrator is not scoped at all, which the API has always said
+    // with null rather than an empty list. Preserved exactly.
+    const asAdmin = await (await get('/api/v1/users/me', it_.admin.token)).json<{ team_ids: string[] | null }>();
+    expect(asAdmin.team_ids).toBeNull();
+  });
+
+  it('keeps an account with nothing linked out of the scope, without breaking its own page', async () => {
+    await world();
+    const unlinked = await seedUser('player');
+    // `/users/me` is the navigation: it must render for an account that is not
+    // attached to anything yet rather than refusing it.
+    const me = await get('/api/v1/users/me', unlinked.token);
+    expect(me.status).toBe(200);
+    expect(await me.json<{ team_ids: string[] }>()).toMatchObject({ team_ids: [] });
+  });
+
+  it('scopes a player profile to the squads the caller may open', async () => {
+    const it_ = await world();
+    const player = await seedUser('player', it_.mine.id);
+    const outsider = await seedUser('player', it_.other.id);
+
+    expect((await get(`/api/v1/players/${it_.mine.id}/training-stats`, player.token)).status).toBe(200);
+    // Outside the scope is not found, never forbidden.
+    expect((await get(`/api/v1/players/${it_.mine.id}/training-stats`, outsider.token)).status).toBe(404);
+    expect((await get(`/api/v1/players/${it_.mine.id}/training-stats`, it_.admin.token)).status).toBe(200);
+    expect((await get(`/api/v1/players/${crypto.randomUUID()}/training-stats`, it_.admin.token)).status).toBe(404);
+  });
+
+  it('refuses an unlinked account the same three ways it always did', async () => {
+    const it_ = await world();
+    const parent = await seedUser('parent');
+    const player = await seedUser('player');
+    const coach = await seedUser('coach');
+
+    const parentAnswer = await get(`/api/v1/players/${it_.mine.id}/training-stats`, parent.token);
+    expect(parentAnswer.status).toBe(403);
+    expect(await parentAnswer.json()).toMatchObject({ detail: { code: 'player_link_required' } });
+
+    const playerAnswer = await get(`/api/v1/players/${it_.mine.id}/training-stats`, player.token);
+    expect(playerAnswer.status).toBe(403);
+    expect(await playerAnswer.json()).toMatchObject({ detail: { code: 'player_link_required' } });
+
+    const coachAnswer = await get('/api/v1/announcements', coach.token);
+    expect(coachAnswer.status).toBe(403);
+    expect(await coachAnswer.json()).toMatchObject({ detail: { code: 'team_assignment_required' } });
+  });
+
+  it('turns away a deactivated or expired account everywhere', async () => {
+    const it_ = await world();
+    const deactivated = await seedUser('player', it_.mine.id);
+    await testEnv.DB.prepare('UPDATE users SET is_active=0 WHERE id=?').bind(deactivated.id).run();
+    const expired = await seedUser('player', it_.other.id);
+    await testEnv.DB.prepare('INSERT INTO account_expiry (user_id, expires_at, created_at, updated_at) VALUES (?, ?, ?, ?)')
+      .bind(expired.id, '2020-01-01T00:00:00.000Z', now, now).run();
+
+    for (const path of ['/api/v1/users/me', '/api/v1/announcements', '/api/v1/matches', `/api/v1/players/${it_.mine.id}/training-stats`]) {
+      expect((await get(path, deactivated.token)).status).toBe(401);
+      const spent = await get(path, expired.token);
+      expect(spent.status).toBe(401);
+      expect(await spent.json()).toMatchObject({ detail: { code: 'account_expired' } });
+    }
+    // And with no token at all.
+    expect((await get('/api/v1/announcements')).status).toBe(401);
+  });
+
+  /**
+   * Nothing is cached and nothing rides in a token, so a squad move has to
+   * take effect on the very next request. This is the guarantee that the whole
+   * design was chosen to keep.
+   */
+  it('follows a squad move immediately, with no token reissued', async () => {
+    const it_ = await world();
+    const player = await seedUser('player', it_.mine.id);
+
+    const before = await (await get('/api/v1/users/me', player.token)).json<{ team_ids: string[] }>();
+    expect(before.team_ids).toEqual([it_.ours.id]);
+
+    await request(`/api/v1/players/${it_.mine.id}`, json('PATCH', { team_id: it_.theirs.id }, it_.admin.token));
+
+    const after = await (await get('/api/v1/users/me', player.token)).json<{ team_ids: string[] }>();
+    expect(after.team_ids).toEqual([it_.theirs.id]);
+  });
+
+  it('follows a coach being unassigned immediately', async () => {
+    const it_ = await world();
+    const coach = await seedUser('coach');
+    await assignSquad(coach.id, it_.ours.id);
+    expect((await get('/api/v1/announcements', coach.token)).status).toBe(200);
+
+    await request(`/api/v1/admin/users/${coach.id}/team`, json('PUT', { team_id: null }, it_.admin.token));
+
+    const after = await get('/api/v1/announcements', coach.token);
+    expect(after.status).toBe(403);
+    expect(await after.json()).toMatchObject({ detail: { code: 'team_assignment_required' } });
+  });
+
+  /**
+   * The Hub used to read the squad and the named recipients once per notice.
+   * They are gathered for the whole page now, and the page must say the same
+   * thing it said before.
+   */
+  it('renders a page of notices identically, however many there are', async () => {
+    const it_ = await world();
+    const parent = await seedUser('parent');
+    await testEnv.DB.prepare('INSERT INTO user_children (user_id, player_id, created_at) VALUES (?, ?, ?)').bind(parent.id, it_.mine.id, now).run();
+
+    await request('/api/v1/announcements', json('POST', { audience: 'academy', title: 'Everyone', body: 'For the academy', priority: 'standard' }, it_.admin.token));
+    await request('/api/v1/announcements', json('POST', { audience: 'team', team_id: it_.ours.id, title: 'Squad', body: 'For the squad', priority: 'urgent' }, it_.admin.token));
+    await request('/api/v1/announcements', json('POST', { audience: 'team', team_id: it_.ours.id, title: 'Named', body: 'For one player', priority: 'standard', player_ids: [it_.mine.id] }, it_.admin.token));
+    await request('/api/v1/announcements', json('POST', { audience: 'team', team_id: it_.theirs.id, title: 'Not hers', body: 'Another squad', priority: 'standard' }, it_.admin.token));
+
+    const page = await (await get('/api/v1/announcements?limit=50', parent.token)).json<{ items: { title: string; team: { id: string } | null; players: { id: string }[]; player_ids: string[] }[] }>();
+    const titles = page.items.map((item) => item.title);
+    expect(titles).toContain('Everyone');
+    expect(titles).toContain('Squad');
+    expect(titles).toContain('Named');
+    // Another squad's notice is not hers to read.
+    expect(titles).not.toContain('Not hers');
+
+    // Urgent sorts first, the squad comes back joined, and the named player is
+    // still named — all the things the per-row reads used to provide.
+    expect(titles[0]).toBe('Squad');
+    const squadNotice = page.items.find((item) => item.title === 'Squad')!;
+    expect(squadNotice.team?.id).toBe(it_.ours.id);
+    const named = page.items.find((item) => item.title === 'Named')!;
+    expect(named.player_ids).toEqual([it_.mine.id]);
+    expect(named.players[0]?.id).toBe(it_.mine.id);
+  });
+});
+
 describe('the live poll, and who may hear that a match has moved', () => {
   /**
    * The poll answers in one statement now, but it must refuse exactly the

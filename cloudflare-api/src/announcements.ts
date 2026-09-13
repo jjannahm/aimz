@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { ApiProblem, currentUser, enumField, jsonObject, nowIso, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
-import { assertAdminOnly, assertCanManageTeam, linkedPlayerIds, managedTeamIds, managingUser, requireAimzTeam } from "./team-access";
+import { assertAdminOnly, assertCanManageTeam, callerPlayerIds, callerSquadIds, linkedPlayerIds, managedTeamIds, managingUser, requireAimzTeam, scopedCaller } from "./team-access";
 import type { AnnouncementRow, PlayerRow, TeamRow, UserRow } from "./types";
 
 type App = Hono<{ Bindings: Env }>;
@@ -55,6 +55,66 @@ async function recipientsOf(env: Env, announcementId: string): Promise<{ players
       : Promise.resolve({ results: [] as UserRow[] }),
   ]);
   return { players: players.results, coaches: coaches.results };
+}
+
+/**
+ * The same rows, rendered without a query per row.
+ *
+ * `publicAnnouncement` reads the squad and then the named recipients for the
+ * notice it is given, which is two to four round trips each — fine for the one
+ * a coach has just posted, and a hundred round trips for a Hub showing fifty.
+ * The lists are gathered once for the whole page instead.
+ */
+async function publicAnnouncements(env: Env, rows: JoinedAnnouncement[]): Promise<Record<string, unknown>[]> {
+  if (!rows.length) return [];
+  const teamIds = [...new Set(rows.map((row) => row.team_id).filter((id): id is string => Boolean(id)))];
+  const ids = rows.map((row) => row.id);
+
+  const [teams, recipients] = await Promise.all([
+    teamIds.length
+      ? env.DB.prepare(`SELECT * FROM teams WHERE id IN (${teamIds.map(() => "?").join(",")})`).bind(...teamIds).all<TeamRow>()
+      : Promise.resolve({ results: [] as TeamRow[] }),
+    env.DB.prepare(`SELECT announcement_id, player_id, user_id FROM announcement_recipients WHERE announcement_id IN (${ids.map(() => "?").join(",")})`)
+      .bind(...ids).all<{ announcement_id: string; player_id: string | null; user_id: string | null }>(),
+  ]);
+
+  const playerIds = [...new Set(recipients.results.map((row) => row.player_id).filter((id): id is string => Boolean(id)))];
+  const userIds = [...new Set(recipients.results.map((row) => row.user_id).filter((id): id is string => Boolean(id)))];
+  const [players, coaches] = await Promise.all([
+    playerIds.length
+      ? env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")}) ORDER BY name`).bind(...playerIds).all<PlayerRow>()
+      : Promise.resolve({ results: [] as PlayerRow[] }),
+    userIds.length
+      ? env.DB.prepare(`SELECT * FROM users WHERE id IN (${userIds.map(() => "?").join(",")}) ORDER BY name`).bind(...userIds).all<UserRow>()
+      : Promise.resolve({ results: [] as UserRow[] }),
+  ]);
+
+  const teamById = new Map(teams.results.map((team) => [team.id, team]));
+  const playerById = new Map(players.results.map((player) => [player.id, player]));
+  const coachById = new Map(coaches.results.map((coach) => [coach.id, coach]));
+  const forAnnouncement = new Map<string, { players: PlayerRow[]; coaches: UserRow[] }>();
+  for (const row of recipients.results) {
+    const held = forAnnouncement.get(row.announcement_id) ?? { players: [], coaches: [] };
+    const player = row.player_id ? playerById.get(row.player_id) : undefined;
+    const coach = row.user_id ? coachById.get(row.user_id) : undefined;
+    if (player) held.players.push(player);
+    if (coach) held.coaches.push(coach);
+    forAnnouncement.set(row.announcement_id, held);
+  }
+
+  return rows.map((row) => {
+    const named = forAnnouncement.get(row.id) ?? { players: [], coaches: [] };
+    return {
+      ...row,
+      pinned: Boolean(row.pinned),
+      author_name: row.author_name ?? null,
+      team: publicTeam(row.team_id ? teamById.get(row.team_id) ?? null : null),
+      player_ids: named.players.map((player) => player.id),
+      players: named.players.map((player) => publicPlayer(player)),
+      coach_ids: named.coaches.map((coach) => coach.id),
+      coaches: named.coaches.map((coach) => ({ id: coach.id, name: coach.name })),
+    };
+  });
 }
 
 async function publicAnnouncement(env: Env, row: JoinedAnnouncement | AnnouncementRow, authorName?: string | null): Promise<Record<string, unknown>> {
@@ -140,7 +200,10 @@ function recipientWrites(env: Env, announcementId: string, playerIds: string[], 
 export function registerAnnouncementRoutes(app: App): void {
   app.get("/api/v1/announcements", async (c) => {
     const url = new URL(c.req.url);
-    const user = await currentUser(c);
+    // The account and every link it has, in one read. The three branches below
+    // then refuse exactly what they refused when each was a separate query.
+    const caller = await scopedCaller(c);
+    const user = caller.user;
     const { limit, offset } = parsePagination(url);
     const requestedTeam = url.searchParams.get("team_id");
 
@@ -153,7 +216,7 @@ export function registerAnnouncementRoutes(app: App): void {
     } else if (user.role === "coach") {
       // Their squads' notices, the academy's, and anything addressed to
       // coaches — all of them, or them by name.
-      const squads = await managedTeamIds(c.env, user);
+      const squads = callerSquadIds(caller);
       assertOwnSquad(requestedTeam, squads);
       where = ` WHERE a.audience='academy'
         OR (a.audience='team' AND a.team_id IN (${squads.map(() => "?").join(",")}))
@@ -164,12 +227,10 @@ export function registerAnnouncementRoutes(app: App): void {
       // A family: the academy's notices, their squads' — unless that notice
       // names particular players, in which case only if it names one of
       // theirs — and nothing addressed to coaches.
-      const playerIds = await linkedPlayerIds(c.env, user);
+      const playerIds = callerPlayerIds(caller);
       const placeholders = playerIds.map(() => "?").join(",");
-      if (requestedTeam) {
-        const mine = await c.env.DB.prepare(`SELECT DISTINCT team_id FROM players WHERE id IN (${placeholders})`).bind(...playerIds).all<{ team_id: string }>();
-        assertOwnSquad(requestedTeam, mine.results.map((row) => row.team_id));
-      }
+      // The squads behind those players came back with the account.
+      if (requestedTeam) assertOwnSquad(requestedTeam, caller.teamIds);
       where = ` WHERE a.audience='academy'
         OR (a.audience='team' AND a.team_id IN (SELECT team_id FROM players WHERE id IN (${placeholders}))
           AND (NOT EXISTS (SELECT 1 FROM announcement_recipients r WHERE r.announcement_id=a.id)
@@ -185,7 +246,7 @@ export function registerAnnouncementRoutes(app: App): void {
         ORDER BY CASE a.priority WHEN 'urgent' THEN 0 WHEN 'pinned' THEN 1 ELSE 2 END, a.created_at DESC LIMIT ? OFFSET ?`)
         .bind(...values, limit, offset).all<JoinedAnnouncement>(),
     ]);
-    return c.json({ items: await Promise.all(rows.results.map((row) => publicAnnouncement(c.env, row))), total: count?.total ?? 0, limit, offset });
+    return c.json({ items: await publicAnnouncements(c.env, rows.results), total: count?.total ?? 0, limit, offset });
   });
 
   /** The coaches a notice can be addressed to, for the picker that addresses it. */
