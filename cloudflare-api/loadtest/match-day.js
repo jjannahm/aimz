@@ -68,8 +68,15 @@ const otherServerErrors = new Counter('http_5xx_other');
 const clientFailures = new Counter('client_side_failures');
 const expiredTokens = new Counter('expired_tokens');
 const forbidden = new Counter('http_403_forbidden');
-/** The first few failure bodies, which say which of the two it actually was. */
-let sampled = 0;
+/**
+ * A couple of failure bodies per status code, from the first two VUs only.
+ *
+ * Per VU because each one has its own runtime and would otherwise print its
+ * own five; per status because a 503 from our Worker and a 503 from the
+ * platform look identical until you read them. Bodies only — no header is
+ * printed, so no token can leak into a log.
+ */
+const seenPerStatus = {};
 
 const VUS = Number(__ENV.VUS || 20);
 const HOLD = __ENV.HOLD || '5m';
@@ -99,6 +106,9 @@ const shapes = {
 };
 
 export const options = {
+  // Every phase of a request, so a slow answer (waiting) can be told apart
+  // from a generator that could not open a socket (blocked, connecting).
+  summaryTrendStats: ['med', 'p(90)', 'p(95)', 'p(99)', 'max', 'avg'],
   scenarios: { matchday: { executor: 'ramping-vus', gracefulRampDown: '30s', ...(shapes[__ENV.SHAPE || 'smoke'] || shapes.smoke) } },
   thresholds: {
     // A poll is the request every viewer makes constantly. If this degrades,
@@ -157,11 +167,14 @@ function watch(res) {
   // any answer came back — the generator's problem, not the API's.
   else if (res.status === 0) clientFailures.add(1);
 
-  // A handful of bodies, because "503" alone does not say whether the Worker
-  // threw or the platform shed the load.
-  if (sampled < 5) {
-    sampled += 1;
-    console.error(`FAILURE status=${res.status} error=${res.error || "none"} body=${String(res.body).slice(0, 200)}`);
+  // Because "503" alone does not say whether our Worker threw or the platform
+  // shed the load — the bodies are quite different, and only one is our bug.
+  if (__VU <= 2) {
+    const seen = seenPerStatus[res.status] || 0;
+    if (seen < 2) {
+      seenPerStatus[res.status] = seen + 1;
+      console.error(`FAILURE status=${res.status} err="${res.error || ""}" code=${res.error_code || 0} url=${String(res.request?.url || "").split("?")[0]} body=${String(res.body).slice(0, 240).replace(/\s+/gu, " ")}`);
+    }
   }
 }
 
