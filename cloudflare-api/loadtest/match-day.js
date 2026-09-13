@@ -39,6 +39,7 @@ import http from 'k6/http';
 import { check, sleep, group } from 'k6';
 import { Trend, Rate, Counter } from 'k6/metrics';
 import { SharedArray } from 'k6/data';
+import secrets from 'k6/secrets';
 
 const BASE = __ENV.BASE;
 const MATCH_ID = __ENV.MATCH_ID;
@@ -49,12 +50,34 @@ if (!BASE) throw new Error('Set BASE.');
 /** The app polls a live match every twelve seconds; this mirrors that exactly. */
 const POLL_SECONDS = 12;
 
-/** Parsed once for the whole run rather than once per VU. */
+/**
+ * Where the pooled logins come from.
+ *
+ * Running here, they are read from a git-ignored file. Running in Grafana
+ * Cloud they come from that stack's secret store instead, so the credentials
+ * are never bundled into the uploaded archive and never printed — k6 redacts
+ * a secret's value from every log line it can appear in.
+ *
+ * The file is only opened when `ACCOUNTS` names it. That matters: `open()` is
+ * what pulls a file into the cloud archive, so leaving it unset is what keeps
+ * `accounts.json` on this machine.
+ */
 const accounts = new SharedArray('accounts', () => {
-  const parsed = JSON.parse(open(__ENV.ACCOUNTS || './accounts.json'));
-  if (!Array.isArray(parsed) || !parsed.length) throw new Error('ACCOUNTS must be a non-empty array of { email, password }.');
+  if (!__ENV.ACCOUNTS) return [];
+  const parsed = JSON.parse(open(__ENV.ACCOUNTS));
+  if (!Array.isArray(parsed) || !parsed.length) throw new Error('ACCOUNTS must name a non-empty array of { email, password }.');
   return parsed;
 });
+
+/** The same pool, however it was supplied. Cloud runs read the secret. */
+async function pooledAccounts() {
+  if (accounts.length) return accounts;
+  const raw = await secrets.get('LOADTEST_ACCOUNTS');
+  if (!raw) throw new Error('No accounts: set -e ACCOUNTS=./accounts.json locally, or the LOADTEST_ACCOUNTS secret in Grafana Cloud.');
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed) || !parsed.length) throw new Error('LOADTEST_ACCOUNTS must be a JSON array of { email, password }.');
+  return parsed;
+}
 
 const pollLatency = new Trend('poll_latency', true);
 const coldReadLatency = new Trend('cold_read_latency', true);
@@ -106,6 +129,17 @@ const shapes = {
 };
 
 export const options = {
+  /**
+   * Where a cloud run files its results. `projectID` is optional — without it
+   * the test lands in the stack's default project — and is read from the
+   * environment so no account detail is committed here.
+   */
+  cloud: {
+    name: `AIMZ match day ${__ENV.VUS || 20} VUs`,
+    ...(__ENV.K6_PROJECT_ID ? { projectID: Number(__ENV.K6_PROJECT_ID) } : {}),
+    // One region, close to the API and to the families who use it.
+    distribution: { europe: { loadZone: 'amazon:de:frankfurt', percent: 100 } },
+  },
   // Every phase of a request, so a slow answer (waiting) can be told apart
   // from a generator that could not open a socket (blocked, connecting).
   summaryTrendStats: ['med', 'p(90)', 'p(95)', 'p(99)', 'max', 'avg'],
@@ -138,9 +172,10 @@ export const options = {
  * address would meet `LOGIN_BY_IP` (100/60s), which is exactly the confusion
  * this whole design exists to avoid.
  */
-export function setup() {
+export async function setup() {
+  const pool = await pooledAccounts();
   const tokens = [];
-  for (const account of accounts) {
+  for (const account of pool) {
     const res = http.post(`${BASE}/api/v1/auth/login`, JSON.stringify(account), {
       headers: { 'Content-Type': 'application/json' },
       tags: { name: 'setup-login' },
