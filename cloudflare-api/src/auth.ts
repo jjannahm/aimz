@@ -1,3 +1,4 @@
+import { clientAddress, enforce } from "./rate-limit";
 import type { Context, Hono } from "hono";
 import type { InviteRead, TokenResponse } from "../../mobile/src/types/contract";
 import { ApiProblem, USER_SELECT, adminUser, assertNotExpired, currentUser, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
@@ -123,6 +124,11 @@ async function passwordLogin(c: Context<{ Bindings: Env }>): Promise<Response> {
   const body = await jsonObject(c);
   const email = emailField(body);
   const password = stringField(body, "password", { min: 1, max: 128 });
+  // Both buckets are asked before the password is checked, because checking it
+  // is the expensive part: 100,000 rounds of PBKDF2 is the whole reason this
+  // endpoint is worth attacking.
+  await enforce(c.env.LOGIN_BY_ACCOUNT, `login:${email}`, "account", "Too many sign-in attempts for this account. Wait a minute and try again.");
+  await enforce(c.env.LOGIN_BY_IP, `login-ip:${clientAddress(c)}`, "address", "Too many sign-in attempts from this network. Wait a minute and try again.");
   const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.email = ? AND u.is_active = 1`).bind(email).first<UserRow>();
   if (!user || !password || !(await verifyPassword(password, user.password_hash))) {
     throw new ApiProblem(401, "invalid_credentials", "Email or password is incorrect.");
@@ -267,6 +273,12 @@ export function registerAuthRoutes(app: App): void {
     const refreshToken = stringField(body, "refresh_token", { min: 16, max: 256 });
     if (!refreshToken) throw new ApiProblem(401, "invalid_refresh_token", "Sign in again.");
     const tokenHash = await hashSecret(refreshToken);
+    // Keyed on the token itself, which is what makes this safe for normal use:
+    // a rotation hands back a new token every time, so a client refreshing every
+    // fifteen minutes never presents the same key twice and never counts twice.
+    // Ten a minute against one token is a stuck client or a replay, not a phone.
+    await enforce(c.env.REFRESH_BY_TOKEN, `refresh:${tokenHash}`, "account", "This session is refreshing too often. Sign in again.");
+    await enforce(c.env.REFRESH_BY_IP, `refresh-ip:${clientAddress(c)}`, "address", "Too many refreshes from this network. Wait a minute and try again.");
     const session = await c.env.DB.prepare(
       "SELECT id, user_id FROM refresh_sessions WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?",
     ).bind(tokenHash, nowIso()).first<{ id: string; user_id: string }>();

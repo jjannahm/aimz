@@ -20,8 +20,36 @@ k6 run loadtest/match-day.js -e SHAPE=smoke \
   -e MATCH_ID=... -e PLAYER_ID=...
 ```
 
-Then `-e SHAPE=ramp` for the real answer: 1,000 → 1,500 concurrent viewers,
-held for ten minutes.
+## The ladder
+
+Run these **in order**, and read the result of each before starting the next.
+Stop at the first rung that fails a threshold — the number below it is your
+answer, and going higher only tells you how much worse it gets.
+
+Set these once:
+
+```bash
+export BASE=https://aimz-api-staging.shared-links.workers.dev
+export EMAIL=loadtest@aimz.example
+export PASSWORD='...'
+export MATCH_ID=...      # a match with a lineup and some events
+export PLAYER_ID=...     # a player on that squad
+```
+
+| Stage | Command |
+| --- | --- |
+| smoke | `k6 run loadtest/match-day.js -e SHAPE=smoke -e BASE=$BASE -e EMAIL=$EMAIL -e PASSWORD=$PASSWORD -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 100 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=100 -e HOLD=5m -e BASE=$BASE -e EMAIL=$EMAIL -e PASSWORD=$PASSWORD -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 300 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=300 -e HOLD=5m -e BASE=$BASE -e EMAIL=$EMAIL -e PASSWORD=$PASSWORD -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 500 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=500 -e HOLD=5m -e BASE=$BASE -e EMAIL=$EMAIL -e PASSWORD=$PASSWORD -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 1,000 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=1000 -e HOLD=10m -e BASE=$BASE -e EMAIL=$EMAIL -e PASSWORD=$PASSWORD -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+| 1,500 | `k6 run loadtest/match-day.js -e SHAPE=step -e VUS=1500 -e HOLD=10m -e BASE=$BASE -e EMAIL=$EMAIL -e PASSWORD=$PASSWORD -e MATCH_ID=$MATCH_ID -e PLAYER_ID=$PLAYER_ID` |
+
+On Windows PowerShell use `$env:BASE = "..."` and `-e BASE=$env:BASE`.
+
+Roughly what each rung costs in requests: 100 VUs × 5 min ≈ 12,500; 500 × 5 min
+≈ 62,500; 1,500 × 10 min ≈ 750,000. The whole ladder is a little under a
+million requests, which is ~10% of a month's included Workers requests.
 
 ## What to watch, and what a good result looks like
 

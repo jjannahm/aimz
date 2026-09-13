@@ -42,14 +42,27 @@ const quotaErrors = new Counter('quota_or_rate_limited');
  * `ramp` is the real question — 1,500 concurrent viewers. `soak` is for
  * finding leaks and quota drift over an hour.
  */
+const VUS = Number(__ENV.VUS || 20);
+const HOLD = __ENV.HOLD || '5m';
+
 const shapes = {
+  // One rung of the ladder: ramp to VUS, hold, ramp down. Run these in order,
+  // reading the result of each before starting the next.
+  step: {
+    stages: [
+      { duration: '1m', target: VUS },
+      { duration: HOLD, target: VUS },
+      { duration: '30s', target: 0 },
+    ],
+  },
   smoke: { stages: [{ duration: '1m', target: 20 }] },
+  // The whole ladder in one run, for when the rungs have already passed.
   ramp: {
     stages: [
-      { duration: '2m', target: 300 },   // gentle: does anything wobble early
-      { duration: '3m', target: 1000 },  // the number you asked about
-      { duration: '5m', target: 1500 },  // headroom above it
-      { duration: '10m', target: 1500 }, // hold — this is where the answer is
+      { duration: '2m', target: 300 },
+      { duration: '3m', target: 1000 },
+      { duration: '5m', target: 1500 },
+      { duration: '10m', target: 1500 },
       { duration: '2m', target: 0 },
     ],
   },
@@ -57,7 +70,7 @@ const shapes = {
 };
 
 export const options = {
-  scenarios: { matchday: { executor: 'ramping-vus', gracefulRampDown: '30s', ...shapes[__ENV.SHAPE || 'smoke'] } },
+  scenarios: { matchday: { executor: 'ramping-vus', gracefulRampDown: '30s', ...(shapes[__ENV.SHAPE || 'smoke'] || shapes.smoke) } },
   thresholds: {
     // A poll is the request every viewer makes constantly. If this degrades,
     // everyone feels it at once.
