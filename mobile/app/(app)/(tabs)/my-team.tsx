@@ -4,7 +4,7 @@ import React from 'react';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { CalendarButton } from '@/src/components/CalendarButton';
-import { AnnouncementsSection } from '@/src/components/myTeam/AnnouncementsSection';
+import { AnnouncementsSection, HUB_ANNOUNCEMENTS } from '@/src/components/myTeam/AnnouncementsSection';
 import { KitSection } from '@/src/components/myTeam/KitSection';
 import { ScheduleSection } from '@/src/components/myTeam/ScheduleSection';
 import { Screen } from '@/src/components/Screen';
@@ -24,7 +24,7 @@ export default function HubScreen() {
   const linked = user?.role === 'parent' || Boolean(user?.player_id);
   // The same key and query the section itself reads under, so the two share one
   // fetch rather than asking twice.
-  const announcements = useQuery({ queryKey: ['announcements', 'mine'], queryFn: () => api.announcements(), enabled: linked && user?.role !== 'admin' });
+  const announcements = useQuery({ queryKey: ['announcements', 'mine'], queryFn: () => api.announcements(HUB_ANNOUNCEMENTS), enabled: linked && user?.role !== 'admin' });
   const seen = React.useSyncExternalStore(announcementsSeenStore.subscribe, announcementsSeenStore.get, announcementsSeenStore.get);
 
   React.useEffect(() => { void announcementsSeenStore.restore(); }, []);
