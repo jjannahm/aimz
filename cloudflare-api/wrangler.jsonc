@@ -64,5 +64,70 @@
     // own warnings and errors do not.
     "logs": { "head_sampling_rate": 1, "invocation_logs": false },
     "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+  },
+
+  // Production. Wrangler does not inherit `vars` or bindings into a named
+  // environment, so every one is repeated here rather than shared with the
+  // staging config above. That is the point: a production Worker should never
+  // be one deleted line away from writing to the staging database.
+  //
+  // Secrets are deliberately absent -- JWT_SECRET, DATA_ENCRYPTION_KEY,
+  // TURNSTILE_SECRET, INITIAL_INVITE_CODE, ADMIN_EMAIL and ADMIN_PASSWORD are
+  // set with `wrangler secret put --env production` and never committed. The
+  // Worker answers 503 until JWT_SECRET and DATA_ENCRYPTION_KEY are set.
+  "env": {
+    "production": {
+      "name": "aimz-api-production",
+      "workers_dev": true,
+      "vars": {
+        "ENVIRONMENT": "production",
+        // Left empty until the production domain is decided. Empty fails
+        // closed: the CORS handler in src/index.ts hands back FRONTEND_ORIGIN
+        // when an origin does not match, so "" refuses every cross-origin
+        // caller, and TURNSTILE_HOSTNAMES splits to a list nothing matches. A
+        // staging value here would be far worse than a blank one -- the
+        // production API would quietly serve the staging site.
+        "FRONTEND_ORIGIN": "",
+        "PUBLIC_FORM_ORIGIN": "",
+        "TURNSTILE_HOSTNAMES": "",
+        "ADMIN_NAME": "AIMZ Egypt Admin",
+        "ACCESS_TOKEN_SECONDS": "900",
+        "REFRESH_TOKEN_DAYS": "30",
+        "MEDIA_MAX_BYTES": "5242880"
+      },
+      "triggers": {
+        "crons": ["0 1 * * *"]
+      },
+      // The same limits as staging, in namespaces of their own, so attempts
+      // against the preview can never spend a production account's budget.
+      "ratelimits": [
+        { "name": "LOGIN_BY_ACCOUNT", "namespace_id": "3001", "simple": { "limit": 10, "period": 60 } },
+        { "name": "LOGIN_BY_IP", "namespace_id": "3002", "simple": { "limit": 100, "period": 60 } },
+        { "name": "REFRESH_BY_TOKEN", "namespace_id": "3003", "simple": { "limit": 10, "period": 60 } },
+        { "name": "REFRESH_BY_IP", "namespace_id": "3004", "simple": { "limit": 300, "period": 60 } },
+        { "name": "INVITE_BY_IP", "namespace_id": "3005", "simple": { "limit": 30, "period": 60 } },
+        { "name": "REGISTER_BY_IP", "namespace_id": "3006", "simple": { "limit": 20, "period": 60 } },
+        { "name": "PASSWORD_BY_ACCOUNT", "namespace_id": "3007", "simple": { "limit": 5, "period": 60 } }
+      ],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "aimz-production-db",
+          "database_id": "9c8593a9-43db-4742-9bd0-80c208a5429d",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "MEDIA",
+          "bucket_name": "aimz-production-media"
+        }
+      ],
+      "observability": {
+        "enabled": true,
+        "logs": { "head_sampling_rate": 1, "invocation_logs": false },
+        "traces": { "enabled": true, "head_sampling_rate": 0.05 }
+      }
+    }
   }
 }
