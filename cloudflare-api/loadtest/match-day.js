@@ -59,8 +59,17 @@ const accounts = new SharedArray('accounts', () => {
 const pollLatency = new Trend('poll_latency', true);
 const coldReadLatency = new Trend('cold_read_latency', true);
 const notModified = new Rate('polls_answered_304');
-const quotaErrors = new Counter('quota_or_rate_limited');
+// Split apart on purpose: a 429 is a brake working, a 503 is the Worker
+// falling over, and a 0 is this machine failing to make the request at all.
+// Counting them together once cost a whole run's diagnosis.
+const rateLimited = new Counter('http_429_rate_limited');
+const serverErrors = new Counter('http_503_server_error');
+const otherServerErrors = new Counter('http_5xx_other');
+const clientFailures = new Counter('client_side_failures');
 const expiredTokens = new Counter('expired_tokens');
+const forbidden = new Counter('http_403_forbidden');
+/** The first few failure bodies, which say which of the two it actually was. */
+let sampled = 0;
 
 const VUS = Number(__ENV.VUS || 20);
 const HOLD = __ENV.HOLD || '5m';
@@ -98,7 +107,11 @@ export const options = {
     // Opening a screen for the first time is allowed to be slower.
     'cold_read_latency': ['p(95)<3000'],
     'http_req_failed': ['rate<0.01'],
-    'quota_or_rate_limited': ['count<1'],
+    'http_429_rate_limited': ['count<1'],
+    'http_503_server_error': ['count<1'],
+    'http_5xx_other': ['count<1'],
+    'client_side_failures': ['count<1'],
+    'http_403_forbidden': ['count<1'],
     // A token that expired mid-run makes every number after it meaningless.
     'expired_tokens': ['count<1'],
     // k6's own health: iterations it could not start on time, which means the
@@ -132,10 +145,24 @@ export function setup() {
 
 const authed = (token, extra = {}) => ({ headers: { Authorization: `Bearer ${token}`, ...extra } });
 
-/** Counts the two answers that would silently invalidate the run. */
+/** Sorts every failure into the box that names its cause. */
 function watch(res) {
+  if (res.status === 200 || res.status === 304) return;
   if (res.status === 401) expiredTokens.add(1);
-  if (res.status === 429 || res.status === 503) quotaErrors.add(1);
+  else if (res.status === 403) forbidden.add(1);
+  else if (res.status === 429) rateLimited.add(1);
+  else if (res.status === 503) serverErrors.add(1);
+  else if (res.status >= 500) otherServerErrors.add(1);
+  // Status 0 is k6 itself: a connection refused, reset, or timed out before
+  // any answer came back — the generator's problem, not the API's.
+  else if (res.status === 0) clientFailures.add(1);
+
+  // A handful of bodies, because "503" alone does not say whether the Worker
+  // threw or the platform shed the load.
+  if (sampled < 5) {
+    sampled += 1;
+    console.error(`FAILURE status=${res.status} error=${res.error || "none"} body=${String(res.body).slice(0, 200)}`);
+  }
 }
 
 export default function (data) {
