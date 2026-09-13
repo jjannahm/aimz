@@ -20,7 +20,7 @@
     "types": "wrangler types worker-configuration.d.ts --include-runtime false"
   },
   "dependencies": {
-    "hono": "^4.9.6"
+    "hono": "^4.13.7"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.0.0",

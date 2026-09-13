@@ -155,6 +155,44 @@ describe('team hub authorization and roster privacy', () => {
 // rather than through users.player_id, and it is the only one whose role value
 // was added after the users table was written. Both are covered here: the whole
 // feature shipped working and unusable because nothing registered a parent.
+describe('account deletion', () => {
+  it('removes the login and redacts linked application data and notes', async () => {
+    const user = await seedUser('player');
+    const applicationId = crypto.randomUUID();
+    await testEnv.DB.prepare(
+      `INSERT INTO newcomer_applications (
+        id, source, user_id, branch, full_name, mobile, email, whatsapp_mobile,
+        date_of_birth, nationality, address, previous_academy, school_university,
+        father_name, father_mobile, mother_name, mother_mobile, medical_concerns,
+        medications, consent_version, consented_at, created_at, updated_at
+      ) VALUES (?, 'account_registration', ?, 'Cairo', 'Personal Name', '+201000000000',
+        'person@aimz.test', '+201000000000', '2012-03-04', 'Egyptian', 'Home address',
+        'Previous academy', 'School', 'Father Name', '+201000000001', 'Mother Name',
+        '+201000000002', 'Private health note', 'Private medication', '2026-09', ?, ?, ?)`,
+    ).bind(applicationId, user.id, now, now, now).run();
+    await testEnv.DB.prepare(
+      "INSERT INTO newcomer_notes (id, application_id, author_id, body, created_at) VALUES (?, ?, ?, 'Call parent on private number', ?)",
+    ).bind(crypto.randomUUID(), applicationId, user.id, now).run();
+
+    expect((await request('/api/v1/users/me', json('DELETE', undefined, user.token))).status).toBe(204);
+    expect(await testEnv.DB.prepare('SELECT id FROM users WHERE id=?').bind(user.id).first()).toBeNull();
+
+    const application = await testEnv.DB.prepare(
+      'SELECT user_id, full_name, email, medical_concerns, medications, redacted_at FROM newcomer_applications WHERE id=?',
+    ).bind(applicationId).first<Record<string, string | null>>();
+    expect(application).toMatchObject({
+      user_id: null,
+      full_name: '[redacted]',
+      email: `redacted-${applicationId}@invalid.local`,
+      medical_concerns: '[redacted]',
+      medications: '[redacted]',
+    });
+    expect(application?.redacted_at).not.toBeNull();
+    expect(await testEnv.DB.prepare('SELECT body FROM newcomer_notes WHERE application_id=?').bind(applicationId).first())
+      .toMatchObject({ body: '[redacted]' });
+  });
+});
+
 describe('parent accounts', () => {
   it('registers one account against several children and reads them back', async () => {
     const admin = await seedUser('admin');
