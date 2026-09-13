@@ -10,7 +10,23 @@ Two scripts, deliberately separate:
 ## Accounts
 
 Both scripts read a pool of staging logins from `accounts.json`, which is
-git-ignored. Copy `accounts.example.json` and fill it in.
+git-ignored. Build it with the provisioner rather than by hand:
+
+```bash
+cd cloudflare-api
+API_URL=https://aimz-api-staging.shared-links.workers.dev ADMIN_EMAIL=<staging admin> ADMIN_PASSWORD=<staging admin password> node scripts/provision-loadtest.mjs
+```
+
+It creates a squad, twenty players, a finished match with a real team sheet and
+event thread, and twenty family logins linked to those players — then signs in
+as each one and checks it can read the match and that the Hub returns no more
+than fifty notices. It prints the `MATCH_ID` and `PLAYER_ID` to use, and never
+prints a password. Re-run `--verify-only` any time to re-check the pool without
+creating anything.
+
+Each run mints a fresh batch (there is no endpoint to delete an account or
+reset its password), so reruns leave inert staging rows behind. `accounts.json`
+is overwritten with the newest batch.
 
 **Minimum 20 accounts; 12 is the hard floor** (the IP phase of the auth test
 needs enough accounts that the per-account limiter cannot be what fires).
