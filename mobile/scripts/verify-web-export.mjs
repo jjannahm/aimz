@@ -50,6 +50,19 @@ if (problems.length > 0) {
 }
 
 const files = await readdir(distUrl);
+for (const required of ['robots.txt', 'sitemap.xml', '_headers', '_redirects', 'favicon.ico', 'manifest.webmanifest']) {
+  if (!files.includes(required)) problems.push(`required web file ${required} is missing from dist.`);
+}
+
+for (const marker of ['name="description"', 'property="og:title"', 'name="twitter:card"', 'rel="manifest"']) {
+  if (!html.includes(marker)) problems.push(`index.html is missing ${marker}.`);
+}
+
+if (problems.length > 0) {
+  console.error(`\nverify-web-export failed:\n${problems.map((problem) => `  - ${problem}`).join('\n')}\n`);
+  process.exit(1);
+}
+
 console.log(
   `verify-web-export: ${bundlePaths.length} bundle(s), ${files.length} top-level file(s), ` +
     `environment "${expectedEnvironment}"${expectedApiUrl ? `, API ${expectedApiUrl.replace(/\/$/, '')}` : ''}.`,

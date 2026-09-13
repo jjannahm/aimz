@@ -79,7 +79,7 @@ export const lightColors: ThemeColors = {
   warningSurface: '#FEF3C7',
   warningText: '#78350F',
   error: '#B91C1C',
-  errorSurface: '#E7000A',
+  errorSurface: '#FEE2E2',
   errorText: '#991B1B',
   onError: '#FFFFFF',
   onStatus: '#FFFFFF',
