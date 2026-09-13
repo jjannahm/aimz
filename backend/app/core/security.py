@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 
 import jwt
 from pwdlib import PasswordHash
@@ -16,6 +17,17 @@ def hash_password(password: str) -> str:
 
 def verify_password(password: str, hashed: str) -> bool:
     return password_hash.verify(password, hashed)
+
+
+@lru_cache(maxsize=1)
+def decoy_password_hash() -> str:
+    """A hash nobody knows the password to, for signing in to a missing account.
+
+    Verifying against it costs the same Argon2 work as a real account, so a
+    missing or disabled email is refused in the time a wrong password would be,
+    and response time cannot be used to find out who has an account.
+    """
+    return hash_password(secrets.token_urlsafe(32))
 
 
 def create_access_token(user_id: str, role: str) -> tuple[str, int]:

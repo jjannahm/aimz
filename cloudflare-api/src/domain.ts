@@ -29,6 +29,7 @@ import {
 import type { TeamScope } from "./team-access";
 import type { CompetitionRow, CompetitionStatus, JsonObject, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
 import { MatchPhaseTransitionError, transitionLegacyStatus } from "./match-clock";
+import { MEDIA_KEY } from "./media";
 import { isOpponentOnly } from "./scoring-rules";
 
 type App = Hono<{ Bindings: Env }>;
@@ -141,6 +142,46 @@ function assertPlaying(scope: TeamScope, homeTeamId: string, awayTeamId: string)
   throw new ApiProblem(403, "team_access_denied", "You can only manage fixtures your own squad is playing in.");
 }
 
+/**
+ * Where a fixture may be filed.
+ *
+ * Nobody may add to a season that has ended. A coach may also only file into
+ * a competition their squad is already in, or a friendly: a competition's
+ * visibility follows its fixtures, so filing one into any league would have
+ * opened that league's table and award winners to the coach's whole squad.
+ */
+async function assertFixtureCompetition(env: Env, scope: TeamScope, competition: CompetitionRow): Promise<void> {
+  if (competition.status === "completed") {
+    throw new ApiProblem(409, "season_completed", `${competition.name} ${competition.season} has ended. Reopen the season before adding matches.`);
+  }
+  if (scope === null || competition.type === "friendly") return;
+  if (!(await visibleCompetitionIds(env, scope)).includes(competition.id)) {
+    throw new ApiProblem(403, "competition_access_denied", "You can only add fixtures to your squad's own competitions, or to a friendly.");
+  }
+}
+
+/**
+ * What stays with the academy when a coach edits their own squad.
+ *
+ * A coach may rename and present the squad they run, but not change where it
+ * plays or what it is. Entering a competition or a group changes who can read
+ * that competition's table and awards; `is_aimz` decides whether it is an
+ * academy squad at all, and `is_active` archives it. Each is compared with what
+ * is stored, so a form that sends the whole record back unchanged still saves.
+ */
+const ACADEMY_TEAM_FIELDS = ["is_aimz", "is_active", "competition_id", "competition_group_id"] as const;
+
+/**
+ * A crest or photo key: absent keeps what is stored, and a changed value must
+ * be one of the keys this API issues for an upload. Arbitrary text would have
+ * pointed a squad's crest at anything in the bucket.
+ */
+function mediaKeyField(body: Record<string, unknown>, field: "logo_key" | "photo_key", current: string | null, pattern: RegExp): string | null {
+  const value = optionalNullableText(body, field, current, 512);
+  if (value === null || value === current || pattern.test(value)) return value;
+  throw new ApiProblem(422, "validation_error", "Check the highlighted fields.", [{ field, message: "Upload the image first, then use the key it returns." }]);
+}
+
 export function registerDomainRoutes(app: App): void {
   app.get("/api/v1/teams", async (c) => {
     const url = new URL(c.req.url);
@@ -186,7 +227,7 @@ export function registerDomainRoutes(app: App): void {
       season: stringField(body, "season", { optional: true, nullable: true, max: 40 }) ?? null,
       is_aimz: booleanField(body, "is_aimz", false) ? 1 : 0,
       is_active: booleanField(body, "is_active", true) ? 1 : 0,
-      logo_key: stringField(body, "logo_key", { optional: true, nullable: true, max: 512 }) ?? null,
+      logo_key: mediaKeyField(body, "logo_key", null, MEDIA_KEY.team),
       badge_style: badgeStyleField(body, null),
       coach: stringField(body, "coach", { optional: true, nullable: true, max: 160 }) ?? null,
       assistant_coach: stringField(body, "assistant_coach", { optional: true, nullable: true, max: 160 }) ?? null,
@@ -211,7 +252,7 @@ export function registerDomainRoutes(app: App): void {
       squad_code: optionalNullableText(body, "squad_code", current.squad_code, 40),
       age_group: optionalNullableText(body, "age_group", current.age_group, 40),
       season: optionalNullableText(body, "season", current.season, 40),
-      logo_key: optionalNullableText(body, "logo_key", current.logo_key, 512),
+      logo_key: mediaKeyField(body, "logo_key", current.logo_key, MEDIA_KEY.team),
       badge_style: badgeStyleField(body, current.badge_style),
       coach: optionalNullableText(body, "coach", current.coach, 160),
       assistant_coach: optionalNullableText(body, "assistant_coach", current.assistant_coach, 160),
@@ -221,6 +262,13 @@ export function registerDomainRoutes(app: App): void {
       is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active,
       updated_at: nowIso(),
     };
+    if (scope !== null) {
+      const changed = ACADEMY_TEAM_FIELDS.filter((field) => team[field] !== current[field]);
+      if (changed.length) {
+        throw new ApiProblem(403, "admin_required", "Only an AIMZ administrator can change a squad's details or competition.",
+          changed.map((field) => ({ field, message: "Managed by an AIMZ administrator." })));
+      }
+    }
     // Leaving a competition leaves its group with it.
     const groupId = team.competition_id === current.competition_id ? team.competition_group_id : null;
     await c.env.DB.prepare("UPDATE teams SET name=?, branch=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, badge_style=?, coach=?, assistant_coach=?, competition_id=?, competition_group_id=?, updated_at=? WHERE id=?").bind(team.name, team.branch, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.badge_style, team.coach, team.assistant_coach, team.competition_id, groupId, team.updated_at, team.id).run();
@@ -386,7 +434,7 @@ export function registerDomainRoutes(app: App): void {
   });
   app.post("/api/v1/players", async (c) => {
     const { scope } = await managingUser(c); const body = await jsonObject(c); const now = nowIso();
-    const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: enumField(body, "position", POSITION_CODES), jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, photo_key: stringField(body, "photo_key", { optional: true, nullable: true, max: 512 }) ?? null, date_of_birth: null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
+    const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: enumField(body, "position", POSITION_CODES), jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, photo_key: mediaKeyField(body, "photo_key", null, MEDIA_KEY.player), date_of_birth: null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
     assertCanManageTeam(scope, player.team_id);
     await requireTeam(c.env, player.team_id);
     try { await c.env.DB.prepare("INSERT INTO players (id, name, team_id, position, jersey_number, photo_key, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, now, now).run(); }
@@ -456,7 +504,7 @@ export function registerDomainRoutes(app: App): void {
     // Both ends of a move are checked: a coach cannot post a player out of
     // their squad into one they do not run, or claim one out of another.
     const teamId = stringField(body, "team_id", { optional: true, min: 1, max: 36 }) ?? current.team_id; assertCanManageTeam(scope, teamId); await requireTeam(c.env, teamId);
-    const player: PlayerRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, team_id: teamId, position: body.position === undefined ? current.position : enumField(body, "position", POSITION_CODES), jersey_number: body.jersey_number === undefined ? current.jersey_number : numberField(body, "jersey_number", { nullable: true, min: 0, max: 99 }) ?? null, photo_key: optionalNullableText(body, "photo_key", current.photo_key, 512), is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active, updated_at: nowIso() };
+    const player: PlayerRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, team_id: teamId, position: body.position === undefined ? current.position : enumField(body, "position", POSITION_CODES), jersey_number: body.jersey_number === undefined ? current.jersey_number : numberField(body, "jersey_number", { nullable: true, min: 0, max: 99 }) ?? null, photo_key: mediaKeyField(body, "photo_key", current.photo_key, MEDIA_KEY.player), is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active, updated_at: nowIso() };
     try { await c.env.DB.prepare("UPDATE players SET name=?, team_id=?, position=?, jersey_number=?, photo_key=?, is_active=?, updated_at=? WHERE id=?").bind(player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, player.updated_at, player.id).run(); }
     catch { throw new ApiProblem(409, "jersey_conflict", "That jersey number is already used by this team."); }
     return c.json(publicPlayer(player));
@@ -483,9 +531,7 @@ export function registerDomainRoutes(app: App): void {
   app.post("/api/v1/matches", async (c) => {
     const { scope } = await managingUser(c); const body = await jsonObject(c); const match = await matchInput(c.env, body);
     assertPlaying(scope, match.home_team_id, match.away_team_id);
-    // A fixture cannot be added to a season that has already been closed.
-    const season = await getCompetition(c.env, match.competition_id);
-    if (season.status === "completed") throw new ApiProblem(409, "season_completed", `${season.name} ${season.season} has ended. Reopen the season before adding matches.`);
+    await assertFixtureCompetition(c.env, scope, await getCompetition(c.env, match.competition_id));
     const now = nowIso();
     const clock = match.status === "live"
       ? { status: "live" as const, phase: "first_half" as const, phase_started_at: now }
@@ -507,6 +553,13 @@ export function registerDomainRoutes(app: App): void {
     // came back "Check the highlighted fields" after saving perfectly well.
     const merged = { ...current, has_extra_time: current.has_extra_time === 1, ...body };
     const input = await matchInput(c.env, merged); const updated = nowIso();
+    // Checked again on what the fixture is becoming: a coach allowed to edit
+    // their own match could otherwise re-point both sides at squads they do not
+    // run, or re-file it into a league they are not in.
+    assertPlaying(scope, input.home_team_id, input.away_team_id);
+    if (input.competition_id !== current.competition_id) {
+      await assertFixtureCompetition(c.env, scope, await getCompetition(c.env, input.competition_id));
+    }
     // Everything else about the match stays editable; only the clock is not,
     // because there is nobody at this one to run it. The score goes in through
     // /result, which finishes the match itself.

@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import type { PresignResponse } from "../../mobile/src/types/contract";
-import { ApiProblem, enumField, jsonObject } from "./helpers";
+import { ApiProblem, enumField, jsonObject, stringField } from "./helpers";
 import { createUploadToken, verifyUploadToken } from "./security";
 import { assertCanManageTeam, managingUser } from "./team-access";
 
@@ -18,9 +18,37 @@ const UPLOAD_TOKEN_SECONDS = 900;
 const DEFAULT_MAX_BYTES = 5_242_880;
 const MEDIA_PREFIX = "/api/v1/media/";
 
-function maxBytes(env: Env): number {
+/**
+ * The shape of every key this API hands out: a crest or a photo, filed under
+ * the record it belongs to, named by a uuid. Nothing else in the bucket is
+ * served, and nothing else may be written onto a team or a player.
+ */
+export const MEDIA_KEY = {
+  team: /^teams\/[A-Za-z0-9-]{1,64}\/[0-9a-f-]{36}\.(jpg|png|webp)$/u,
+  player: /^players\/[A-Za-z0-9-]{1,64}\/[0-9a-f-]{36}\.(jpg|png|webp)$/u,
+} as const;
+
+export function maxUploadBytes(env: Env): number {
   const configured = Number(env.MEDIA_MAX_BYTES);
   return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_MAX_BYTES;
+}
+
+/**
+ * Whether the file really is the image type it was declared as.
+ *
+ * The declared type is only what the client said. Checking the leading bytes
+ * means a page or a script renamed to crest.png is refused at the door, rather
+ * than stored and served back from the API's own origin.
+ */
+function matchesDeclaredType(head: Uint8Array, contentType: string): boolean {
+  const startsWith = (bytes: number[], offset = 0) => bytes.every((byte, index) => head[offset + index] === byte);
+  switch (contentType) {
+    case "image/jpeg": return startsWith([0xff, 0xd8, 0xff]);
+    case "image/png": return startsWith([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    // RIFF....WEBP
+    case "image/webp": return startsWith([0x52, 0x49, 0x46, 0x46]) && startsWith([0x57, 0x45, 0x42, 0x50], 8);
+    default: return false;
+  }
 }
 
 export function registerMediaRoutes(app: App): void {
@@ -29,7 +57,10 @@ export function registerMediaRoutes(app: App): void {
     const body = await jsonObject(c);
     const entity = enumField(body, "entity", ["team", "player"] as const);
     const contentType = enumField(body, "content_type", MEDIA_TYPES);
-    const entityId = String(body.entity_id ?? "");
+    // The id becomes part of the object key, so it is held to the characters
+    // an id is made of before it goes anywhere near a path.
+    const entityId = stringField(body, "entity_id", { min: 1, max: 64 })!;
+    if (!/^[A-Za-z0-9-]+$/u.test(entityId)) throw new ApiProblem(404, "entity_not_found", "Upload target not found.");
     const table = entity === "team" ? "teams" : "players";
     const target = await c.env.DB.prepare(`SELECT id FROM ${table} WHERE id = ?`).bind(entityId).first<{ id: string }>();
     if (!target) throw new ApiProblem(404, "entity_not_found", "Upload target not found.");
@@ -68,9 +99,15 @@ export function registerMediaRoutes(app: App): void {
 
     const file = form.get("file");
     if (!(file instanceof File)) throw new ApiProblem(422, "invalid_upload", "Attach the image as the 'file' field.");
-    const limit = maxBytes(c.env);
+    const limit = maxUploadBytes(c.env);
     if (file.size === 0) throw new ApiProblem(422, "invalid_upload", "The image was empty.");
     if (file.size > limit) throw new ApiProblem(422, "file_too_large", `Images must be ${Math.floor(limit / 1_048_576)}MB or smaller.`);
+    if (!MEDIA_KEY.team.test(payload.key) && !MEDIA_KEY.player.test(payload.key)) {
+      throw new ApiProblem(403, "upload_not_authorized", "This upload link is invalid or has expired.");
+    }
+    if (!matchesDeclaredType(new Uint8Array(await file.slice(0, 16).arrayBuffer()), payload.content_type)) {
+      throw new ApiProblem(422, "invalid_image", "Choose a JPEG, PNG, or WebP image.");
+    }
 
     await c.env.MEDIA.put(payload.key, file.stream(), {
       httpMetadata: { contentType: payload.content_type, cacheControl: "public, max-age=31536000, immutable" },
@@ -79,14 +116,20 @@ export function registerMediaRoutes(app: App): void {
   });
 
   app.get("/api/v1/media/*", async (c) => {
-    const key = decodeURIComponent(new URL(c.req.url).pathname.slice(MEDIA_PREFIX.length));
-    const object = key ? await c.env.MEDIA.get(key) : null;
+    let key: string;
+    try {
+      key = decodeURIComponent(new URL(c.req.url).pathname.slice(MEDIA_PREFIX.length));
+    } catch {
+      throw new ApiProblem(404, "media_not_found", "Image not found.");
+    }
+    const object = MEDIA_KEY.team.test(key) || MEDIA_KEY.player.test(key) ? await c.env.MEDIA.get(key) : null;
     if (!object) throw new ApiProblem(404, "media_not_found", "Image not found.");
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("etag", object.httpEtag);
     // Every key carries a uuid, so an image never changes under the same URL.
     headers.set("cache-control", "public, max-age=31536000, immutable");
+    headers.set("content-disposition", "inline");
     return new Response(object.body, { headers });
   });
 }

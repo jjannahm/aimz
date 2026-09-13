@@ -18,3 +18,20 @@ mobile/npm-debug.log*
 .pnpm-store/
 artifacts/qa/
 .claude/
+
+# Credentials that must never be committed, wherever they land in the tree.
+# Real values live in the secret stores (wrangler secret, AWS Secrets Manager,
+# GitHub Actions secrets); only the *.example files belong here.
+.dev.vars
+.dev.vars.*
+.staging.env
+*.pem
+*.p8
+*.p12
+*.key
+*.mobileprovision
+credentials.json
+service-account*.json
+.wrangler/
+cdk.out/
+.claude-flow/

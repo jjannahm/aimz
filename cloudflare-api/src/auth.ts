@@ -1,9 +1,12 @@
 import { clientAddress, enforce } from "./rate-limit";
 import type { Context, Hono } from "hono";
 import type { InviteRead, TokenResponse } from "../../mobile/src/types/contract";
-import { ApiProblem, USER_SELECT, adminUser, assertNotExpired, currentUser, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
+import { HEALTH_COLUMNS, sealField } from "./field-crypto";
+import { ApiProblem, USER_SELECT, adminUser, assertNotExpired, currentUser, enumField, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
+import { APPLICATION_FIELD_LIMITS } from "./newcomers";
 import {
   createAccessToken,
+  decoyPasswordHash,
   hashPassword,
   hashSecret,
   newToken,
@@ -130,7 +133,10 @@ async function passwordLogin(c: Context<{ Bindings: Env }>): Promise<Response> {
   await enforce(c.env.LOGIN_BY_ACCOUNT, `login:${email}`, "account", "Too many sign-in attempts for this account. Wait a minute and try again.");
   await enforce(c.env.LOGIN_BY_IP, `login-ip:${clientAddress(c)}`, "address", "Too many sign-in attempts from this network. Wait a minute and try again.");
   const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.email = ? AND u.is_active = 1`).bind(email).first<UserRow>();
-  if (!user || !password || !(await verifyPassword(password, user.password_hash))) {
+  // A missing account is checked against a decoy hash, so it takes as long to
+  // refuse as a wrong password and the timing cannot reveal who has one.
+  const verified = await verifyPassword(password ?? "", user?.password_hash ?? await decoyPasswordHash());
+  if (!user || !password || !verified) {
     throw new ApiProblem(401, "invalid_credentials", "Email or password is incorrect.");
   }
   // After the password, so an expired account cannot be told apart from a wrong
@@ -141,6 +147,8 @@ async function passwordLogin(c: Context<{ Bindings: Env }>): Promise<Response> {
 
 export function registerAuthRoutes(app: App): void {
   app.post("/api/v1/auth/invitations/resolve", async (c) => {
+    // An invitation code is a credential too, and this is the place to guess one.
+    await enforce(c.env.INVITE_BY_IP, `invite-ip:${clientAddress(c)}`, "address", "Too many invitation codes tried from this network. Wait a minute and try again.");
     const body = await jsonObject(c);
     const code = stringField(body, "code", { min: 4, max: 128 })!;
     const hashes = await inviteHashes(code);
@@ -156,6 +164,8 @@ export function registerAuthRoutes(app: App): void {
   });
 
   app.post("/api/v1/auth/register", async (c) => {
+    // Registration takes an invitation code too, so it is a second place to guess one.
+    await enforce(c.env.REGISTER_BY_IP, `register-ip:${clientAddress(c)}`, "address", "Too many sign-ups from this network. Wait a minute and try again.");
     await ensureSeeded(c.env);
     const body = await jsonObject(c);
     const name = stringField(body, "name", { min: 2, max: 120 });
@@ -164,9 +174,6 @@ export function registerAuthRoutes(app: App): void {
     const inviteCode = stringField(body, "invite_code", { min: 4, max: 128 });
     if (!name || !password || !inviteCode) throw new ApiProblem(422, "validation_error", "Complete all required fields.");
 
-    const duplicate = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
-    if (duplicate) throw new ApiProblem(409, "email_exists", "An account already uses this email address.");
-
     const inviteHashValues = await inviteHashes(inviteCode);
     const invite = await c.env.DB.prepare(`SELECT * FROM registration_invites WHERE code_hash IN (${inviteHashValues.map(() => "?").join(",")})`)
       .bind(...inviteHashValues).first<InviteRow>();
@@ -174,6 +181,11 @@ export function registerAuthRoutes(app: App): void {
     if (!invite || !invite.is_active || (invite.expires_at && invite.expires_at <= now) || (invite.max_uses !== null && invite.use_count >= invite.max_uses)) {
       throw new ApiProblem(409, "invalid_invite", "This invitation code is invalid, expired, or already used.");
     }
+
+    // Only once the invitation holds: asked first, this answered "is there an
+    // account for this email?" to anybody at all, with no code needed.
+    const duplicate = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first();
+    if (duplicate) throw new ApiProblem(409, "email_exists", "An account already uses this email address.");
 
     // Which roster players this invitation was cut for. A player invitation
     // names one and the account carries it on `users.player_id`; a parent
@@ -219,11 +231,17 @@ export function registerAuthRoutes(app: App): void {
     const claimId = crypto.randomUUID();
     const applicationId = application ? crypto.randomUUID() : null;
     const applicationFields = ["branch", "full_name", "mobile", "email", "whatsapp_mobile", "date_of_birth", "nationality", "address", "previous_academy", "school_university", "father_name", "father_mobile", "mother_name", "mother_mobile", "medical_concerns", "medications"];
-    const applicationValues = application ? applicationFields.map((field) => {
+    const applicationValues = application ? await Promise.all(applicationFields.map(async (field) => {
       const value = application[field];
       if (typeof value !== "string" || value.trim().length < 2) throw new ApiProblem(422, "validation_error", `Complete ${field.replaceAll("_", " ")}. Enter None if it does not apply.`);
-      return value.trim();
-    }) : [];
+      // The same ceilings as the public form, so this door cannot store what that one refuses.
+      const max = APPLICATION_FIELD_LIMITS[field] ?? 500;
+      if (value.trim().length > max) throw new ApiProblem(422, "validation_error", "Check the highlighted fields.", [{ field: `application.${field}`, message: `Must be at most ${max} characters.` }]);
+      return (HEALTH_COLUMNS as readonly string[]).includes(field)
+        ? sealField(c.env, `newcomer_applications.${field}`, value.trim())
+        : value.trim();
+    })) : [];
+    const consentVersion = typeof application?.consent_version === "string" && application.consent_version.length <= 40 ? application.consent_version : "2026-09";
     let results;
     try {
       results = await c.env.DB.batch([
@@ -250,7 +268,7 @@ export function registerAuthRoutes(app: App): void {
           SELECT ?,'account_registration','new',?,?,?,?,${applicationFields.map(() => "?").join(",")},?,?,?,?
           WHERE EXISTS (SELECT 1 FROM invite_claims WHERE id=? AND user_id=?)`)
           .bind(applicationId, user.id, user.player_id, invite.id, invite.team_id ?? null,
-            ...applicationValues, typeof application.consent_version === "string" ? application.consent_version : "2026-09",
+            ...applicationValues, consentVersion,
             now, now, now, claimId, user.id)] : []),
       ]);
     } catch (error) {
@@ -279,14 +297,16 @@ export function registerAuthRoutes(app: App): void {
     // Ten a minute against one token is a stuck client or a replay, not a phone.
     await enforce(c.env.REFRESH_BY_TOKEN, `refresh:${tokenHash}`, "account", "This session is refreshing too often. Sign in again.");
     await enforce(c.env.REFRESH_BY_IP, `refresh-ip:${clientAddress(c)}`, "address", "Too many refreshes from this network. Wait a minute and try again.");
+    // Spent in the same statement that finds it. Read first and revoked after,
+    // two requests racing one stolen token could each be handed a new session.
+    const now = nowIso();
     const session = await c.env.DB.prepare(
-      "SELECT id, user_id FROM refresh_sessions WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?",
-    ).bind(tokenHash, nowIso()).first<{ id: string; user_id: string }>();
+      "UPDATE refresh_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ? RETURNING user_id",
+    ).bind(now, tokenHash, now).first<{ user_id: string }>();
     if (!session) throw new ApiProblem(401, "invalid_refresh_token", "Your session has expired. Sign in again.");
     const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.id = ? AND u.is_active = 1`).bind(session.user_id).first<UserRow>();
     if (!user) throw new ApiProblem(401, "invalid_refresh_token", "Your account is unavailable.");
     assertNotExpired(user);
-    await c.env.DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").bind(nowIso(), session.id).run();
     return c.json(await issueTokens(c.env, user));
   });
 
@@ -299,6 +319,9 @@ export function registerAuthRoutes(app: App): void {
 
   app.post("/api/v1/auth/password/change", async (c) => {
     const user = await currentUser(c);
+    // A session picked up from an unlocked phone should not be enough to guess
+    // the password behind it.
+    await enforce(c.env.PASSWORD_BY_ACCOUNT, `password:${user.id}`, "account", "Too many password attempts for this account. Wait a minute and try again.");
     const body = await jsonObject(c);
     const current = stringField(body, "current_password", { min: 1, max: 128 });
     const next = stringField(body, "new_password", { min: 8, max: 128 });
@@ -460,7 +483,9 @@ export function registerAuthRoutes(app: App): void {
     const name = stringField(body, "name", { min: 2, max: 120 });
     const email = emailField(body);
     const password = stringField(body, "password", { min: 8, max: 128 });
-    const role: UserRole = body.role === "player" ? "player" : body.role === "parent" ? "parent" : "admin";
+    // Named outright. Anything unrecognised used to become an administrator, so
+    // a typo or a hand-edited request handed out the keys to the academy.
+    const role: UserRole = enumField(body, "role", ["player", "parent", "admin"] as const);
     const expiresAt = expiryField(body);
     const now = nowIso();
     const user: UserRow = { id: crypto.randomUUID(), name: name!, email, password_hash: await hashPassword(password!), role, player_id: null, is_active: 1, expires_at: expiresAt, created_at: now, updated_at: now };
@@ -518,7 +543,10 @@ export function registerAuthRoutes(app: App): void {
     const body = await jsonObject(c);
     const label = stringField(body, "label", { min: 2, max: 120 });
     const suppliedCode = stringField(body, "code", { min: 4, max: 128, optional: true });
-    const expiresAt = typeof body.expires_at === "string" ? body.expires_at : null;
+    // Parsed rather than stored as sent: the deadline is compared as text, so
+    // an unparseable one would have made an invitation that never expires.
+    const expiresAt = expiryField(body);
+    const applicationId = stringField(body, "application_id", { optional: true, nullable: true, max: 36 }) ?? null;
     const kind: InviteKind = body.kind === "parent" ? "parent"
       : body.kind === "coach" ? "coach"
         : body.kind === "newcomer" ? "newcomer" : "player";
@@ -545,7 +573,7 @@ export function registerAuthRoutes(app: App): void {
     // for: a second claim would find the roster record taken.
     const requestedUses = typeof body.max_uses === "number" && body.max_uses >= 1 ? Math.floor(body.max_uses) : null;
     const maxUses = kind === "player" || kind === "newcomer" ? 1 : requestedUses;
-    const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: generated.hash, kind, player_id: kind === "player" ? (playerIds[0] ?? null) : null, team_id: null, application_id: typeof body.application_id === "string" ? body.application_id : null, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
+    const invite: InviteRow = { id: crypto.randomUUID(), label: label!, code_hash: generated.hash, kind, player_id: kind === "player" ? (playerIds[0] ?? null) : null, team_id: null, application_id: applicationId, expires_at: expiresAt, max_uses: maxUses, use_count: 0, is_active: 1, created_by_id: admin.id, created_at: nowIso() };
     try {
       await c.env.DB.batch([
         c.env.DB.prepare("INSERT INTO registration_invites (id, label, code_hash, kind, player_id, team_id, application_id, expires_at, max_uses, use_count, is_active, created_by_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?, ?)").bind(invite.id, invite.label, invite.code_hash, invite.kind, invite.player_id, invite.team_id, invite.application_id, invite.expires_at, invite.max_uses, admin.id, invite.created_at),

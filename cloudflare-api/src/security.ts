@@ -6,13 +6,13 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const PASSWORD_ITERATIONS = 100_000;
 
-function toBase64Url(bytes: Uint8Array): string {
+export function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/u, "");
 }
 
-function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
+export function fromBase64Url(value: string): Uint8Array<ArrayBuffer> {
   const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
   const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
   const binary = atob(padded);
@@ -51,6 +51,21 @@ export async function verifyPassword(password: string, stored: string): Promise<
   const expected = fromBase64Url(rawHash);
   if (actual.byteLength !== expected.byteLength) return false;
   return timingSafeEqual(actual, expected);
+}
+
+let decoyHash: Promise<string> | undefined;
+
+/**
+ * A hash nobody knows the password to, for signing in to an account that does
+ * not exist.
+ *
+ * Verifying against it costs the same hundred thousand rounds as a real
+ * account, so a missing email is refused in the time a wrong password would
+ * be, and the response time cannot be used to find out who has an account.
+ */
+export function decoyPasswordHash(): Promise<string> {
+  decoyHash ??= hashPassword(newToken());
+  return decoyHash;
 }
 
 export async function hashSecret(value: string): Promise<string> {

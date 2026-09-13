@@ -1,4 +1,5 @@
 import type { Context, Hono } from "hono";
+import { HEALTH_COLUMNS, openApplication, sealField } from "./field-crypto";
 import { ApiProblem, adminUser, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
 
 type App = Hono<{ Bindings: Env }>;
@@ -14,6 +15,9 @@ const FIELDS = [
   ["mother_name", 2, 160], ["mother_mobile", 5, 60], ["medical_concerns", 2, 4000],
   ["medications", 2, 4000], ["consent_version", 1, 40],
 ] as const;
+
+/** The longest each application field may be, shared with registration's copy of the form. */
+export const APPLICATION_FIELD_LIMITS: Record<string, number> = Object.fromEntries(FIELDS.map(([field, , max]) => [field, max]));
 
 async function sha256(value: string): Promise<string> {
   const bytes = new TextEncoder().encode(value);
@@ -91,6 +95,7 @@ export function registerNewcomerRoutes(app: App): void {
     const id = crypto.randomUUID();
     const now = nowIso();
     const columns = FIELDS.map(([field]) => field);
+    for (const column of HEALTH_COLUMNS) values[column] = await sealField(c.env, `newcomer_applications.${column}`, values[column]);
     await c.env.DB.prepare(`INSERT INTO newcomer_applications
       (id,source,stage,client_submission_id,${columns.join(",")},consented_at,created_at,updated_at)
       VALUES(?,'public_link','new',?,${columns.map(() => "?").join(",")},?,?,?)`)
@@ -125,7 +130,8 @@ export function registerNewcomerRoutes(app: App): void {
         FROM newcomer_applications WHERE ${where} ORDER BY next_follow_up_at IS NULL,next_follow_up_at,created_at DESC LIMIT ? OFFSET ?`)
         .bind(...bindings, limit, offset).all(),
     ]);
-    return c.json({ items: rows.results.map((row) => ({ ...row, duplicate_likely: Boolean(row.duplicate_likely), notes: [] })), total: count?.total ?? 0, limit, offset });
+    const items = await Promise.all(rows.results.map((row) => openApplication(c.env, row)));
+    return c.json({ items: items.map((row) => ({ ...row, duplicate_likely: Boolean(row.duplicate_likely), notes: [] })), total: count?.total ?? 0, limit, offset });
   });
 
   app.get("/api/v1/admin/newcomers/:id", async (c) => {
@@ -133,7 +139,7 @@ export function registerNewcomerRoutes(app: App): void {
     const item = await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE id=?").bind(c.req.param("id")).first<Record<string, string>>();
     if (!item) throw new ApiProblem(404, "newcomer_not_found", "Newcomer application not found.");
     const notes = await c.env.DB.prepare("SELECT * FROM newcomer_notes WHERE application_id=? ORDER BY created_at DESC").bind(item.id).all();
-    return c.json({ ...item, duplicate_likely: await duplicate(c.env, item.id, item.email, item.mobile, item.whatsapp_mobile), notes: notes.results });
+    return c.json({ ...await openApplication(c.env, item), duplicate_likely: await duplicate(c.env, item.id, item.email, item.mobile, item.whatsapp_mobile), notes: notes.results });
   });
 
   app.patch("/api/v1/admin/newcomers/:id", async (c) => {
@@ -177,7 +183,8 @@ export function registerNewcomerRoutes(app: App): void {
         stage ?? null, now, admin.id, now, c.req.param("id"),
       ).run();
     if (!result.meta.changes) throw new ApiProblem(404, "newcomer_not_found", "Newcomer application not found.");
-    return c.json(await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE id=?").bind(c.req.param("id")).first());
+    const updated = await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE id=?").bind(c.req.param("id")).first<Record<string, unknown>>();
+    return c.json(updated ? await openApplication(c.env, updated) : null);
   });
 
   app.post("/api/v1/admin/newcomers/:id/notes", async (c) => {
@@ -246,6 +253,7 @@ export function registerNewcomerRoutes(app: App): void {
     statements.push(c.env.DB.prepare(`UPDATE newcomer_applications SET player_id=?,suggested_team_id=?,stage='closed',outcome='joined',closed_at=?,next_follow_up_at=NULL,reviewed_by_id=?,updated_at=? WHERE id=?`)
       .bind(playerId, teamId, now, admin.id, now, item.id));
     await c.env.DB.batch(statements);
-    return c.json({ application: await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE id=?").bind(item.id).first(), player_id: playerId, invitation });
+    const application = await c.env.DB.prepare("SELECT * FROM newcomer_applications WHERE id=?").bind(item.id).first<Record<string, unknown>>();
+    return c.json({ application: application ? await openApplication(c.env, application) : null, player_id: playerId, invitation });
   });
 }

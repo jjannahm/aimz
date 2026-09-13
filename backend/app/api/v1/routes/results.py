@@ -2,7 +2,7 @@ from collections import defaultdict
 from typing import Literal
 
 from fastapi import APIRouter
-from sqlalchemy import and_, case, func, or_, select
+from sqlalchemy import and_, case, func, or_, select, true
 from sqlalchemy.orm import aliased, selectinload
 
 from app.api.deps import CurrentUser, SessionDep
@@ -34,6 +34,15 @@ from app.schemas import (
     TeamRead,
 )
 from app.services.awards import AWARD_DEFINITIONS, AWARD_LABELS, award_rankings
+from app.services.team_access import (
+    assert_competition_visible,
+    assert_player_visible,
+    assert_team_visible,
+    match_scope_clause,
+    quiet_team_scope,
+    team_scope,
+    visible_competition_ids,
+)
 
 router = APIRouter()
 
@@ -73,7 +82,10 @@ async def finished_matches(session: SessionDep, competition_id: str) -> list[Mat
 
 
 @router.get("/competitions/{competition_id}/standings", response_model=list[StandingRow])
-async def standings(competition_id: str, _: CurrentUser, session: SessionDep) -> list[StandingRow]:
+async def standings(
+    competition_id: str, current_user: CurrentUser, session: SessionDep
+) -> list[StandingRow]:
+    await assert_competition_visible(session, current_user, competition_id)
     competition = await session.get(Competition, competition_id)
     if competition is None:
         raise api_error(404, "competition_not_found", "Competition not found.")
@@ -148,11 +160,18 @@ async def standings(competition_id: str, _: CurrentUser, session: SessionDep) ->
 
 @router.get("/teams/{team_id}/head-to-head/{opponent_id}", response_model=HeadToHead)
 async def head_to_head(
-    team_id: str, opponent_id: str, _: CurrentUser, session: SessionDep
+    team_id: str, opponent_id: str, current_user: CurrentUser, session: SessionDep
 ) -> HeadToHead:
-    """Every finished meeting between two teams, from the first team's side."""
+    """Every finished meeting between two teams, from the first team's side.
+
+    Held to the same rules as the fixture list: the caller must be able to open
+    the team, and only meetings they could already see are counted. Unguarded,
+    any account could read every result between any two clubs.
+    """
     if team_id == opponent_id:
         raise api_error(422, "same_team", "Pick two different teams.")
+    await assert_team_visible(session, current_user, team_id)
+    visible = match_scope_clause(await team_scope(session, current_user))
     team = await session.get(Team, team_id)
     opponent = await session.get(Team, opponent_id)
     if team is None or opponent is None:
@@ -166,6 +185,7 @@ async def head_to_head(
             await session.scalars(
                 select(Match)
                 .where(Match.status == MatchStatus.finished, pairing[0] | pairing[1])
+                .where(visible if visible is not None else true())
                 .order_by(Match.kickoff_datetime.desc())
                 .options(
                     selectinload(Match.home_team),
@@ -213,8 +233,9 @@ async def head_to_head(
 
 @router.get("/players/{player_id}/stats", response_model=PlayerSeasonSummary)
 async def player_stats(
-    player_id: str, _: CurrentUser, session: SessionDep, season: str | None = None
+    player_id: str, current_user: CurrentUser, session: SessionDep, season: str | None = None
 ) -> PlayerSeasonSummary:
+    await assert_player_visible(session, current_user, player_id)
     player = await session.get(Player, player_id)
     if player is None:
         raise api_error(404, "player_not_found", "Player not found.")
@@ -244,7 +265,7 @@ async def player_stats(
 
 @router.get("/stats/leaders", response_model=list[PlayerLeaderRow])
 async def stat_leaders(
-    _: CurrentUser,
+    current_user: CurrentUser,
     session: SessionDep,
     metric: Literal["goals", "assists", "cards"] = "goals",
     age_group: str | None = None,
@@ -274,6 +295,15 @@ async def stat_leaders(
         .where(Match.status == MatchStatus.finished)
         .group_by(Player.id)
     )
+    # A leaderboard names children and shows their photos, so a restricted
+    # account only ranks the competitions its own squads are in — the same set
+    # its standings and awards show. An administrator ranks them all.
+    scope = await quiet_team_scope(session, current_user)
+    if scope is not None:
+        competitions = await visible_competition_ids(session, scope)
+        if not competitions:
+            return []
+        query = query.where(Match.competition_id.in_(competitions))
     if age_group:
         # Filtered on the earned squad, so a player is ranked in the age group
         # she turned out in, not the one she is registered with now.
@@ -328,9 +358,10 @@ async def stat_leaders(
 
 @router.get("/competitions/{competition_id}/awards", response_model=SeasonAwards)
 async def season_awards(
-    competition_id: str, _: CurrentUser, session: SessionDep
+    competition_id: str, current_user: CurrentUser, session: SessionDep
 ) -> SeasonAwards:
     """Season honours, drawn from finished matches in one competition."""
+    await assert_competition_visible(session, current_user, competition_id)
     competition = await session.get(Competition, competition_id)
     if competition is None:
         raise api_error(404, "competition_not_found", "Competition not found.")
@@ -426,13 +457,14 @@ async def season_awards(
 async def award_detail(
     competition_id: str,
     metric: str,
-    _: CurrentUser,
+    current_user: CurrentUser,
     session: SessionDep,
     limit: int = 25,
 ) -> list[AwardRankRow]:
     """The full ranking behind one award, fetched only when a client opens it."""
     if metric not in AWARD_LABELS:
         raise api_error(404, "award_not_found", "Unknown award.")
+    await assert_competition_visible(session, current_user, competition_id)
     if await session.get(Competition, competition_id) is None:
         raise api_error(404, "competition_not_found", "Competition not found.")
     limit = max(1, min(limit, 100))
@@ -452,9 +484,10 @@ async def award_detail(
 
 @router.get("/players/{player_id}/honours", response_model=PlayerHonours)
 async def player_honours(
-    player_id: str, _: CurrentUser, session: SessionDep
+    player_id: str, current_user: CurrentUser, session: SessionDep
 ) -> PlayerHonours:
     """Everything this player has won, worked out from the record across seasons."""
+    await assert_player_visible(session, current_user, player_id)
     player = await session.get(Player, player_id)
     if player is None:
         raise api_error(404, "player_not_found", "Player not found.")
@@ -509,7 +542,7 @@ async def player_honours(
 
 @router.get("/teams/{team_id}/squad-stats", response_model=list[SquadStatRow])
 async def squad_stats(
-    team_id: str, _: CurrentUser, session: SessionDep
+    team_id: str, current_user: CurrentUser, session: SessionDep
 ) -> list[SquadStatRow]:
     """Every player on one squad with their season totals, zeros included.
 
@@ -517,6 +550,7 @@ async def squad_stats(
     list that hides them is not a squad. Goalkeeper figures (clean sheets, goals
     conceded) are worked out from the lineup and timeline of each finished match.
     """
+    await assert_team_visible(session, current_user, team_id)
     if await session.get(Team, team_id) is None:
         raise api_error(404, "team_not_found", "Team not found.")
     rows = (

@@ -5,10 +5,12 @@ import { verifyAccessToken } from "./security";
 
 export class ApiProblem extends Error {
   constructor(
-    readonly status: 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503,
+    readonly status: 400 | 401 | 403 | 404 | 409 | 413 | 422 | 429 | 503,
     readonly code: string,
     message: string,
     readonly fieldErrors?: { field: string; message: string }[],
+    /** Sent with the refusal, such as the Retry-After on a 429. */
+    readonly headers?: Record<string, string>,
   ) {
     super(message);
   }
@@ -24,6 +26,7 @@ export function errorResponse(c: Context, problem: ApiProblem): Response {
       },
     },
     problem.status,
+    problem.headers,
   );
 }
 
@@ -95,6 +98,16 @@ export function enumField<T extends string>(body: JsonObject, field: string, val
 
 function validation(field: string, message: string): ApiProblem {
   return new ApiProblem(422, "validation_error", "Check the highlighted fields.", [{ field, message }]);
+}
+
+/**
+ * Whether this Worker is the production deployment.
+ *
+ * Widened to a string first: the generated Env types only the top-level
+ * (staging) vars, so it believes ENVIRONMENT can never be anything else.
+ */
+export function isProduction(env: Env): boolean {
+  return (env.ENVIRONMENT as string) === "production";
 }
 
 export function nowIso(): string {
