@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { ApiProblem, currentUser } from "./helpers";
+import { ApiProblem, bearerSubject, currentUser, nowIso } from "./helpers";
 import type { UserRow } from "./types";
 
 const NO_LINK = "Ask an AIMZ administrator to link your account to a squad player.";
@@ -158,6 +158,94 @@ export function matchScopeClause(scope: TeamScope, alias = "m"): { sql: string; 
     sql: `(${alias}.home_team_id IN (${placeholders}) OR ${alias}.away_team_id IN (${placeholders}))`,
     values: [...scope, ...scope],
   };
+}
+
+/**
+ * One statement that answers everything the live-match poll needs to ask.
+ *
+ * The poll is the request the whole academy makes at once, and it used to
+ * spend five sequential round trips — the account, the children, their
+ * squads, the visibility check, then the match itself — before it could so
+ * much as compare an ETag. Four fifths of those polls then answered "nothing
+ * has changed". The questions have not changed; they are asked together.
+ *
+ * Every rule below is the one the general helpers apply, in the same order, so
+ * the answers are identical:
+ *
+ *   - no row at all      → the account is missing or deactivated       (401)
+ *   - past its expiry    → the account is out of time                  (401)
+ *   - a coach with no squads, a parent with no children, a player with
+ *     nobody linked, or a linked player no longer on a roster
+ *                        → the same three 403s, with the same messages
+ *   - the match is outside the scope, or does not exist
+ *                        → not found, never "forbidden"                (404)
+ *
+ * The revision comes back with the verdict, so the caller can compare an ETag
+ * *after* visibility is settled and never before. Returning a 304 to someone
+ * who may not see the match would tell them when it was last scored, which is
+ * exactly the thing the guard exists to withhold.
+ *
+ * Deliberately narrow: this serves one endpoint. The general helpers are
+ * untouched and still guard everything else.
+ */
+export async function visibleMatchRevision(c: Context<{ Bindings: Env }>, matchId: string): Promise<number> {
+  const userId = await bearerSubject(c);
+  const row = await c.env.DB.prepare(`
+    WITH me AS (
+      SELECT u.id, u.role, u.player_id, ae.expires_at
+      FROM users u LEFT JOIN account_expiry ae ON ae.user_id = u.id
+      WHERE u.id = ?1 AND u.is_active = 1
+    ),
+    scope AS (
+      -- A player answers for herself, a parent for each child, a coach for the
+      -- squads assigned to her. An administrator is not scoped at all.
+      SELECT p.team_id FROM me JOIN players p ON p.id = me.player_id WHERE me.role = 'player'
+      UNION
+      SELECT p.team_id FROM me
+        JOIN user_children uc ON uc.user_id = me.id
+        JOIN players p ON p.id = uc.player_id
+        WHERE me.role = 'parent'
+      UNION
+      SELECT ut.team_id FROM me JOIN user_teams ut ON ut.user_id = me.id WHERE me.role = 'coach'
+    )
+    SELECT
+      me.role, me.player_id, me.expires_at,
+      (SELECT COUNT(*) FROM me JOIN user_children uc ON uc.user_id = me.id) AS children,
+      (SELECT COUNT(*) FROM me JOIN user_teams ut ON ut.user_id = me.id)    AS squads,
+      (SELECT COUNT(*) FROM scope)                                          AS scoped,
+      m.revision AS revision,
+      CASE
+        WHEN m.id IS NULL THEN 0
+        WHEN me.role = 'admin' THEN 1
+        WHEN m.home_team_id IN (SELECT team_id FROM scope) THEN 1
+        WHEN m.away_team_id IN (SELECT team_id FROM scope) THEN 1
+        ELSE 0
+      END AS visible
+    FROM me LEFT JOIN matches m ON m.id = ?2
+  `).bind(userId, matchId).first<{
+    role: string; player_id: string | null; expires_at: string | null;
+    children: number; squads: number; scoped: number;
+    revision: number | null; visible: number;
+  }>();
+
+  // Missing or deactivated, exactly as `currentUser` answers it.
+  if (!row) throw new ApiProblem(401, "invalid_token", "Your account is unavailable.");
+  if (row.expires_at && row.expires_at <= nowIso()) {
+    throw new ApiProblem(401, "account_expired", "This account has expired. Ask an AIMZ administrator to renew it.");
+  }
+
+  // Then the link, in the order the general helpers refuse it.
+  if (row.role === "coach" && !row.squads) throw new ApiProblem(403, "team_assignment_required", NO_SQUAD);
+  if (row.role === "parent" && !row.children) throw new ApiProblem(403, "player_link_required", NO_LINK);
+  if (row.role === "player" && !row.player_id) throw new ApiProblem(403, "player_link_required", NO_LINK);
+  if (row.role !== "admin" && row.role !== "coach" && !row.scoped) {
+    throw new ApiProblem(403, "player_link_required", "Your linked player is no longer on the roster. Ask an AIMZ administrator for help.");
+  }
+
+  // And only then the match. Not found either way: a match outside the scope
+  // must be indistinguishable from one that was never there.
+  if (!row.visible || row.revision === null) throw new ApiProblem(404, "match_not_found", "Match not found.");
+  return row.revision;
 }
 
 /* ------------------------------------------------------------------------ *

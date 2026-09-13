@@ -212,6 +212,23 @@ export function assertNotExpired(user: UserRow): UserRow {
   return user;
 }
 
+/**
+ * Who the bearer token says this is, without asking the database.
+ *
+ * Split out so a caller that is about to read the account anyway — as part of
+ * a larger statement — does not have to read it twice. It proves the signature
+ * and the expiry of the token and nothing else: whether that account still
+ * exists, is active and is in date is a question for the row, and every caller
+ * still asks it.
+ */
+export async function bearerSubject(c: Context<{ Bindings: Env }>): Promise<string> {
+  const authorization = c.req.header("Authorization");
+  if (!authorization?.startsWith("Bearer ")) throw new ApiProblem(401, "authentication_required", "Sign in to continue.");
+  const payload = await verifyAccessToken(authorization.slice(7), c.env.JWT_SECRET);
+  if (!payload) throw new ApiProblem(401, "invalid_token", "Your session has expired. Sign in again.");
+  return payload.sub;
+}
+
 export async function currentUser(c: Context<{ Bindings: Env }>): Promise<UserRow> {
   const authorization = c.req.header("Authorization");
   if (!authorization?.startsWith("Bearer ")) throw new ApiProblem(401, "authentication_required", "Sign in to continue.");
