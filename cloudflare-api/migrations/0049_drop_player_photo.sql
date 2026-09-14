@@ -1,0 +1,22 @@
+-- Player photographs, removed from the product.
+--
+-- #227 secured them: the read route asked who was calling and opened a photo
+-- only for the player, a linked parent, a coach of that squad, or an
+-- administrator, and never cached it. That was the right fix for a feature
+-- AIMZ wanted. AIMZ does not want it — a photograph of a child is the most
+-- sensitive thing this API could hold, and the safest one is the one that was
+-- never stored — so the feature goes rather than the guard staying.
+--
+-- Nothing is lost. The upload was only ever offered for a squad crest, and no
+-- player record in either database carries a photo key: staging has 121
+-- players and none, production is empty.
+--
+-- Safe to drop rather than leave behind: `players` is created in 0001 and never
+-- rebuilt, no later migration references `photo_key`, and no index, view or
+-- foreign key is defined on it. SQLite drops a plain column like this in place.
+--
+-- This deletes the *keys*, not the objects. Anything already in R2 under
+-- `players/` is orphaned by this migration and unreachable through the API at
+-- the same moment -- the read route serves `teams/` keys only. Sweeping the
+-- bucket is a separate, manual decision.
+ALTER TABLE players DROP COLUMN photo_key;

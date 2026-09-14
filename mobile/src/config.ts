@@ -69,7 +69,16 @@ export const appConfig = {
   ),
   isStaging,
   enableMedia: parseFlag(process.env.EXPO_PUBLIC_ENABLE_MEDIA, true),
-  enablePasswordReset: parseFlag(process.env.EXPO_PUBLIC_ENABLE_PASSWORD_RESET, true),
+  /**
+   * Off unless a build says otherwise.
+   *
+   * Both reset endpoints answer 503 — there is no implementation behind them
+   * yet — so a build that forgets this variable showed a family a "reset your
+   * password" screen that could only ever fail. Defaulting to false means the
+   * flow appears when somebody switches it on, rather than whenever somebody
+   * forgets to switch it off.
+   */
+  enablePasswordReset: parseFlag(process.env.EXPO_PUBLIC_ENABLE_PASSWORD_RESET, false),
   livePollingIntervalMs: 12_000,
   requestTimeoutMs: isStaging ? 15_000 : 8_000,
   wakeTimeoutMs: 15_000,

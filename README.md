@@ -14,7 +14,7 @@ Follow [STAGING.md](STAGING.md) for the exact secret, CORS, deployment, verifica
 
 - Invite-only player registration and seeded admin accounts
 - JWT access tokens, rotating refresh sessions, SMTP password reset, password changes, logout, and in-app account deletion
-- Managed AIMZ squads and opponents, competitions, rosters, lineups, matches, and private player/team photos
+- Managed AIMZ squads and opponents, competitions, rosters, lineups, matches, and squad crests
 - Live-first event scoring with duplicate-tap protection, optimistic mobile feedback, corrections, and 12-second polling
 - Automatically computed standings and season/per-match player statistics
 - Role-gated Expo Router navigation with player and admin experiences in one app

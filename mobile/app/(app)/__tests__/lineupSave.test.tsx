@@ -49,7 +49,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 const squad = Array.from({ length: 11 }, (unused, index) => ({
   id: `p${index + 1}`, name: `Player ${index + 1}`, team_id: 'home', position: 'Midfielder',
-  jersey_number: index + 1, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '',
+  jersey_number: index + 1, is_active: true, created_at: '', updated_at: '',
 }));
 
 async function saveAValidLineup() {
@@ -97,8 +97,7 @@ const keepersSquad = [
   { id: 'm1', name: 'Eman Mid', position: 'CM' },
   { id: 'f1', name: 'Farah Front', position: 'ST' },
 ].map((entry, index) => ({
-  ...entry, team_id: 'home', jersey_number: index + 1,
-  photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '',
+  ...entry, team_id: 'home', jersey_number: index + 1, is_active: true, created_at: '', updated_at: '',
 }));
 
 describe('LineupScreen — filling the pitch', () => {

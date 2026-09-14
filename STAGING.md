@@ -10,7 +10,7 @@ This is a disposable browser preview for collaboration. Use fictional names, con
 - **Web URL:** `https://aimz-egypt-staging.pages.dev/`
 - **API URL:** `https://aimz-api-staging.shared-links.workers.dev`
 
-The Worker does not sleep after inactivity, so the preview no longer has Render cold starts. Photo upload and password-reset features remain disabled because staging intentionally excludes object storage and outbound email.
+The Worker does not sleep after inactivity, so the preview no longer has Render cold starts. Crest upload and password-reset features remain disabled because staging intentionally excludes object storage and outbound email.
 
 ## Cloudflare API
 

@@ -134,6 +134,41 @@ describe('a production deployment', () => {
     const configured = { ...testEnv, ENVIRONMENT: 'production' } as Env;
     expect((await request('/api/v1/health/ready', undefined, configured)).status).toBe(200);
   });
+
+  it('answers 503 when a rate limiter has gone missing from the config', async () => {
+    // Every limiter is optional in `Env` so `wrangler dev` runs unguarded.
+    // Deleting the `ratelimits` block would otherwise take the brakes off
+    // sign-in and invitation-code guessing in production with nothing to say so.
+    for (const limiter of ['LOGIN_BY_ACCOUNT', 'INVITE_BY_IP', 'PASSWORD_BY_ACCOUNT'] as const) {
+      const bindings = { ...testEnv, ENVIRONMENT: 'production', [limiter]: undefined } as Env;
+      const answer = await request('/api/v1/health/ready', undefined, bindings);
+      expect(answer.status, limiter).toBe(503);
+      expect(await answer.json(), limiter).toMatchObject({ detail: { code: 'service_misconfigured' } });
+    }
+  });
+
+  it('will not seed an administrator or an invitation into production', async () => {
+    const seeded = {
+      ...testEnv,
+      ENVIRONMENT: 'production',
+      ADMIN_EMAIL: 'seeded-admin@aimz.test',
+      ADMIN_PASSWORD: 'CHANGE-ME-AFTER-DEPLOY',
+      INITIAL_INVITE_CODE: `SEED-${unique()}`,
+    } as Env;
+    // Both doors that call `ensureSeeded`.
+    await request('/api/v1/auth/login', json('POST', { email: 'seeded-admin@aimz.test', password: 'CHANGE-ME-AFTER-DEPLOY' }), seeded);
+    await request('/api/v1/auth/register', json('POST', { name: 'Someone', email: `${unique()}@aimz.test`, password: 'a-good-password', invite_code: 'anything' }), seeded);
+    expect(await testEnv.DB.prepare('SELECT id FROM users WHERE email=?').bind('seeded-admin@aimz.test').first()).toBeNull();
+    expect(await testEnv.DB.prepare("SELECT id FROM registration_invites WHERE label='Initial staging invite'").first()).toBeNull();
+  });
+
+  it('still seeds outside production, which is what makes a preview usable', async () => {
+    const code = `SEED-${unique()}`;
+    const staging = { ...testEnv, ADMIN_EMAIL: 'staging-admin@aimz.test', ADMIN_PASSWORD: 'a-staging-password', INITIAL_INVITE_CODE: code } as Env;
+    await request('/api/v1/auth/login', json('POST', { email: 'staging-admin@aimz.test', password: 'a-staging-password' }), staging);
+    const admin = await testEnv.DB.prepare('SELECT role FROM users WHERE email=?').bind('staging-admin@aimz.test').first<{ role: string }>();
+    expect(admin?.role).toBe('admin');
+  });
 });
 
 /**
@@ -299,16 +334,21 @@ describe('the doors into an account', () => {
     expect((await me(tablet.access_token)).status).toBe(401);
   });
 
-  it('refuses an unauthenticated request for a player photo, and a stranger’s', async () => {
-    const { myPlayer } = await world();
-    const key = `players/${myPlayer.id}/${crypto.randomUUID()}.png`;
-    await testEnv.DB.prepare('UPDATE players SET photo_key = ? WHERE id = ?').bind(key, myPlayer.id).run();
-    const anonymous = await request(`/api/v1/media/${key}`);
-    expect(anonymous.status).toBe(401);
-    const stranger = await seedUser('coach');
-    const refused = await request(`/api/v1/media/${key}`, json('GET', undefined, stranger.token));
-    expect(refused.status).toBe(403);
-    expect(await refused.json()).toMatchObject({ detail: { code: 'media_access_denied' } });
+  /**
+   * Player photographs are gone from the product, so the guard that used to
+   * protect them is gone too. These keep them gone: an object may still sit in
+   * the bucket, and it must stay unreachable.
+   */
+  it('will not serve an object under players/, to anybody, ever', async () => {
+    const { myPlayer, admin } = await world();
+    const orphan = `players/${myPlayer.id}/${crypto.randomUUID()}.png`;
+    await testEnv.MEDIA.put(orphan, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    expect(await testEnv.MEDIA.get(orphan)).not.toBeNull();
+    // The key shape is refused before storage is touched, so it reads as a
+    // missing image rather than a forbidden one -- there is nothing to forbid.
+    for (const token of [undefined, admin.token, (await seedUser('player', myPlayer.id)).token]) {
+      expect((await request(`/api/v1/media/${orphan}`, json('GET', undefined, token))).status).toBe(404);
+    }
   });
 
   it('fails malformed and oversized JWTs closed as 401', async () => {
@@ -418,7 +458,7 @@ describe('reads held to the caller’s squad', () => {
 describe('uploaded images', () => {
   const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]);
 
-  async function presigned(admin: { token: string }, entityId: string, entity: 'team' | 'player' = 'team') {
+  async function presigned(admin: { token: string }, entityId: string, entity: 'team' = 'team') {
     const response = await request('/api/v1/media/uploads/presign', json('POST', { entity, entity_id: entityId, content_type: 'image/png' }, admin.token));
     return response.json<{ fields: Record<string, string>; object_key: string }>();
   }
@@ -456,18 +496,65 @@ describe('uploaded images', () => {
     expect(response.status).toBe(404);
   });
 
-  it('keeps player photos private while team crests remain public', async () => {
-    const { admin, myPlayer, theirPlayer, coach } = await world();
-    const slot = await presigned(admin, myPlayer.id, 'player');
+  it('will not mint an upload for a player', async () => {
+    const { admin, myPlayer } = await world();
+    const answer = await request('/api/v1/media/uploads/presign', json('POST', { entity: 'player', entity_id: myPlayer.id, content_type: 'image/png' }, admin.token));
+    expect(answer.status).toBe(422);
+  });
+
+  it('carries no photo field on a player, anywhere a player is returned', async () => {
+    const { admin, myPlayer } = await world();
+    const fields = ['photo_key', 'photo_url', 'photo'];
+    const patched = await (await request(`/api/v1/players/${myPlayer.id}`, json('PATCH', { name: 'Aya Nabil' }, admin.token))).json<Record<string, unknown>>();
+    for (const field of fields) expect(patched).not.toHaveProperty(field);
+
+    const list = await (await request('/api/v1/players', json('GET', undefined, admin.token))).json<{ items: Record<string, unknown>[] }>();
+    for (const row of list.items) for (const field of fields) expect(row).not.toHaveProperty(field);
+
+    const stats = await (await request(`/api/v1/players/${myPlayer.id}/stats`, json('GET', undefined, admin.token))).json<{ player: Record<string, unknown> }>();
+    for (const field of fields) expect(stats.player).not.toHaveProperty(field);
+
+    const accounts = await (await request('/api/v1/admin/users', json('GET', undefined, admin.token))).json<{ items: { player: Record<string, unknown> | null }[] }>();
+    for (const row of accounts.items) if (row.player) for (const field of fields) expect(row.player).not.toHaveProperty(field);
+  });
+
+  it('ignores a photo_key somebody sends anyway', async () => {
+    const { admin, myPlayer } = await world();
+    const answer = await request(`/api/v1/players/${myPlayer.id}`, json('PATCH', { photo_key: `players/${myPlayer.id}/${crypto.randomUUID()}.png` }, admin.token));
+    expect(answer.status).toBe(200);
+    expect(await answer.json()).not.toHaveProperty('photo_key');
+  });
+
+  it('still serves a team crest, publicly and cached', async () => {
+    const { admin, mine } = await world();
+    const slot = await presigned(admin, mine.id, 'team');
     expect((await upload(slot.fields, png)).status).toBe(204);
-    await testEnv.DB.prepare('UPDATE players SET photo_key=? WHERE id=?').bind(slot.object_key, myPlayer.id).run();
-    const path = `/api/v1/media/${slot.object_key}`;
-    expect((await request(path)).status).toBe(401);
-    expect((await request(path, json('GET', undefined, (await seedUser('player', theirPlayer.id)).token))).status).toBe(403);
-    const own = await request(path, json('GET', undefined, (await seedUser('player', myPlayer.id)).token));
-    expect(own.status).toBe(200);
-    expect(own.headers.get('Cache-Control')).toBe('no-store');
-    expect((await request(path, json('GET', undefined, coach.token))).status).toBe(200);
+    const answer = await request(`/api/v1/media/${slot.object_key}`);
+    expect(answer.status).toBe(200);
+    expect(answer.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+  });
+
+  it('sweeps a crest out of storage when it is replaced or its squad is deleted', async () => {
+    const { admin, mine } = await world();
+    const first = await presigned(admin, mine.id, 'team');
+    await upload(first.fields, png);
+    const second = await presigned(admin, mine.id, 'team');
+    await upload(second.fields, png);
+    await request(`/api/v1/teams/${mine.id}`, json('PATCH', { logo_key: first.object_key }, admin.token));
+    await request(`/api/v1/teams/${mine.id}`, json('PATCH', { logo_key: second.object_key }, admin.token));
+    expect(await testEnv.MEDIA.get(first.object_key)).toBeNull();
+    expect(await testEnv.MEDIA.get(second.object_key)).not.toBeNull();
+  });
+
+  it('never lets one squad delete another squad’s crest', async () => {
+    const { admin, mine, theirs } = await world();
+    const hers = await presigned(admin, theirs.id, 'team');
+    await upload(hers.fields, png);
+    await testEnv.DB.prepare('UPDATE teams SET logo_key=? WHERE id=?').bind(hers.object_key, mine.id).run();
+    const ours = await presigned(admin, mine.id, 'team');
+    await upload(ours.fields, png);
+    await request(`/api/v1/teams/${mine.id}`, json('PATCH', { logo_key: ours.object_key }, admin.token));
+    expect(await testEnv.MEDIA.get(hers.object_key)).not.toBeNull();
   });
 });
 

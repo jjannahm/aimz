@@ -184,8 +184,7 @@ describe('LiveScoringScreen — Cards', () => {
 });
 
 const scorer = {
-  id: 'p-1', name: 'Nour Adel', team_id: 'home', position: 'Defender', jersey_number: 4,
-  photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '',
+  id: 'p-1', name: 'Nour Adel', team_id: 'home', position: 'Defender', jersey_number: 4, is_active: true, created_at: '', updated_at: '',
 };
 
 describe('LiveScoringScreen — own goals and missed penalties', () => {
@@ -264,7 +263,7 @@ describe('LiveScoringScreen — own goals and missed penalties', () => {
 });
 
 describe('LiveScoringScreen — who can be substituted', () => {
-  const bench = { id: 'bench-1', name: 'Malak Sherif', team_id: 'home', position: 'Forward', jersey_number: 12, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' };
+  const bench = { id: 'bench-1', name: 'Malak Sherif', team_id: 'home', position: 'Forward', jersey_number: 12, is_active: true, created_at: '', updated_at: '' };
   const lineup = [
     { id: 'l1', match_id: 'match-1', player_id: 'p-1', team_id: 'home', is_starter: true, is_captain: false, position: 'Forward', jersey_number: 9 },
     { id: 'l2', match_id: 'match-1', player_id: 'bench-1', team_id: 'home', is_starter: false, is_captain: false, position: 'Forward', jersey_number: 12 },
@@ -306,8 +305,8 @@ describe('LiveScoringScreen — who can be substituted', () => {
 });
 
 
-const onPitch = { id: 'p-on', name: 'Aya Nabil', team_id: 'home', position: 'Defender', jersey_number: 6, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' };
-const benched = { id: 'p-off', name: 'Hana Saleh', team_id: 'home', position: 'Forward', jersey_number: 18, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' };
+const onPitch = { id: 'p-on', name: 'Aya Nabil', team_id: 'home', position: 'Defender', jersey_number: 6, is_active: true, created_at: '', updated_at: '' };
+const benched = { id: 'p-off', name: 'Hana Saleh', team_id: 'home', position: 'Forward', jersey_number: 18, is_active: true, created_at: '', updated_at: '' };
 const named = (playerId: string, isStarter: boolean) => ({ player_id: playerId, team_id: 'home', is_starter: isStarter, is_captain: false, position: null, jersey_number: null });
 
 describe('LiveScoringScreen — who can be credited with an assist', () => {

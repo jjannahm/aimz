@@ -175,12 +175,10 @@ export function publicPlayer(player: PlayerRow | null): PlayerRead | null {
     team_id: player.team_id,
     position: player.position,
     jersey_number: player.jersey_number,
-    photo_key: player.photo_key,
     is_active: Boolean(player.is_active),
     age: ageFromBirthDate(player.date_of_birth),
     created_at: player.created_at,
     updated_at: player.updated_at,
-    photo_url: mediaPath(player.photo_key),
   };
 }
 

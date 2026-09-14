@@ -14,7 +14,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow AIMZ Egypt to choose player and team photos.",
+          "photosPermission": "Allow AIMZ Egypt to choose a squad crest.",
           "cameraPermission": false,
           "microphonePermission": false
         }

@@ -29,7 +29,7 @@ import {
 import type { TeamScope } from "./team-access";
 import type { CompetitionRow, CompetitionStatus, JsonObject, MatchRow, MatchStatus, PlayerRow, TeamRow } from "./types";
 import { MatchPhaseTransitionError, transitionLegacyStatus } from "./match-clock";
-import { MEDIA_KEY } from "./media";
+import { MEDIA_KEY, forgetMedia } from "./media";
 import { isOpponentOnly } from "./scoring-rules";
 
 type App = Hono<{ Bindings: Env }>;
@@ -176,7 +176,7 @@ const ACADEMY_TEAM_FIELDS = ["is_aimz", "is_active", "competition_id", "competit
  * be one of the keys this API issues for an upload. Arbitrary text would have
  * pointed a squad's crest at anything in the bucket.
  */
-function mediaKeyField(body: Record<string, unknown>, field: "logo_key" | "photo_key", current: string | null, pattern: RegExp): string | null {
+function mediaKeyField(body: Record<string, unknown>, field: "logo_key", current: string | null, pattern: RegExp): string | null {
   const value = optionalNullableText(body, field, current, 512);
   if (value === null || value === current || pattern.test(value)) return value;
   throw new ApiProblem(422, "validation_error", "Check the highlighted fields.", [{ field, message: "Upload the image first, then use the key it returns." }]);
@@ -272,6 +272,8 @@ export function registerDomainRoutes(app: App): void {
     // Leaving a competition leaves its group with it.
     const groupId = team.competition_id === current.competition_id ? team.competition_group_id : null;
     await c.env.DB.prepare("UPDATE teams SET name=?, branch=?, squad_code=?, age_group=?, season=?, is_aimz=?, is_active=?, logo_key=?, badge_style=?, coach=?, assistant_coach=?, competition_id=?, competition_group_id=?, updated_at=? WHERE id=?").bind(team.name, team.branch, team.squad_code, team.age_group, team.season, team.is_aimz, team.is_active, team.logo_key, team.badge_style, team.coach, team.assistant_coach, team.competition_id, groupId, team.updated_at, team.id).run();
+    // The crest this one replaced, once the row that referred to it is gone.
+    if (current.logo_key && current.logo_key !== team.logo_key) await forgetMedia(c.env, current.logo_key, team.id);
     return c.json(publicTeam({ ...team, competition_group_id: groupId }));
   });
   app.delete("/api/v1/teams/:id", async (c) => deleteRestricted(c, "teams", "team", c.req.param("id")));
@@ -434,10 +436,10 @@ export function registerDomainRoutes(app: App): void {
   });
   app.post("/api/v1/players", async (c) => {
     const { scope } = await managingUser(c); const body = await jsonObject(c); const now = nowIso();
-    const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: enumField(body, "position", POSITION_CODES), jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, photo_key: mediaKeyField(body, "photo_key", null, MEDIA_KEY.player), date_of_birth: null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
+    const player: PlayerRow = { id: crypto.randomUUID(), name: stringField(body, "name", { min: 2, max: 160 })!, team_id: stringField(body, "team_id", { min: 1, max: 36 })!, position: enumField(body, "position", POSITION_CODES), jersey_number: numberField(body, "jersey_number", { optional: true, nullable: true, min: 0, max: 99 }) ?? null, date_of_birth: null, is_active: booleanField(body, "is_active", true) ? 1 : 0, created_at: now, updated_at: now };
     assertCanManageTeam(scope, player.team_id);
     await requireTeam(c.env, player.team_id);
-    try { await c.env.DB.prepare("INSERT INTO players (id, name, team_id, position, jersey_number, photo_key, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, now, now).run(); }
+    try { await c.env.DB.prepare("INSERT INTO players (id, name, team_id, position, jersey_number, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.is_active, now, now).run(); }
     catch { throw new ApiProblem(409, "jersey_conflict", "That jersey number is already used by this team."); }
     return c.json(publicPlayer(player), 201);
   });
@@ -484,7 +486,6 @@ export function registerDomainRoutes(app: App): void {
         team_id: teamId,
         position: enumField(item, "position", POSITION_CODES),
         jersey_number: jersey,
-        photo_key: null,
         date_of_birth: null,
         is_active: 1,
         created_at: now,
@@ -492,8 +493,8 @@ export function registerDomainRoutes(app: App): void {
       } satisfies PlayerRow;
     });
     await c.env.DB.batch(players.map((player) => c.env.DB
-      .prepare("INSERT INTO players (id, name, team_id, position, jersey_number, photo_key, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-      .bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, now, now)));
+      .prepare("INSERT INTO players (id, name, team_id, position, jersey_number, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .bind(player.id, player.name, player.team_id, player.position, player.jersey_number, player.is_active, now, now)));
     return c.json(players.map(publicPlayer), 201);
   });
 
@@ -504,8 +505,8 @@ export function registerDomainRoutes(app: App): void {
     // Both ends of a move are checked: a coach cannot post a player out of
     // their squad into one they do not run, or claim one out of another.
     const teamId = stringField(body, "team_id", { optional: true, min: 1, max: 36 }) ?? current.team_id; assertCanManageTeam(scope, teamId); await requireTeam(c.env, teamId);
-    const player: PlayerRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, team_id: teamId, position: body.position === undefined ? current.position : enumField(body, "position", POSITION_CODES), jersey_number: body.jersey_number === undefined ? current.jersey_number : numberField(body, "jersey_number", { nullable: true, min: 0, max: 99 }) ?? null, photo_key: mediaKeyField(body, "photo_key", current.photo_key, MEDIA_KEY.player), is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active, updated_at: nowIso() };
-    try { await c.env.DB.prepare("UPDATE players SET name=?, team_id=?, position=?, jersey_number=?, photo_key=?, is_active=?, updated_at=? WHERE id=?").bind(player.name, player.team_id, player.position, player.jersey_number, player.photo_key, player.is_active, player.updated_at, player.id).run(); }
+    const player: PlayerRow = { ...current, name: stringField(body, "name", { optional: true, min: 2, max: 160 }) ?? current.name, team_id: teamId, position: body.position === undefined ? current.position : enumField(body, "position", POSITION_CODES), jersey_number: body.jersey_number === undefined ? current.jersey_number : numberField(body, "jersey_number", { nullable: true, min: 0, max: 99 }) ?? null, is_active: typeof body.is_active === "boolean" ? (body.is_active ? 1 : 0) : current.is_active, updated_at: nowIso() };
+    try { await c.env.DB.prepare("UPDATE players SET name=?, team_id=?, position=?, jersey_number=?, is_active=?, updated_at=? WHERE id=?").bind(player.name, player.team_id, player.position, player.jersey_number, player.is_active, player.updated_at, player.id).run(); }
     catch { throw new ApiProblem(409, "jersey_conflict", "That jersey number is already used by this team."); }
     return c.json(publicPlayer(player));
   });
@@ -656,6 +657,10 @@ function optionalNullableText(body: Record<string, unknown>, field: string, curr
 }
 
 async function deleteRestricted(c: Context<{ Bindings: Env }>, table: "teams" | "competitions" | "players", label: string, id: string): Promise<Response> {
+  // Read before the row goes, so the crest it points at can be swept up after.
+  const crest = table === "teams"
+    ? await c.env.DB.prepare("SELECT logo_key FROM teams WHERE id = ?").bind(id).first<{ logo_key: string | null }>()
+    : null;
   if (table === "players") {
     // A coach may remove a player from the squad they run. Deleting a squad
     // or a competition stays with the academy: both reach far past one team.
@@ -669,6 +674,9 @@ async function deleteRestricted(c: Context<{ Bindings: Env }>, table: "teams" | 
   try {
     const result = await c.env.DB.prepare(`DELETE FROM ${table} WHERE id = ?`).bind(id).run();
     if (!result.meta.changes) throw new ApiProblem(404, `${label}_not_found`, `${label[0].toUpperCase()}${label.slice(1)} not found.`);
+    // Only once the row is actually gone: a delete refused for being referenced
+    // elsewhere must not take the badge with it.
+    if (crest?.logo_key) await forgetMedia(c.env, crest.logo_key, id);
   } catch (error) {
     if (error instanceof ApiProblem) throw error;
     throw new ApiProblem(409, `${label}_in_use`, `This ${label} is referenced by other records. Archive it instead.`);

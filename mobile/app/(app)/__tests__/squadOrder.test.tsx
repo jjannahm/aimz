@@ -15,7 +15,7 @@ function wrapper({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-const player = (id: string, name: string, position: string) => ({ id, name, position, team_id: 't-1', jersey_number: 1, photo_key: null, photo_url: null });
+const player = (id: string, name: string, position: string) => ({ id, name, position, team_id: 't-1', jersey_number: 1 });
 
 /**
  * A squad list is read the way a team sheet is, so the order is worth pinning

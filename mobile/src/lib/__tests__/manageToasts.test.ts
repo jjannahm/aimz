@@ -31,7 +31,7 @@ describe('manageToastMessage', () => {
   });
 
   it('never leaves a section without wording', () => {
-    const entities = ['team', 'opponent', 'competition', 'player', 'players', 'match', 'invite', 'announcement', 'schedule', 'session', 'series', 'photo', 'roster', 'result'] as const;
+    const entities = ['team', 'opponent', 'competition', 'player', 'players', 'match', 'invite', 'announcement', 'schedule', 'session', 'series', 'crest', 'roster', 'result'] as const;
     for (const entity of entities) {
       for (const action of ['created', 'saved', 'deleted'] as const) {
         const message = manageToastMessage(entity, action);

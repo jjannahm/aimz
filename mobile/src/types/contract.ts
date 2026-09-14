@@ -51,7 +51,7 @@ export interface TeamRead {
 
 export interface PlayerRead {
   id: string; name: string; team_id: string; position: string; jersey_number: number | null;
-  photo_key: string | null; photo_url: string | null; is_active: boolean; age?: number | null;
+  is_active: boolean; age?: number | null;
   created_at: string; updated_at: string;
 }
 

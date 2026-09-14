@@ -412,5 +412,5 @@ export const api = {
   playerPersonalDetails: (id: string) => request<PlayerPersonalDetails>(`/api/v1/players/${id}/personal-details`),
   playerFinancials: (id: string) => request<PlayerFinancials>(`/api/v1/players/${id}/financials`),
   savePlayerRosterDetails: (id: string, payload: { date_of_birth: string | null; contacts: { name: string; relationship: string | null; email: string | null; phone: string | null }[] }) => request<PlayerRosterDetails>(`/api/v1/players/${id}/contacts`, { method: 'PUT', body: payload }),
-  presign: (entity: 'team' | 'player', entity_id: string, content_type: 'image/jpeg' | 'image/png' | 'image/webp') => request<PresignResponse>('/api/v1/media/uploads/presign', { method: 'POST', body: { entity, entity_id, content_type } }),
+  presign: (entity: 'team', entity_id: string, content_type: 'image/jpeg' | 'image/png' | 'image/webp') => request<PresignResponse>('/api/v1/media/uploads/presign', { method: 'POST', body: { entity, entity_id, content_type } }),
 };

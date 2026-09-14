@@ -104,8 +104,8 @@ describe('MatchDetailScreen — lineups', () => {
   beforeEach(() => {
     jest.mocked(api.players).mockResolvedValue({
       items: [
-        { id: 'starter-1', name: 'Nour Hassan', team_id: 'home', position: 'Forward', jersey_number: 9, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' },
-        { id: 'sub-1', name: 'Malak Sherif', team_id: 'home', position: 'Goalkeeper', jersey_number: 2, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' },
+        { id: 'starter-1', name: 'Nour Hassan', team_id: 'home', position: 'Forward', jersey_number: 9, is_active: true, created_at: '', updated_at: '' },
+        { id: 'sub-1', name: 'Malak Sherif', team_id: 'home', position: 'Goalkeeper', jersey_number: 2, is_active: true, created_at: '', updated_at: '' },
       ],
       total: 2, limit: 100, offset: 0,
     });
@@ -137,8 +137,8 @@ describe('MatchDetailScreen — timeline', () => {
   beforeEach(() => {
     jest.mocked(api.players).mockResolvedValue({
       items: [
-        { id: 'p1', name: 'Amina Adel', team_id: 'home', position: 'Forward', jersey_number: 9, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' },
-        { id: 'p2', name: 'Aya Nabil', team_id: 'home', position: 'Midfielder', jersey_number: 6, photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '' },
+        { id: 'p1', name: 'Amina Adel', team_id: 'home', position: 'Forward', jersey_number: 9, is_active: true, created_at: '', updated_at: '' },
+        { id: 'p2', name: 'Aya Nabil', team_id: 'home', position: 'Midfielder', jersey_number: 6, is_active: true, created_at: '', updated_at: '' },
       ],
       total: 2, limit: 100, offset: 0,
     });
