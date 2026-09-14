@@ -4,7 +4,23 @@ import { timingSafeEqual } from "node:crypto";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-const PASSWORD_ITERATIONS = 100_000;
+
+/**
+ * How much work a stolen hash costs to guess against.
+ *
+ * OWASP asks 600,000 rounds of PBKDF2-HMAC-SHA256. Cloudflare's production
+ * runtime refuses any one PBKDF2 call above 100,000 — and local workerd does not
+ * enforce that ceiling, so no test run here would notice a larger count — so the
+ * work is done in stages of 100,000, each stage's output the next stage's key. A
+ * guess has to pay for every round of every stage; none can be skipped.
+ *
+ * Hashes made before the stages (`pbkdf2_sha256$100000$…`) still verify, and are
+ * rewritten in the staged form at their account's next successful sign-in.
+ */
+export const PBKDF2_ROUNDS_PER_CALL = 100_000;
+const PASSWORD_STAGES = 6;
+const STAGED_SCHEME = "pbkdf2_sha256_staged";
+const STAGED_WORK = `${PASSWORD_STAGES}x${PBKDF2_ROUNDS_PER_CALL}`;
 
 export function toBase64Url(bytes: Uint8Array): string {
   let binary = "";
@@ -27,8 +43,8 @@ function randomBytes(length: number): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
-async function derivePassword(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<Uint8Array<ArrayBuffer>> {
-  const key = await crypto.subtle.importKey("raw", encoder.encode(password), "PBKDF2", false, ["deriveBits"]);
+async function pbkdf2(secret: Uint8Array<ArrayBuffer>, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<Uint8Array<ArrayBuffer>> {
+  const key = await crypto.subtle.importKey("raw", secret, "PBKDF2", false, ["deriveBits"]);
   const bits = await crypto.subtle.deriveBits(
     { name: "PBKDF2", hash: "SHA-256", salt, iterations },
     key,
@@ -37,20 +53,43 @@ async function derivePassword(password: string, salt: Uint8Array<ArrayBuffer>, i
   return new Uint8Array(bits);
 }
 
+async function stagedDerive(password: string, salt: Uint8Array<ArrayBuffer>, stages: number): Promise<Uint8Array<ArrayBuffer>> {
+  let derived: Uint8Array<ArrayBuffer> = encoder.encode(password);
+  for (let stage = 0; stage < stages; stage += 1) derived = await pbkdf2(derived, salt, PBKDF2_ROUNDS_PER_CALL);
+  return derived;
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
-  const derived = await derivePassword(password, salt, PASSWORD_ITERATIONS);
-  return `pbkdf2_sha256$${PASSWORD_ITERATIONS}$${toBase64Url(salt)}$${toBase64Url(derived)}`;
+  const derived = await stagedDerive(password, salt, PASSWORD_STAGES);
+  return `${STAGED_SCHEME}$${STAGED_WORK}$${toBase64Url(salt)}$${toBase64Url(derived)}`;
 }
 
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
-  const [scheme, rawIterations, rawSalt, rawHash] = stored.split("$");
-  const iterations = Number(rawIterations);
-  if (scheme !== "pbkdf2_sha256" || !Number.isInteger(iterations) || !rawSalt || !rawHash) return false;
-  const actual = await derivePassword(password, fromBase64Url(rawSalt), iterations);
+  const [scheme, work, rawSalt, rawHash] = stored.split("$");
+  if (!rawSalt || !rawHash) return false;
+  let actual: Uint8Array<ArrayBuffer>;
+  if (scheme === STAGED_SCHEME) {
+    const [stages, rounds] = (work ?? "").split("x").map(Number);
+    if (!Number.isInteger(stages) || stages < 1 || stages > 2 * PASSWORD_STAGES || rounds !== PBKDF2_ROUNDS_PER_CALL) return false;
+    actual = await stagedDerive(password, fromBase64Url(rawSalt), stages);
+  } else if (scheme === "pbkdf2_sha256") {
+    // A single call, so a count the production runtime would refuse is refused
+    // here instead of failing the sign-in with a server error.
+    const iterations = Number(work);
+    if (!Number.isInteger(iterations) || iterations < 1 || iterations > PBKDF2_ROUNDS_PER_CALL) return false;
+    actual = await pbkdf2(encoder.encode(password), fromBase64Url(rawSalt), iterations);
+  } else {
+    return false;
+  }
   const expected = fromBase64Url(rawHash);
   if (actual.byteLength !== expected.byteLength) return false;
   return timingSafeEqual(actual, expected);
+}
+
+export function passwordNeedsRehash(stored: string): boolean {
+  const [scheme, work] = stored.split("$");
+  return scheme !== STAGED_SCHEME || work !== STAGED_WORK;
 }
 
 let decoyHash: Promise<string> | undefined;
@@ -59,7 +98,7 @@ let decoyHash: Promise<string> | undefined;
  * A hash nobody knows the password to, for signing in to an account that does
  * not exist.
  *
- * Verifying against it costs the same hundred thousand rounds as a real
+ * Verifying against it costs the same configured work as a real
  * account, so a missing email is refused in the time a wrong password would
  * be, and the response time cannot be used to find out who has an account.
  */
@@ -77,8 +116,9 @@ export function newToken(): string {
   return toBase64Url(randomBytes(32));
 }
 
-interface AccessPayload {
+export interface AccessPayload {
   sub: string;
+  sid: string;
   role: UserRole;
   type: "access";
   exp: number;
@@ -105,12 +145,13 @@ const ROLES = new Set<string>(["admin", "player", "parent", "coach"]);
 export async function createAccessToken(
   userId: string,
   role: UserRole,
+  sessionFamilyId: string,
   secret: string,
   expiresIn: number,
 ): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = toBase64Url(encoder.encode(JSON.stringify({ alg: "HS256", typ: "JWT" })));
-  const payload: AccessPayload = { sub: userId, role, type: "access", exp: now + expiresIn, iat: now };
+  const payload: AccessPayload = { sub: userId, sid: sessionFamilyId, role, type: "access", exp: now + expiresIn, iat: now };
   const body = toBase64Url(encoder.encode(JSON.stringify(payload)));
   const signingInput = `${header}.${body}`;
   const key = await importHmacKey(secret, ["sign"]);
@@ -119,27 +160,31 @@ export async function createAccessToken(
 }
 
 export async function verifyAccessToken(token: string, secret: string): Promise<AccessPayload | null> {
-  const parts = token.split(".");
-  if (parts.length !== 3) return null;
-  const [header, payloadPart, signaturePart] = parts;
-  const key = await importHmacKey(secret, ["verify"]);
-  const valid = await crypto.subtle.verify(
-    "HMAC",
-    key,
-    fromBase64Url(signaturePart).buffer,
-    encoder.encode(`${header}.${payloadPart}`),
-  );
-  if (!valid) return null;
   try {
+    if (token.length > 4096) return null;
+    const parts = token.split(".");
+    if (parts.length !== 3 || parts.some((part) => !part || !/^[A-Za-z0-9_-]+$/u.test(part))) return null;
+    const [headerPart, payloadPart, signaturePart] = parts;
+    const header: unknown = JSON.parse(decoder.decode(fromBase64Url(headerPart)));
+    if (!header || typeof header !== "object" || (header as { alg?: unknown }).alg !== "HS256" || (header as { typ?: unknown }).typ !== "JWT") return null;
+    const key = await importHmacKey(secret, ["verify"]);
+    const valid = await crypto.subtle.verify("HMAC", key, fromBase64Url(signaturePart).buffer, encoder.encode(`${headerPart}.${payloadPart}`));
+    if (!valid) return null;
     const value: unknown = JSON.parse(decoder.decode(fromBase64Url(payloadPart)));
     if (!value || typeof value !== "object") return null;
     const payload = value as Partial<AccessPayload>;
     if (
       typeof payload.sub !== "string" ||
+      !payload.sub || payload.sub.length > 128 ||
+      typeof payload.sid !== "string" ||
+      !payload.sid || payload.sid.length > 128 ||
       !ROLES.has(payload.role as string) ||
       payload.type !== "access" ||
-      typeof payload.exp !== "number" ||
-      payload.exp <= Math.floor(Date.now() / 1000)
+      typeof payload.iat !== "number" || !Number.isInteger(payload.iat) ||
+      typeof payload.exp !== "number" || !Number.isInteger(payload.exp) ||
+      payload.iat > Math.floor(Date.now() / 1000) + 60 ||
+      payload.exp <= Math.floor(Date.now() / 1000) ||
+      payload.exp <= payload.iat || payload.exp - payload.iat > 3600
     ) return null;
     return payload as AccessPayload;
   } catch {

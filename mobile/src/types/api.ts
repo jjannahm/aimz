@@ -315,6 +315,7 @@ export type TrainingMetric = {
 export type TrainingPerformance = {
   metrics: TrainingMetric[];
   items: { player: Player; values: Record<string, number> }[];
+  summary: { metric_id: string; count: number; average: number | null }[];
 };
 
 /** A player's training record: what they attended and how they were marked. */
@@ -464,6 +465,10 @@ export type TrainingAvailability = {
   note: string | null;
   created_at: string;
   updated_at: string;
+};
+export type TrainingAvailabilityResponse = {
+  items: TrainingAvailability[];
+  summary: { going: number; not_going: number; unanswered: number };
 };
 
 /**

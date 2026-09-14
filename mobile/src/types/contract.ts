@@ -19,7 +19,10 @@ export interface UserRead {
 }
 
 export interface TokenResponse {
-  access_token: string; refresh_token: string; token_type: 'bearer'; expires_in: number; user: UserRead;
+  access_token: string;
+  /** Null when the API keeps a browser's refresh token in an HttpOnly cookie instead. */
+  refresh_token: string | null;
+  token_type: 'bearer'; expires_in: number; user: UserRead;
 }
 
 export interface InviteRead {

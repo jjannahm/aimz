@@ -72,6 +72,14 @@ app.use("*", async (c, next) => {
   }
   await next();
   applySecurityHeaders(c);
+  // API answers are about somebody's squad, family or account, so nothing keeps
+  // them unless the handler has said how: the live poll's `private, no-cache` is
+  // what lets it answer 304, and a shared report may be held privately for five
+  // minutes. Crests are public and served with their own long-lived policy.
+  const publicTeamMedia = c.req.method === "GET" && c.req.path.startsWith("/api/v1/media/teams/");
+  if (c.req.path.startsWith("/api/") && !publicTeamMedia && !c.res.headers.has("Cache-Control")) {
+    c.res.headers.set("Cache-Control", "no-store");
+  }
 });
 
 app.use("/api/*", async (c, next) => cors({
@@ -82,6 +90,7 @@ app.use("/api/*", async (c, next) => cors({
   allowHeaders: ["Authorization", "Content-Type", "If-None-Match"],
   exposeHeaders: ["ETag", "Retry-After"],
   allowMethods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+  credentials: true,
   maxAge: 86400,
 })(c, next));
 

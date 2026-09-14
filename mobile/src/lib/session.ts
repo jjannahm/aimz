@@ -66,6 +66,9 @@ export const sessionStore = {
     return currentSession;
   },
   async save(session: TokenResponse) {
+    // Kept exactly as the API sent it. Where the API holds a browser's refresh
+    // token in an HttpOnly cookie it sends none, so none is written here; where
+    // it cannot, the token stays, or the web app could never refresh at all.
     currentSession = session;
     await writeSession(JSON.stringify(session));
     emit();

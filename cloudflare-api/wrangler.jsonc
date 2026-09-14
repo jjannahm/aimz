@@ -13,6 +13,11 @@
     "ADMIN_NAME": "AIMZ Staging Admin",
     "ACCESS_TOKEN_SECONDS": "900",
     "REFRESH_TOKEN_DAYS": "30",
+    // "on" keeps the web app's refresh token in an HttpOnly cookie, out of reach
+    // of scripts on the page. Only once the web app and this API are one site:
+    // pages.dev and workers.dev are two, Safari refuses the cookie there as
+    // third-party, and every Safari session would end at its first refresh.
+    "REFRESH_COOKIE": "off",
     "MEDIA_MAX_BYTES": "5242880"
   },
   // Nightly, a little after 3am Cairo: the activity log keeps a month, and the
@@ -21,7 +26,7 @@
     "crons": ["0 1 * * *"]
   },
   // Sign-in and refresh are the two doors that open without a session, and
-  // the first of them runs 100,000 rounds of PBKDF2 per attempt. The account
+  // the first of them runs 600,000 rounds of PBKDF2 per attempt. The account
   // buckets are tight because one account being tried repeatedly is either a
   // forgotten password or an attack. The address buckets are deliberately
   // loose: a whole squad's parents behind one school's wifi, or an Egyptian
@@ -81,18 +86,16 @@
       "workers_dev": true,
       "vars": {
         "ENVIRONMENT": "production",
-        // Left empty until the production domain is decided. Empty fails
-        // closed: the CORS handler in src/index.ts hands back FRONTEND_ORIGIN
-        // when an origin does not match, so "" refuses every cross-origin
-        // caller, and TURNSTILE_HOSTNAMES splits to a list nothing matches. A
-        // staging value here would be far worse than a blank one -- the
-        // production API would quietly serve the staging site.
-        "FRONTEND_ORIGIN": "",
-        "PUBLIC_FORM_ORIGIN": "",
-        "TURNSTILE_HOSTNAMES": "",
+        // The production Pages project. Replace all three together if the web
+        // app moves to a custom domain -- and serve this API from the same
+        // domain, which is what would let REFRESH_COOKIE be turned on.
+        "FRONTEND_ORIGIN": "https://aimz-egypt-production.pages.dev",
+        "PUBLIC_FORM_ORIGIN": "https://aimz-egypt-production.pages.dev",
+        "TURNSTILE_HOSTNAMES": "aimz-egypt-production.pages.dev",
         "ADMIN_NAME": "AIMZ Egypt Admin",
         "ACCESS_TOKEN_SECONDS": "900",
         "REFRESH_TOKEN_DAYS": "30",
+        "REFRESH_COOKIE": "off",
         "MEDIA_MAX_BYTES": "5242880"
       },
       "triggers": {

@@ -1,6 +1,6 @@
 import { appConfig } from '@/src/config';
 import { sessionStore } from '@/src/lib/session';
-import type { AdminAccount, StaffRole, Announcement, CoachAccount, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceRequestContext, AttendanceStatus, FeeCharge, FeeGeneration, FeeInvoice, FeePlan, FeeSummary, InvoiceRun, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, TrainingAwardRank, TrainingAwards, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, MatchReport, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SharedInvoice, SharedMatchReport, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingSession, User, UserRole } from '@/src/types/api';
+import type { AdminAccount, StaffRole, Announcement, CoachAccount, KitOrder, KitOrderPayload, KitStatus, InviteContext, Newcomer, NewcomerApplicationPayload, NewcomerOutcome, NewcomerStage, AttendanceRequest, AttendanceRequestContext, AttendanceStatus, FeeCharge, FeeGeneration, FeeInvoice, FeePlan, FeeSummary, InvoiceRun, PaymentMethod, PlayerReport, PlayerTrainingStats, SharedReport, TrainingMetric, TrainingPerformance, TrainingRegister, TrainingAwardRank, TrainingAwards, AuditEntry, AwardMetric, AwardRank, Bracket, CalendarFeed, Competition, CompetitionGroup, HeadToHead, InviteKind, LeaderMetric, LineupEntry, LinkedChild, LiveMatchSnapshot, Match, MatchEvent, MatchPhaseAction, MatchReport, Page, Player, PlayerLeaderRow, PlayerHonours, PlayerMatchStat, PlayerFinancials, PlayerPersonalDetails, PlayerRosterDetails, PlayerSeasonSummary, PresignResponse, RegistrationInvite, SeasonAwards, SharedInvoice, SharedMatchReport, SquadStat, StandingRow, Team, TokenResponse, TrainingAvailability, TrainingAvailabilityResponse, TrainingSession, User, UserRole } from '@/src/types/api';
 
 type RequestOptions = Omit<RequestInit, 'body'> & {
   body?: unknown;
@@ -101,7 +101,7 @@ async function refreshSession(): Promise<TokenResponse> {
   if (!refreshPromise) {
     refreshPromise = request<TokenResponse>('/api/v1/auth/refresh', {
       method: 'POST',
-      body: { refresh_token: session.refresh_token },
+      body: session.refresh_token ? { refresh_token: session.refresh_token } : {},
       authenticated: false,
     })
       .then(async (next) => {
@@ -134,6 +134,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
       ...options,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       headers,
+      credentials: 'include',
       signal: controller.signal,
     });
     if (response.status === 401 && authenticated && session && !options.refreshed) {
@@ -223,8 +224,8 @@ export const api = {
     request<TokenResponse>('/api/v1/auth/register', {
       method: 'POST', body: { name, email, password, invite_code, application }, authenticated: false,
     }),
-  logout: (refresh_token: string) =>
-    request<void>('/api/v1/auth/logout', { method: 'POST', body: { refresh_token }, authenticated: false }),
+  logout: (refresh_token: string | null) =>
+    request<void>('/api/v1/auth/logout', { method: 'POST', body: refresh_token ? { refresh_token } : {}, authenticated: false }),
   requestReset: (email: string) =>
     request<{ message: string }>('/api/v1/auth/password-reset/request', {
       method: 'POST', body: { email }, authenticated: false,
@@ -387,7 +388,7 @@ export const api = {
     request<AttendanceRequest>(`/api/v1/attendance-requests/${id}/reject`, { method: 'POST', body: { reason } }),
   setTrainingAttendance: (id: string, entries: { player_id: string; status: AttendanceStatus | null }[]) =>
     request<TrainingRegister>(`/api/v1/training-sessions/${id}/attendance`, { method: 'PUT', body: { entries } }),
-  trainingAvailability: (id: string) => request<TrainingAvailability[]>(`/api/v1/training-sessions/${id}/availability`),
+  trainingAvailability: (id: string) => request<TrainingAvailabilityResponse>(`/api/v1/training-sessions/${id}/availability`),
   setTrainingAvailability: (id: string, status: TrainingAvailability['status'], note: string | null = null, player_id?: string) => request<TrainingAvailability>(`/api/v1/training-sessions/${id}/availability`, { method: 'PUT', body: { status, note, ...(player_id ? { player_id } : {}) } }),
   playerInvoices: (id: string) => request<{ items: FeeInvoice[] }>(`/api/v1/players/${id}/invoices`),
   createInvoice: (id: string, body: { period?: string | null; payment_instructions?: string | null }) =>

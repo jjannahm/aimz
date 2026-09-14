@@ -208,7 +208,10 @@ export function registerMatchRoutes(app: App): void {
     const body = await jsonObject(c);
     const operationId = stringField(body, "client_operation_id", { min: 8, max: 64 })!;
     const duplicate = await c.env.DB.prepare("SELECT * FROM match_events WHERE client_operation_id = ?").bind(operationId).first<EventRow>();
-    if (duplicate) return c.json(publicEvent(duplicate));
+    if (duplicate) {
+      if (duplicate.match_id === match.id) return c.json(publicEvent(duplicate));
+      throw new ApiProblem(409, "operation_id_conflict", "That operation identifier has already been used.");
+    }
 
     const type = enumField(body, "type", LOGGABLE_EVENTS);
     const teamId = stringField(body, "team_id", { min: 1, max: 36 })!;
@@ -218,11 +221,15 @@ export function registerMatchRoutes(app: App): void {
     const secondaryPlayerId = stringField(body, "secondary_player_id", { optional: true, nullable: true, max: 36 }) ?? null;
     if (playerId) await requirePlayerOnTeam(c.env, playerId, teamId);
     if (secondaryPlayerId) await requirePlayerOnTeam(c.env, secondaryPlayerId, teamId);
+    const relatedEventId = stringField(body, "related_event_id", { optional: true, nullable: true, max: 36 }) ?? null;
+    if (relatedEventId && !await c.env.DB.prepare("SELECT id FROM match_events WHERE id=? AND match_id=?").bind(relatedEventId, match.id).first()) {
+      throw new ApiProblem(422, "invalid_related_event", "Choose an event from this match.");
+    }
     const now = nowIso();
     const event: EventRow = {
       id: crypto.randomUUID(), match_id: match.id, type, minute, team_id: teamId,
       player_id: playerId, secondary_player_id: secondaryPlayerId,
-      related_event_id: stringField(body, "related_event_id", { optional: true, nullable: true, max: 36 }) ?? null,
+      related_event_id: relatedEventId,
       notes: stringField(body, "notes", { optional: true, nullable: true, max: 1000 }) ?? null,
       is_penalty: booleanField(body, "is_penalty", false) ? 1 : 0,
       substitution_reason: body.substitution_reason == null ? null : enumField(body, "substitution_reason", SUBSTITUTION_REASONS),
@@ -260,7 +267,8 @@ export function registerMatchRoutes(app: App): void {
     }
     catch (error) {
       const existing = await c.env.DB.prepare("SELECT * FROM match_events WHERE client_operation_id = ?").bind(operationId).first<EventRow>();
-      if (existing) return c.json(publicEvent(existing));
+      if (existing?.match_id === match.id) return c.json(publicEvent(existing));
+      if (existing) throw new ApiProblem(409, "operation_id_conflict", "That operation identifier has already been used.");
       throw error;
     }
     return c.json(publicEvent(event), 201);
@@ -281,14 +289,19 @@ export function registerMatchRoutes(app: App): void {
       minute: body.minute === undefined ? current.minute : numberField(body, "minute", { nullable: true, min: 0, max: 150 }) ?? null,
       player_id: optionalNullableText(body, "player_id", current.player_id, 36),
       secondary_player_id: optionalNullableText(body, "secondary_player_id", current.secondary_player_id, 36),
+      related_event_id: optionalNullableText(body, "related_event_id", current.related_event_id, 36),
       notes: optionalNullableText(body, "notes", current.notes, 1000),
       substitution_reason: body.substitution_reason === undefined ? current.substitution_reason : body.substitution_reason == null ? null : enumField(body, "substitution_reason", SUBSTITUTION_REASONS),
       penalty_outcome: body.penalty_outcome === undefined ? current.penalty_outcome : body.penalty_outcome == null ? null : enumField(body, "penalty_outcome", PENALTY_OUTCOMES),
       updated_at: nowIso(),
     };
     if (event.player_id) await requirePlayerOnTeam(c.env, event.player_id, teamId);
+    if (event.secondary_player_id) await requirePlayerOnTeam(c.env, event.secondary_player_id, teamId);
+    if (event.related_event_id && !await c.env.DB.prepare("SELECT id FROM match_events WHERE id=? AND match_id=?").bind(event.related_event_id, match.id).first()) {
+      throw new ApiProblem(422, "invalid_related_event", "Choose an event from this match.");
+    }
     await c.env.DB.batch([
-      c.env.DB.prepare("UPDATE match_events SET type=?, minute=?, team_id=?, player_id=?, secondary_player_id=?, notes=?, substitution_reason=?, penalty_outcome=?, updated_at=? WHERE id=?").bind(event.type, event.minute, event.team_id, event.player_id, event.secondary_player_id, event.notes, event.substitution_reason, event.penalty_outcome, event.updated_at, event.id),
+      c.env.DB.prepare("UPDATE match_events SET type=?, minute=?, team_id=?, player_id=?, secondary_player_id=?, related_event_id=?, notes=?, substitution_reason=?, penalty_outcome=?, updated_at=? WHERE id=?").bind(event.type, event.minute, event.team_id, event.player_id, event.secondary_player_id, event.related_event_id, event.notes, event.substitution_reason, event.penalty_outcome, event.updated_at, event.id),
       scoreRecalculation(c.env, match.id, event.updated_at),
       statRecalculation(c.env, match.id, event.updated_at),
       recordAudit(c.env, admin, { action: "event_corrected", entityType: "match_event", entityId: event.id, matchId: match.id, summary: `Corrected ${describeEvent(event)}.` }),
@@ -333,13 +346,22 @@ export function registerMatchRoutes(app: App): void {
 
   app.put("/api/v1/matches/:id/player-stats", async (c) => {
     const admin = await manageMatch(c, c.req.param("id")); const match = await getJoinedMatch(c.env, c.req.param("id")); requireScorable(match); requireOpenSeason(match); const body = await jsonArray(c); const now = nowIso(); const statements = []; const playerIds: string[] = [];
+    // Somebody on either squad now, or somebody who played in it: a player since
+    // promoted to an older age group can still have this match's minutes fixed.
+    const allowed = await c.env.DB.prepare("SELECT id FROM players WHERE team_id IN (?,?) UNION SELECT player_id FROM match_lineup_entries WHERE match_id=?")
+      .bind(match.home_team_id, match.away_team_id, match.id).all<{ id: string }>();
+    const allowedIds = new Set(allowed.results.map((row) => row.id));
+    const submittedIds = body.map((item) => stringField(item, "player_id", { min: 1, max: 36 })!);
+    if (new Set(submittedIds).size !== submittedIds.length || submittedIds.some((id) => !allowedIds.has(id))) {
+      throw new ApiProblem(422, "invalid_player", "Every player must belong to a team in this match and appear only once.");
+    }
     // Which squad each player turned out for, taken from the lineup and falling
     // back to the squad she is on now. Stamped on the statistic so a promotion
     // to an older age group never carries this match's record with her.
     const squadOf = await squadsForMatch(c.env, match.id);
     const derived = await derivedMinutes(c.env, match.id, match.status === "finished");
     for (const item of body) {
-      const playerId = stringField(item, "player_id", { min: 1, max: 36 })!; playerIds.push(playerId);
+      const playerId = submittedIds[playerIds.length]!; playerIds.push(playerId);
       const appeared = booleanField(item, "appeared") ? 1 : 0;
       // Saved by hand while the match runs, because only the coach's screen
       // knows the clock. Once it is over the thread knows better, and what was

@@ -388,13 +388,21 @@ export function registerFeeRoutes(app: App): void {
       recorded_by_name: actorName(actor),
       created_at: now,
     };
-    await c.env.DB.batch([
-      c.env.DB.prepare("INSERT INTO fee_payments (id, fee_charge_id, amount_piastres, paid_on, method, note, recorded_by_id, recorded_by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-        .bind(row.id, row.fee_charge_id, row.amount_piastres, row.paid_on, row.method, row.note, row.recorded_by_id, row.recorded_by_name, now),
-      recordAudit(c.env, actor, { action: "fee_payment_recorded", entityType: "fee_charge", entityId: charge.id, matchId: null, summary: `${row.amount_piastres} piastres · ${row.method}` }),
-    ]);
+    try {
+      await c.env.DB.batch([
+        c.env.DB.prepare("INSERT INTO fee_payments (id, fee_charge_id, amount_piastres, paid_on, method, note, recorded_by_id, recorded_by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .bind(row.id, row.fee_charge_id, row.amount_piastres, row.paid_on, row.method, row.note, row.recorded_by_id, row.recorded_by_name, now),
+        recordAudit(c.env, actor, { action: "fee_payment_recorded", entityType: "fee_charge", entityId: charge.id, matchId: null, summary: `${row.amount_piastres} piastres · ${row.method}` }),
+      ]);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("fee_overpayment")) {
+        throw new ApiProblem(409, "payment_conflict", "Another payment changed the outstanding balance. Refresh and try again.");
+      }
+      throw error;
+    }
     const payments = await c.env.DB.prepare("SELECT * FROM fee_payments WHERE fee_charge_id=? ORDER BY paid_on, created_at").bind(charge.id).all<FeePaymentRow>();
-    return c.json(publicCharge(charge, alreadyPaid + amount, await playerOf(c.env, charge.player_id), payments.results, attendedOn(await attendanceFor(c.env, [charge]), charge)), 201);
+    const committedPaid = payments.results.reduce((sum, payment) => sum + payment.amount_piastres, 0);
+    return c.json(publicCharge(charge, committedPaid, await playerOf(c.env, charge.player_id), payments.results, attendedOn(await attendanceFor(c.env, [charge]), charge)), 201);
   });
 
   app.delete("/api/v1/fee-payments/:id", async (c) => {

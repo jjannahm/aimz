@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import { ApiProblem, assertNotExpired, bearerSubject, currentUser, nowIso } from "./helpers";
+import { ApiProblem, assertNotExpired, bearerSubject, currentUser, liveSession, nowIso } from "./helpers";
 import type { UserRow } from "./types";
 
 const NO_LINK = "Ask an AIMZ administrator to link your account to a squad player.";
@@ -191,12 +191,12 @@ export function matchScopeClause(scope: TeamScope, alias = "m"): { sql: string; 
  * untouched and still guard everything else.
  */
 export async function visibleMatchRevision(c: Context<{ Bindings: Env }>, matchId: string): Promise<number> {
-  const userId = await bearerSubject(c);
+  const { userId, familyId } = await bearerSubject(c);
   const row = await c.env.DB.prepare(`
     WITH me AS (
       SELECT u.id, u.role, u.player_id, ae.expires_at
       FROM users u LEFT JOIN account_expiry ae ON ae.user_id = u.id
-      WHERE u.id = ?1 AND u.is_active = 1
+      WHERE u.id = ?1 AND u.is_active = 1 AND ${liveSession("?3", "?4")}
     ),
     scope AS (
       -- A player answers for herself, a parent for each child, a coach for the
@@ -224,14 +224,14 @@ export async function visibleMatchRevision(c: Context<{ Bindings: Env }>, matchI
         ELSE 0
       END AS visible
     FROM me LEFT JOIN matches m ON m.id = ?2
-  `).bind(userId, matchId).first<{
+  `).bind(userId, matchId, familyId, nowIso()).first<{
     role: string; player_id: string | null; expires_at: string | null;
     children: number; squads: number; scoped: number;
     revision: number | null; visible: number;
   }>();
 
-  // Missing or deactivated, exactly as `currentUser` answers it.
-  if (!row) throw new ApiProblem(401, "invalid_token", "Your account is unavailable.");
+  // Missing, deactivated or signed out, exactly as `currentUser` answers it.
+  if (!row) throw new ApiProblem(401, "invalid_token", "Your session has expired. Sign in again.");
   if (row.expires_at && row.expires_at <= nowIso()) {
     throw new ApiProblem(401, "account_expired", "This account has expired. Ask an AIMZ administrator to renew it.");
   }
@@ -286,12 +286,12 @@ export interface Caller {
 const split = (value: string | null): string[] => (value ? value.split(",").filter(Boolean) : []);
 
 export async function scopedCaller(c: Context<{ Bindings: Env }>, playerId?: string): Promise<Caller> {
-  const userId = await bearerSubject(c);
+  const { userId, familyId } = await bearerSubject(c);
   const row = await c.env.DB.prepare(`
     WITH me AS (
       SELECT u.*, ae.expires_at AS account_expires_at
       FROM users u LEFT JOIN account_expiry ae ON ae.user_id = u.id
-      WHERE u.id = ?1 AND u.is_active = 1
+      WHERE u.id = ?1 AND u.is_active = 1 AND ${liveSession("?3", "?4")}
     ),
     scope AS (
       SELECT p.team_id AS team_id FROM me JOIN players p ON p.id = me.player_id WHERE me.role = 'player'
@@ -320,9 +320,9 @@ export async function scopedCaller(c: Context<{ Bindings: Env }>, playerId?: str
         ELSE 0
       END AS player_visible
     FROM me
-  `).bind(userId, playerId ?? null).first<Record<string, unknown>>();
+  `).bind(userId, playerId ?? null, familyId, nowIso()).first<Record<string, unknown>>();
 
-  if (!row) throw new ApiProblem(401, "invalid_token", "Your account is unavailable.");
+  if (!row) throw new ApiProblem(401, "invalid_token", "Your session has expired. Sign in again.");
   const user = { ...row, expires_at: (row.account_expires_at as string | null) ?? null } as unknown as UserRow;
   assertNotExpired(user);
   return {

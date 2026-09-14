@@ -30,6 +30,10 @@ const row = (over: Partial<TrainingAvailability> = {}) => ({
   updated_at: '2026-08-30T00:00:00Z',
   ...over,
 }) as TrainingAvailability;
+const response = (items: TrainingAvailability[] = []) => ({
+  items,
+  summary: { going: items.filter((item) => item.status === 'going').length, not_going: items.filter((item) => item.status === 'not_going').length, unanswered: Math.max(0, squad.length - items.length) },
+});
 
 function wrapper({ children }: { children: ReactNode }) {
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity, retry: false } } });
@@ -46,7 +50,7 @@ const settle = () => waitFor(() => expect(api.trainingAvailability).toHaveBeenCa
 describe('AvailabilityPanel note', () => {
   beforeEach(() => {
     mockUser = { role: 'player', player_id: 'p-1' };
-    jest.mocked(api.trainingAvailability).mockResolvedValue([]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response());
     jest.mocked(api.setTrainingAvailability).mockResolvedValue(row());
     jest.mocked(api.players).mockResolvedValue({ items: squad, total: squad.length } as Awaited<ReturnType<typeof api.players>>);
   });
@@ -54,7 +58,7 @@ describe('AvailabilityPanel note', () => {
   afterEach(() => jest.clearAllMocks());
 
   it('carries a saved note over when the answer is changed', async () => {
-    jest.mocked(api.trainingAvailability).mockResolvedValue([row({ note: 'Back injury' })]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response([row({ note: 'Back injury' })]));
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
     await waitFor(() => expect(noteField(screen).props.value).toBe('Back injury'));
 
@@ -66,7 +70,7 @@ describe('AvailabilityPanel note', () => {
   });
 
   it('loads the saved note into the field', async () => {
-    jest.mocked(api.trainingAvailability).mockResolvedValue([row({ note: 'Late from school' })]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response([row({ note: 'Late from school' })]));
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
     await waitFor(() => expect(noteField(screen).props.value).toBe('Late from school'));
   });
@@ -78,7 +82,7 @@ describe('AvailabilityPanel note', () => {
   });
 
   it('saves an edited note against the answer already given', async () => {
-    jest.mocked(api.trainingAvailability).mockResolvedValue([row({ note: 'Back injury' })]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response([row({ note: 'Back injury' })]));
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
     await waitFor(() => expect(noteField(screen).props.value).toBe('Back injury'));
 
@@ -95,7 +99,7 @@ describe('AvailabilityPanel note', () => {
 describe('AvailabilityPanel answers', () => {
   beforeEach(() => {
     mockUser = { role: 'admin' };
-    jest.mocked(api.trainingAvailability).mockResolvedValue([]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response());
     jest.mocked(api.players).mockResolvedValue({ items: squad, total: squad.length } as Awaited<ReturnType<typeof api.players>>);
   });
 
@@ -112,7 +116,7 @@ describe('AvailabilityPanel answers', () => {
   // A coach counting a squad has to tell someone staying away from someone who
   // has not looked yet, so the unanswered are named rather than simply absent.
   it('names the players who have not answered', async () => {
-    jest.mocked(api.trainingAvailability).mockResolvedValue([row()]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response([row()]));
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
     await waitFor(() => expect(screen.getByText('Going · 1')).toBeTruthy());
     expect(screen.getByText('No response · 1')).toBeTruthy();
@@ -120,7 +124,7 @@ describe('AvailabilityPanel answers', () => {
   });
 
   it('says so when the whole squad has answered', async () => {
-    jest.mocked(api.trainingAvailability).mockResolvedValue([row(), row({ id: 'a-2', player_id: 'p-2', player: squad[1], status: 'not_going' })]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response([row(), row({ id: 'a-2', player_id: 'p-2', player: squad[1], status: 'not_going' })]));
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
     await waitFor(() => expect(screen.getByText('No response · 0')).toBeTruthy());
     expect(screen.getByText('Everybody has answered')).toBeTruthy();
@@ -129,7 +133,7 @@ describe('AvailabilityPanel answers', () => {
   // An admin reads the replies rather than answering in their place, so the
   // panel they open carries the tallies and nothing to fill in.
   it('gives an admin the replies to read, not a vote to cast', async () => {
-    jest.mocked(api.trainingAvailability).mockResolvedValue([row()]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response([row()]));
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
     await waitFor(() => expect(screen.getByText('Going · 1')).toBeTruthy());
     expect(screen.queryByRole('radio', { name: 'Going' })).toBeNull();
@@ -143,7 +147,7 @@ describe('AvailabilityPanel answers', () => {
   // answer of theirs to record.
   it('gives a parent the replies to read, not a vote to cast', async () => {
     mockUser = { role: 'parent' };
-    jest.mocked(api.trainingAvailability).mockResolvedValue([row()]);
+    jest.mocked(api.trainingAvailability).mockResolvedValue(response([row()]));
     const screen = await render(<AvailabilityPanel session={session} />, { wrapper });
     await waitFor(() => expect(screen.getByText('Going · 1')).toBeTruthy());
     expect(screen.queryByRole('radio', { name: 'Going' })).toBeNull();

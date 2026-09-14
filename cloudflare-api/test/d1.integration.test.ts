@@ -21,7 +21,11 @@ async function seedUser(role: 'admin' | 'player' | 'parent' | 'coach', playerId:
   const id = crypto.randomUUID();
   await testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
     .bind(id, ROLE_NAMES[role], `${id}@aimz.test`, 'unused', role, playerId, now, now).run();
-  return { id, token: await createAccessToken(id, role, testEnv.JWT_SECRET, 900) };
+  const sid = crypto.randomUUID();
+  await testEnv.DB.prepare('INSERT INTO refresh_families (id,user_id,created_at) VALUES (?,?,?)').bind(sid, id, now).run();
+  await testEnv.DB.prepare('INSERT INTO refresh_sessions (id,user_id,token_hash,expires_at,created_at,family_id) VALUES (?,?,?,?,?,?)')
+    .bind(crypto.randomUUID(), id, crypto.randomUUID(), '2099-01-01T00:00:00.000Z', now, sid).run();
+  return { id, token: await createAccessToken(id, role, sid, testEnv.JWT_SECRET, 900) };
 }
 
 /** Gives a coach account a squad to run. */
@@ -38,7 +42,7 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0045_coach_staff_role.sql');
+    expect(applied.results.at(-1)?.name).toBe('0048_drop_unused_rate_limits.sql');
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
     // 0017 raised the volunteer assignments table and 0042 drops it. Both are
     // still in the chain, so the schema a fresh database ends on is the test:
@@ -98,7 +102,7 @@ describe('team hub authorization and roster privacy', () => {
     expect(firstRsvp.status).toBe(200);
     await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('PUT', { status: 'not_going', note: 'School' }, playerUser.token));
     const rsvps = await (await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('GET', undefined, playerUser.token))).json<{ status: string; note: string }[]>();
-    expect(rsvps).toEqual([expect.objectContaining({ status: 'not_going', note: 'School' })]);
+    expect(rsvps).toMatchObject({ items: [expect.objectContaining({ status: 'not_going', note: 'School' })], summary: { going: 0, not_going: 1, unanswered: 0 } });
     // Availability is a two-way answer; "maybe" is no longer one of them.
     const undecided = await request(`/api/v1/training-sessions/${sessions[0]!.id}/availability`, json('PUT', { status: 'maybe', note: null }, playerUser.token));
     expect(undecided.status).toBe(422);
@@ -854,7 +858,11 @@ describe('accounts that expire', () => {
   it('turns away a token minted before the date passed', async () => {
     const admin = await seedUser('admin');
     const { body } = await makeAccount(admin.token, { role: 'player', expires_at: hoursFromNow(48) });
-    const token = await createAccessToken(body.id as string, 'player', testEnv.JWT_SECRET, 900);
+    const sid = crypto.randomUUID();
+    await testEnv.DB.prepare('INSERT INTO refresh_families (id,user_id,created_at) VALUES (?,?,?)').bind(sid, body.id, now).run();
+    await testEnv.DB.prepare('INSERT INTO refresh_sessions (id,user_id,token_hash,expires_at,created_at,family_id) VALUES (?,?,?,?,?,?)')
+      .bind(crypto.randomUUID(), body.id, crypto.randomUUID(), '2099-01-01T00:00:00.000Z', now, sid).run();
+    const token = await createAccessToken(body.id as string, 'player', sid, testEnv.JWT_SECRET, 900);
     expect((await request('/api/v1/users/me', json('GET', undefined, token))).status).toBe(200);
 
     await testEnv.DB.prepare('UPDATE account_expiry SET expires_at = ? WHERE user_id = ?').bind(hoursFromNow(-1), body.id).run();
@@ -1135,6 +1143,17 @@ describe('fees', () => {
     const tooMuch = await pay(charge.id, admin.token, 50000);
     expect(tooMuch.status).toBe(422);
     expect(await tooMuch.json()).toMatchObject({ detail: { field_errors: [{ field: 'amount_piastres', message: '20000 piastres are outstanding.' }] } });
+  });
+
+  it('cannot overpay when two payment requests arrive together', async () => {
+    const { admin, squad, plan } = await setUp();
+    await generate(plan.id, admin.token);
+    const charge = (await chargesFor(squad[0]!.id, admin.token))[0]!;
+    const results = await Promise.all([pay(charge.id, admin.token, 70000), pay(charge.id, admin.token, 70000)]);
+    expect(results.filter((response) => response.status === 201)).toHaveLength(1);
+    expect(results.filter((response) => response.status === 409 || response.status === 422)).toHaveLength(1);
+    const total = await testEnv.DB.prepare('SELECT COALESCE(SUM(amount_piastres),0) n FROM fee_payments WHERE fee_charge_id=?').bind(charge.id).first<{ n: number }>();
+    expect(total?.n).toBe(70000);
   });
 
   it('keeps every instalment rather than a running total', async () => {
@@ -1557,7 +1576,9 @@ describe('training performance', () => {
     const playerUser = await seedUser('player', squad[0]!.id);
     expect((await record(sessions[0]!.id, playerUser.token, [{ player_id: squad[0]!.id, metric_id: dribbling.id, value: 5 }])).status).toBe(403);
     // Reading is fine: a player sees their own squad's session.
-    expect((await request(`/api/v1/training-sessions/${sessions[0]!.id}/performance`, json('GET', undefined, playerUser.token))).status).toBe(200);
+    const own = await request(`/api/v1/training-sessions/${sessions[0]!.id}/performance`, json('GET', undefined, playerUser.token));
+    expect(own.status).toBe(200);
+    expect((await own.json<{ items: { player: { id: string } }[] }>()).items.map((item) => item.player.id)).toEqual([squad[0]!.id]);
   });
 
   describe('squad training leaderboards', () => {
@@ -2203,6 +2224,22 @@ describe('late marks and register corrections', () => {
 
     // And it is answered once. A second decision would rewrite history.
     expect((await request(`/api/v1/attendance-requests/${asked.id}/approve`, json('POST', {}, world.admin.token))).status).toBe(409);
+  });
+
+  it('applies exactly one concurrent attendance decision', async () => {
+    const world = await session();
+    await mark(world.sessionId, world.player.id, 'absent', world.admin.token);
+    const player = await seedUser('player', world.player.id);
+    const asked = await (await request(`/api/v1/training-sessions/${world.sessionId}/attendance-requests`,
+      json('POST', { requested_status: 'present' }, player.token))).json<{ id: string }>();
+    const [approve, reject] = await Promise.all([
+      request(`/api/v1/attendance-requests/${asked.id}/approve`, json('POST', {}, world.admin.token)),
+      request(`/api/v1/attendance-requests/${asked.id}/reject`, json('POST', { reason: 'No' }, world.admin.token)),
+    ]);
+    expect([approve.status, reject.status].sort()).toEqual([200, 409]);
+    const decision = await testEnv.DB.prepare('SELECT status FROM training_attendance_requests WHERE id=?').bind(asked.id).first<{ status: string }>();
+    const attendance = await testEnv.DB.prepare('SELECT status FROM training_attendance WHERE training_session_id=? AND player_id=?').bind(world.sessionId, world.player.id).first<{ status: string }>();
+    expect(attendance?.status).toBe(decision?.status === 'approved' ? 'present' : 'absent');
   });
 
   it('holds every side of it to their own', async () => {

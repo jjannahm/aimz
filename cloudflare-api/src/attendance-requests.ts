@@ -197,20 +197,18 @@ export function registerAttendanceRequestRoutes(app: App): void {
     const actor = await decidesForPlayer(c, request.player_id);
     if (request.status !== "pending") throw new ApiProblem(409, "request_decided", "This request has already been answered.");
     const now = nowIso();
-    await c.env.DB.batch([
-      c.env.DB.prepare(`INSERT INTO training_attendance (training_session_id, player_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT(training_session_id, player_id) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at`)
-        .bind(request.training_session_id, request.player_id, request.requested_status, now, now),
-      c.env.DB.prepare("UPDATE training_attendance_requests SET status='approved', decided_by_id=?, decided_at=?, updated_at=? WHERE id=? AND status='pending'")
-        .bind(actor.id, now, now, request.id),
-      recordAudit(c.env, actor, {
+    const decided = await c.env.DB.prepare("UPDATE training_attendance_requests SET status='approved', decided_by_id=?, decided_at=?, updated_at=? WHERE id=? AND status='pending'")
+      .bind(actor.id, now, now, request.id).run();
+    // D1 includes the trigger's register upsert in `changes`, so the winning
+    // approval may report two affected rows; zero is the only losing result.
+    if ((decided.meta.changes ?? 0) < 1) throw new ApiProblem(409, "request_decided", "This request has already been answered.");
+    await recordAudit(c.env, actor, {
         action: "attendance_request_approved",
         entityType: "training_session",
         entityId: request.training_session_id,
         matchId: null,
         summary: `${request.current_status ?? "unmarked"} to ${request.requested_status}`,
-      }),
-    ]);
+      }).run();
     return c.json(publicRequest({ ...request, status: "approved", decided_by_id: actor.id, decided_at: now, updated_at: now }, null, null));
   });
 
@@ -222,17 +220,16 @@ export function registerAttendanceRequestRoutes(app: App): void {
     const body = await jsonObject(c);
     const reason = stringField(body, "reason", { optional: true, nullable: true, max: 500 }) ?? null;
     const now = nowIso();
-    await c.env.DB.batch([
-      c.env.DB.prepare("UPDATE training_attendance_requests SET status='rejected', decided_by_id=?, decided_at=?, decision_reason=?, updated_at=? WHERE id=? AND status='pending'")
-        .bind(actor.id, now, reason, now, request.id),
-      recordAudit(c.env, actor, {
+    const decided = await c.env.DB.prepare("UPDATE training_attendance_requests SET status='rejected', decided_by_id=?, decided_at=?, decision_reason=?, updated_at=? WHERE id=? AND status='pending'")
+      .bind(actor.id, now, reason, now, request.id).run();
+    if ((decided.meta.changes ?? 0) < 1) throw new ApiProblem(409, "request_decided", "This request has already been answered.");
+    await recordAudit(c.env, actor, {
         action: "attendance_request_rejected",
         entityType: "training_session",
         entityId: request.training_session_id,
         matchId: null,
         summary: reason ?? `${request.requested_status} refused`,
-      }),
-    ]);
+      }).run();
     return c.json(publicRequest({ ...request, status: "rejected", decided_by_id: actor.id, decided_at: now, decision_reason: reason, updated_at: now }, null, null));
   });
 }

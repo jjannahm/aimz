@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { router } from 'expo-router';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useAuth } from '@/src/auth/AuthProvider';
 import { useMyChildren } from '@/src/auth/useMyTeam';
@@ -13,6 +13,7 @@ import { AnimatedTabPill } from '@/src/components/AnimatedTabPill';
 import { SegmentedControl, type SegmentedOption } from '@/src/components/SegmentedControl';
 import { JerseyIcon } from '@/src/components/JerseyIcon';
 import { PlayerStatsPanel } from '@/src/components/PlayerStatsPanel';
+import { PlayerPhoto } from '@/src/components/PlayerPhoto';
 import { ALL_SEASONS, SeasonFilter, seasonQuery } from '@/src/components/SeasonFilter';
 import { TrainingStatsPanel } from '@/src/components/TrainingStatsPanel';
 import { InformationPanel } from '@/src/components/player/InformationPanel';
@@ -145,7 +146,7 @@ function PlayerRow({ player, subtitle, spoken, trailing, last, onApp }: { player
   // should not have to go looking for the rest of it.
   const said = `${player.name}, ${spoken ?? subtitle}${onApp === undefined ? '' : onApp ? ', on the app' : ', no app'}`;
   return <Pressable accessibilityLabel={said} accessibilityRole="button" onPress={() => router.push(`/player/${player.id}`)} style={({ pressed }) => [styles.row, last && styles.lastRow, pressed && styles.pressed]}>
-    {player.photo_url ? <Image accessibilityElementsHidden source={{ uri: mediaUrl(player.photo_url) }} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={40} />}
+    {player.photo_url ? <PlayerPhoto uri={mediaUrl(player.photo_url)!} style={styles.photo} /> : <JerseyIcon number={player.jersey_number} size={40} />}
     <View style={styles.copy}><Text style={styles.name}>{player.name}</Text><Text style={styles.position}>{subtitle}</Text>{onApp === undefined ? null : <AppStatus on={onApp} />}</View>
     {trailing}
     <Chevron />

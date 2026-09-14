@@ -1,1 +1,1 @@
-[{ "relation": ["delegate_permission/common.handle_all_urls"], "target": { "namespace": "android_app", "package_name": "com.aimzegypt.scores", "sha256_cert_fingerprints": ["REPLACE_WITH_RELEASE_CERTIFICATE_SHA256"] } }]
+[{ "relation": ["delegate_permission/common.handle_all_urls"], "target": { "namespace": "android_app", "package_name": "com.aimzegypt.scores", "sha256_cert_fingerprints": ["8A:6F:D9:A1:CF:1F:A6:46:71:8C:17:0A:52:22:75:4B:D6:CC:38:E9:FC:80:B4:F0:FC:D9:0B:E5:8F:49:F1:AD"] } }]

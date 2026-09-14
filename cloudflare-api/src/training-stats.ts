@@ -127,7 +127,7 @@ function checkValue(metric: TrainingMetricRow, value: number): void {
 }
 
 /** Every reading for one session, by player then metric. */
-async function performanceFor(env: Env, session: TrainingRow): Promise<Record<string, unknown>> {
+async function performanceFor(env: Env, session: TrainingRow, visibleIds: string[] | null = null): Promise<Record<string, unknown>> {
   const [squad, metrics, readings] = await Promise.all([
     env.DB.prepare("SELECT * FROM players WHERE team_id=? AND is_active=1 ORDER BY name").bind(session.team_id).all<PlayerRow>(),
     activeMetrics(env),
@@ -141,7 +141,13 @@ async function performanceFor(env: Env, session: TrainingRow): Promise<Record<st
   }
   return {
     metrics: metrics.map(publicMetric),
-    items: squad.results.map((player) => ({ player: publicPlayer(player), values: byPlayer.get(player.id) ?? {} })),
+    items: squad.results.filter((player) => visibleIds === null || visibleIds.includes(player.id)).map((player) => ({ player: publicPlayer(player), values: byPlayer.get(player.id) ?? {} })),
+    summary: metrics.map((metric) => {
+      const values = readings.results.filter((row) => row.metric_id === metric.id).map((row) => row.value);
+      // Do not turn a one- or two-player cohort into an indirect disclosure of
+      // somebody else's exact mark. The count remains useful to the screen.
+      return { metric_id: metric.id, count: values.length, average: values.length >= 3 ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 10) / 10 : null };
+    }),
   };
 }
 
@@ -174,8 +180,11 @@ export function registerTrainingStatsRoutes(app: App): void {
   /** The whole squad's readings for one session, which is what the entry screen fills in. */
   app.get("/api/v1/training-sessions/:id/performance", async (c) => {
     const session = await trainingById(c.env, c.req.param("id"));
-    await requireTrainingAccess(c, session);
-    return c.json(await performanceFor(c.env, session));
+    const actor = await requireTrainingAccess(c, session);
+    const visibleIds = actor.role === "admin" || actor.role === "coach" ? null
+      : actor.role === "player" ? (actor.player_id ? [actor.player_id] : [])
+        : await linkedPlayerIds(c.env, actor);
+    return c.json(await performanceFor(c.env, session, visibleIds));
   });
 
   /**
