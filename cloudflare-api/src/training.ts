@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { ApiProblem, currentUser, enumField, jsonObject, nowIso, numberField, parsePagination, publicPlayer, publicTeam, stringField } from "./helpers";
-import { canOpenTeam, requireAimzTeam, scopedTeams } from "./team-access";
+import { canOpenTeam, linkedPlayerIds, requireAimzTeam, scopedTeams } from "./team-access";
 import type { AttendanceRow, AvailabilityRow, PlayerRow, TeamRow, TrainingRow, UserRow } from "./types";
 import { assertCanManageTeam, managingUser } from "./team-access";
 import { ATTENDANCE_STATUSES } from "./attendance";
@@ -43,7 +43,13 @@ async function requireTrainingAccess(c: Context<{ Bindings: Env }>, row: Trainin
  * opening a session for the first time is handed the whole squad to mark. There
  * is no attendance roster of its own.
  */
-async function attendanceFor(env: Env, session: TrainingRow): Promise<Record<string, unknown>> {
+async function visibleTrainingPlayerIds(env: Env, actor: UserRow): Promise<string[] | null> {
+  if (actor.role === "admin" || actor.role === "coach") return null;
+  if (actor.role === "player") return actor.player_id ? [actor.player_id] : [];
+  return linkedPlayerIds(env, actor);
+}
+
+async function attendanceFor(env: Env, session: TrainingRow, visibleIds: string[] | null = null): Promise<Record<string, unknown>> {
   const [squad, marks] = await Promise.all([
     env.DB.prepare("SELECT * FROM players WHERE team_id=? AND is_active=1 ORDER BY name").bind(session.team_id).all<PlayerRow>(),
     env.DB.prepare("SELECT * FROM training_attendance WHERE training_session_id=?").bind(session.id).all<AttendanceRow>(),
@@ -55,7 +61,7 @@ async function attendanceFor(env: Env, session: TrainingRow): Promise<Record<str
     marked_at: byPlayer.get(player.id)?.updated_at ?? null,
   }));
   return {
-    items,
+    items: visibleIds === null ? items : items.filter((row) => visibleIds.includes(String((row.player as { id?: unknown }).id))),
     present: items.filter((row) => row.status === "present").length,
     late: items.filter((row) => row.status === "late").length,
     absent: items.filter((row) => row.status === "absent").length,
@@ -143,12 +149,22 @@ export function registerTrainingRoutes(app: App): void {
 
   app.get("/api/v1/training-sessions/:id/availability", async (c) => {
     const session = await trainingById(c.env, c.req.param("id"));
-    await requireTrainingAccess(c, session);
+    const actor = await requireTrainingAccess(c, session);
     const rows = await c.env.DB.prepare("SELECT * FROM training_availability WHERE training_session_id=? ORDER BY updated_at DESC").bind(session.id).all<AvailabilityRow>();
     const playerIds = rows.results.map((row) => row.player_id);
     const players = playerIds.length ? await c.env.DB.prepare(`SELECT * FROM players WHERE id IN (${playerIds.map(() => "?").join(",")})`).bind(...playerIds).all<PlayerRow>() : { results: [] as PlayerRow[] };
     const byId = new Map(players.results.map((player) => [player.id, player]));
-    return c.json(rows.results.map((row) => ({ ...row, player: publicPlayer(byId.get(row.player_id) ?? null) })));
+    const visibleIds = await visibleTrainingPlayerIds(c.env, actor);
+    const items = rows.results.map((row) => ({ ...row, player: publicPlayer(byId.get(row.player_id) ?? null) }));
+    const squad = await c.env.DB.prepare("SELECT COUNT(*) total FROM players WHERE team_id=? AND is_active=1").bind(session.team_id).first<{ total: number }>();
+    return c.json({
+      items: visibleIds === null ? items : items.filter((row) => visibleIds.includes(row.player_id)),
+      summary: {
+        going: rows.results.filter((row) => row.status === "going").length,
+        not_going: rows.results.filter((row) => row.status === "not_going").length,
+        unanswered: Math.max(0, (squad?.total ?? 0) - rows.results.length),
+      },
+    });
   });
 
   /**
@@ -161,8 +177,8 @@ export function registerTrainingRoutes(app: App): void {
    */
   app.get("/api/v1/training-sessions/:id/attendance", async (c) => {
     const session = await trainingById(c.env, c.req.param("id"));
-    await requireTrainingAccess(c, session);
-    return c.json(await attendanceFor(c.env, session));
+    const actor = await requireTrainingAccess(c, session);
+    return c.json(await attendanceFor(c.env, session, await visibleTrainingPlayerIds(c.env, actor)));
   });
 
   /**
@@ -208,9 +224,10 @@ export function registerTrainingRoutes(app: App): void {
     const session = await trainingById(c.env, c.req.param("id"));
     await requireTrainingAccess(c, session, actor);
     const body = await jsonObject(c);
-    const playerId = actor.role === "admin"
-      ? stringField(body, "player_id", { min: 1, max: 36 })!
-      : actor.player_id!;
+    const visibleIds = await visibleTrainingPlayerIds(c.env, actor);
+    const requestedPlayerId = stringField(body, "player_id", { optional: true, min: 1, max: 36 });
+    const playerId = visibleIds === null ? requestedPlayerId : actor.role === "player" ? actor.player_id : requestedPlayerId;
+    if (!playerId || (visibleIds !== null && !visibleIds.includes(playerId))) throw new ApiProblem(422, "invalid_player", "Choose one of your linked players.");
     const player = await c.env.DB.prepare("SELECT * FROM players WHERE id=? AND team_id=?").bind(playerId, session.team_id).first<PlayerRow>();
     if (!player) throw new ApiProblem(422, "player_not_found", "Choose a player from this squad.");
     const status = enumField(body, "status", ["going", "not_going"] as const);

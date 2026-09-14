@@ -37,7 +37,7 @@ export function AvailabilityPanel({ session }: { session: TrainingSession }) {
   // is no one answer of theirs to record. Both see the tallies below instead.
   const answering = user?.role === 'player';
   const target = answering ? user?.player_id ?? '' : '';
-  const mine = availability.data?.find((row) => row.player_id === target);
+  const mine = availability.data?.items.find((row) => row.player_id === target);
   // The note is written back on every save, so it has to be loaded first —
   // leaving it empty would put a null over a note already on the record. Keyed
   // on the row rather than on the note itself, so a background refetch cannot
@@ -47,14 +47,14 @@ export function AvailabilityPanel({ session }: { session: TrainingSession }) {
   const save = useMutation({ mutationFn: (status: AvailabilityStatus) => api.setTrainingAvailability(session.id, status, note || null), onError: (error) => showMessage('Availability not saved', (error as ApiError).message), onSuccess: async () => { await invalidateAfterWrite(client, 'availability'); } });
   if (availability.isLoading) return <LoadingState label="Loading availability" />;
   if (availability.isError) return <ErrorState message={(availability.error as ApiError).message} onRetry={() => availability.refetch()} />;
-  const answered = new Set((availability.data ?? []).map((row) => row.player_id));
+  const answered = new Set((availability.data?.items ?? []).map((row) => row.player_id));
   const waiting = players.data ? players.data.items.filter((player) => !answered.has(player.id)) : null;
   return <View style={styles.panel}>
     <Text style={styles.heading}>Availability</Text>
     {answering ? <><FormField hint={mine ? undefined : 'Saved with your answer.'} label="Note (optional)" maxLength={500} onChangeText={setNote} value={note} />
     {mine ? <AppButton compact disabled={!noteChanged || save.isPending} label="Save note" loading={save.isPending} onPress={() => save.mutate(mine.status)} variant="secondary" /> : null}
     <View accessibilityRole="radiogroup" style={styles.segments}>{options.map((option) => { const tone = colors[option.tone]; const chosen = mine?.status === option.value; return <Pressable accessibilityRole="radio" accessibilityState={{ checked: chosen, disabled: !target || save.isPending }} disabled={!target || save.isPending} key={option.value} onPress={() => save.mutate(option.value)} style={({ pressed }) => [styles.segment, { borderColor: tone }, chosen && { backgroundColor: tone }, pressed && styles.pressed]}><Text style={[styles.segmentText, { color: chosen ? colors.onStatus : tone }, chosen && styles.chosenText]}>{option.label}</Text></Pressable>; })}</View></> : null}
-    {options.map((option) => { const rows = availability.data?.filter((row) => row.status === option.value) ?? []; return <View key={option.value} style={styles.group}><Text style={[styles.groupTitle, { color: colors[option.tone] }]}>{option.label} · {rows.length}</Text>{rows.length ? rows.map((row) => <Text key={row.id} style={styles.person}>{row.player.name}{row.note ? ` — ${row.note}` : ''}</Text>) : <Text style={styles.empty}>No responses</Text>}</View>; })}
+    {options.map((option) => { const rows = availability.data?.items.filter((row) => row.status === option.value) ?? []; const total = availability.data?.summary[option.value] ?? rows.length; return <View key={option.value} style={styles.group}><Text style={[styles.groupTitle, { color: colors[option.tone] }]}>{option.label} · {total}</Text>{rows.length ? rows.map((row) => <Text key={row.id} style={styles.person}>{row.player.name}{row.note ? ` — ${row.note}` : ''}</Text>) : <Text style={styles.empty}>No visible responses</Text>}</View>; })}
     {/* Who has not answered at all. Without this an unanswered player is simply
       * absent from the panel, and a coach counting a squad cannot tell someone
       * staying away from someone who has yet to look. Only an admin has the

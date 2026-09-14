@@ -14,10 +14,10 @@ input.
 - [ ] Confirm `com.aimzegypt.scores` is permanent. It is the iOS bundle
       identifier and the Android package name, and neither can be changed after
       the first store submission.
-- [ ] Let EAS manage signing for both platforms. `eas credentials` has no
-      non-interactive mode, so this one has to be run by hand; the Android
-      keystore needs no paid account and yields the SHA-256 fingerprint that
-      `assetlinks.json` is waiting for.
+- [x] Android: EAS generated and holds the release keystore for the
+      `production` profile; its SHA-256 fingerprint is in `assetlinks.json`.
+- [ ] iOS: let EAS manage signing. `eas credentials --platform ios` needs an
+      Apple Developer account login, so it has to be run by hand.
 
 ## 2. Production backend
 
@@ -30,21 +30,24 @@ exist until the first `wrangler deploy --env production`.
 - [x] `env.production` added to `wrangler.jsonc`, bound to its own
       `aimz-production-db` (`9c8593a9-43db-4742-9bd0-80c208a5429d`) and
       `aimz-production-media`, with rate-limit namespaces of its own. Both
-      resources created.
-- [x] Production `vars` set, except the three that need the domain.
-- [ ] `FRONTEND_ORIGIN`, `PUBLIC_FORM_ORIGIN`, `TURNSTILE_HOSTNAMES` are
-      deliberately `""` until the domain exists. Empty fails closed; a staging
-      value here would make the production API serve the staging site.
+      resources created, and neither bucket has a public r2.dev URL.
+- [x] Production `vars` set. The web app is the Pages project
+      `aimz-egypt-production` (created), so `FRONTEND_ORIGIN`,
+      `PUBLIC_FORM_ORIGIN` and `TURNSTILE_HOSTNAMES` name
+      `aimz-egypt-production.pages.dev`. Change all three together if it moves
+      to a custom domain.
 - [ ] Set the production secrets: `JWT_SECRET` (fresh, at least 32 characters,
       not the staging value), `DATA_ENCRYPTION_KEY` (at least 32 characters;
       never rotate once real data is sealed), `TURNSTILE_SECRET`,
       `INITIAL_INVITE_CODE`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`. The production
       Worker answers 503 until `JWT_SECRET` and `DATA_ENCRYPTION_KEY` are set.
-- [ ] Apply the one pending migration, `0045_coach_staff_role.sql` — the other
-      46 are already applied to `aimz-production-db`:
+- [ ] Apply the pending migrations, `0045_coach_staff_role.sql` and
+      `0048_drop_unused_rate_limits.sql`. `0046` and `0047` are already applied;
+      see `docs/production-d1-backup-restore.md` for how production got there:
       `npx wrangler d1 migrations apply aimz-production-db --env production --remote`.
 - [ ] Deploy: `npx wrangler deploy --env production`.
-- [ ] Confirm a backup or export plan for the production database.
+- [x] Backup and restore procedure written and rehearsed once against the
+      empty production database: `docs/production-d1-backup-restore.md`.
 - [ ] Verify `/api/v1/health/ready` returns 200 against the production Worker.
 - [ ] Verify one photo upload end to end, and that the URL it returns resolves.
 - [ ] Verify CORS from the production web origin, and that rate limits hold.
@@ -53,23 +56,13 @@ exist until the first `wrangler deploy --env production`.
 
 ## 3. Production environment variables
 
-`eas.json`'s `production` profile has no `env` block. A release build with no
-`EXPO_PUBLIC_API_URL`, or one that is not HTTPS, refuses to start rather than
-falling back to localhost (`src/config.ts`), so this is a hard blocker, not a
-nicety. (The `preview` profile already points at staging.)
+A release build with no `EXPO_PUBLIC_API_URL`, or one that is not HTTPS,
+refuses to start rather than falling back to localhost (`src/config.ts`).
 
-```json
-"production": {
-  "autoIncrement": true,
-  "env": {
-    "EXPO_PUBLIC_API_URL": "https://api.<production-domain>",
-    "EXPO_PUBLIC_WEB_ORIGIN": "https://<production-domain>",
-    "EXPO_PUBLIC_APP_ENV": "production",
-    "EXPO_PUBLIC_ENABLE_MEDIA": "true",
-    "EXPO_PUBLIC_ENABLE_PASSWORD_RESET": "false"
-  }
-}
-```
+- [x] `eas.json`'s `production` profile sets `EXPO_PUBLIC_API_URL` to
+      `https://aimz-api-production.shared-links.workers.dev` and
+      `EXPO_PUBLIC_WEB_ORIGIN` to `https://aimz-egypt-production.pages.dev`,
+      with password reset off. (The `preview` profile points at staging.)
 
 - [ ] Leave `EXPO_PUBLIC_ENABLE_PASSWORD_RESET` at `"false"` until password
       reset actually exists. Both endpoints in `cloudflare-api/src/auth.ts`
@@ -82,18 +75,23 @@ nicety. (The `preview` profile already points at staging.)
 
 ## 4. Universal and app links
 
-Both association files still carry placeholders, and neither value exists until
-EAS has issued credentials — so this step follows step 1, not parallel to it.
+Neither value exists until the store accounts and EAS credentials do, so this
+step follows step 1, not parallel to it.
 
 - [ ] `public/.well-known/apple-app-site-association`: replace `TEAMID` with the
       Apple Team ID.
-- [ ] `public/.well-known/assetlinks.json`: replace
-      `REPLACE_WITH_RELEASE_CERTIFICATE_SHA256` with the release signing
-      certificate's SHA-256 fingerprint (`eas credentials` will show it).
-- [ ] Repoint `ios.associatedDomains` and the Android `intentFilters` host in
-      `app.json` from `aimz-egypt-staging.pages.dev` to the production domain.
-- [ ] Confirm both files are served over HTTPS from the production domain, with
-      no redirect and `content-type: application/json`.
+- [x] `public/.well-known/assetlinks.json` carries the EAS release keystore's
+      SHA-256 fingerprint.
+- [ ] Once the app is in Play Console, add the **app signing** key's SHA-256
+      (Setup → App signing) to `assetlinks.json` as well. With Play App Signing,
+      which new apps get by default, the EAS keystore only uploads; Google
+      re-signs what users install, and links verify against Google's key.
+- [x] `ios.associatedDomains` and the Android `intentFilters` host in `app.json`
+      name `aimz-egypt-production.pages.dev`. Preview builds use the same
+      `app.json`, so a staging invitation link no longer opens the app.
+- [ ] Deploy the web app to the `aimz-egypt-production` Pages project, then
+      confirm both files are served over HTTPS with no redirect and
+      `content-type: application/json`.
 
 ## 5. Store accounts
 

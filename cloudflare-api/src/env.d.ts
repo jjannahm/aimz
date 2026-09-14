@@ -19,4 +19,10 @@ interface Env {
    * random characters; required in production, optional in staging.
    */
   DATA_ENCRYPTION_KEY?: string;
+  /**
+   * "on" keeps the web app's refresh token in an HttpOnly cookie (src/auth.ts).
+   * A `wrangler.jsonc` var, declared here as a plain string so the check reads
+   * the same in every environment. Absent means off.
+   */
+  REFRESH_COOKIE?: string;
 }

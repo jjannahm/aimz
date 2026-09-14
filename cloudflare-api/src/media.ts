@@ -1,8 +1,8 @@
 import type { Hono } from "hono";
 import type { PresignResponse } from "../../mobile/src/types/contract";
-import { ApiProblem, enumField, jsonObject, stringField } from "./helpers";
+import { ApiProblem, currentUser, enumField, jsonObject, stringField } from "./helpers";
 import { createUploadToken, verifyUploadToken } from "./security";
-import { assertCanManageTeam, managingUser } from "./team-access";
+import { assertCanManageTeam, linkedPlayerIds, managingUser } from "./team-access";
 
 type App = Hono<{ Bindings: Env }>;
 
@@ -122,13 +122,32 @@ export function registerMediaRoutes(app: App): void {
     } catch {
       throw new ApiProblem(404, "media_not_found", "Image not found.");
     }
-    const object = MEDIA_KEY.team.test(key) || MEDIA_KEY.player.test(key) ? await c.env.MEDIA.get(key) : null;
+    const teamMedia = MEDIA_KEY.team.test(key);
+    const playerMedia = MEDIA_KEY.player.test(key);
+    // A crest is public. A player's photo is a child's likeness, so it opens
+    // only for the people who already see that player: an administrator, the
+    // player, a linked parent, or a coach of the player's squad. A photo that is
+    // not the player's current one is refused in the same words, so the answer
+    // never confirms that an old key exists.
+    if (playerMedia) {
+      const actor = await currentUser(c);
+      const playerId = key.split("/")[1]!;
+      const player = await c.env.DB.prepare("SELECT id,team_id,photo_key FROM players WHERE id=? AND photo_key=?")
+        .bind(playerId, key).first<{ id: string; team_id: string; photo_key: string }>();
+      const allowed = actor.role === "admin"
+        || (actor.role === "player" && actor.player_id === playerId)
+        || (actor.role === "parent" && (await linkedPlayerIds(c.env, actor)).includes(playerId))
+        || (actor.role === "coach" && Boolean(player && await c.env.DB.prepare("SELECT 1 FROM user_teams WHERE user_id=? AND team_id=?").bind(actor.id, player.team_id).first()));
+      if (!player || !allowed) throw new ApiProblem(403, "media_access_denied", "You cannot open this player photo.");
+    }
+    const object = teamMedia || playerMedia ? await c.env.MEDIA.get(key) : null;
     if (!object) throw new ApiProblem(404, "media_not_found", "Image not found.");
     const headers = new Headers();
     object.writeHttpMetadata(headers);
     headers.set("etag", object.httpEtag);
-    // Every key carries a uuid, so an image never changes under the same URL.
-    headers.set("cache-control", "public, max-age=31536000, immutable");
+    // Every key carries a uuid, so a crest never changes under the same URL. A
+    // player photo is never cached: whether it may be seen can change.
+    headers.set("cache-control", teamMedia ? "public, max-age=31536000, immutable" : "no-store");
     headers.set("content-disposition", "inline");
     return new Response(object.body, { headers });
   });

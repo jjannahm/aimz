@@ -25,7 +25,14 @@
       }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://aimz-api-production.shared-links.workers.dev",
+        "EXPO_PUBLIC_WEB_ORIGIN": "https://aimz-egypt-production.pages.dev",
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "EXPO_PUBLIC_ENABLE_MEDIA": "true",
+        "EXPO_PUBLIC_ENABLE_PASSWORD_RESET": "false"
+      }
     }
   },
   "submit": {

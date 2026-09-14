@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 
 import { openField, sealField, sealLegacyHealthData } from '../src/field-crypto';
 import { app } from '../src/index';
-import { createAccessToken, hashPassword } from '../src/security';
+import { PBKDF2_ROUNDS_PER_CALL, createAccessToken, hashPassword, toBase64Url, verifyPassword } from '../src/security';
 
 const testEnv = env as Env & { TEST_MIGRATIONS: string };
 const now = new Date().toISOString();
@@ -23,7 +23,11 @@ async function seedUser(role: 'admin' | 'player' | 'parent' | 'coach', playerId:
   const email = `${id}@aimz.test`;
   await testEnv.DB.prepare('INSERT INTO users (id, name, email, password_hash, role, player_id, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
     .bind(id, `Test ${role}`, email, password === 'unused' ? 'unused' : await hashPassword(password), role, playerId, now, now).run();
-  return { id, email, token: await createAccessToken(id, role, testEnv.JWT_SECRET, 900) };
+  const sid = crypto.randomUUID();
+  await testEnv.DB.prepare('INSERT INTO refresh_families (id,user_id,created_at) VALUES (?,?,?)').bind(sid, id, now).run();
+  await testEnv.DB.prepare('INSERT INTO refresh_sessions (id,user_id,token_hash,expires_at,created_at,family_id) VALUES (?,?,?,?,?,?)')
+    .bind(crypto.randomUUID(), id, crypto.randomUUID(), '2099-01-01T00:00:00.000Z', now, sid).run();
+  return { id, email, token: await createAccessToken(id, role, sid, testEnv.JWT_SECRET, 900) };
 }
 
 beforeEach(async () => {
@@ -64,6 +68,31 @@ async function playWithGoal(admin: { token: string }, matchId: string, teamId: s
   }
 }
 
+describe('match write object authorization', () => {
+  it('rejects outsider and duplicate player statistics without partial writes', async () => {
+    const { admin, myMatch, myPlayer, theirPlayer } = await world();
+    for (const entries of [
+      [{ player_id: myPlayer.id, appeared: true, minutes_played: 10 }, { player_id: theirPlayer.id, appeared: true, minutes_played: 10 }],
+      [{ player_id: myPlayer.id, appeared: true, minutes_played: 10 }, { player_id: myPlayer.id, appeared: true, minutes_played: 20 }],
+    ]) {
+      const response = await request(`/api/v1/matches/${myMatch.id}/player-stats`, json('PUT', entries, admin.token));
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({ detail: { code: 'invalid_player' } });
+    }
+    expect((await testEnv.DB.prepare('SELECT COUNT(*) n FROM player_match_stats WHERE match_id=?').bind(myMatch.id).first<{ n: number }>())?.n).toBe(0);
+  });
+
+  it('keeps operation ids match-scoped and does not disclose the other event', async () => {
+    const { admin, myMatch, theirMatch, mine, theirs, myPlayer } = await world();
+    const operation = `shared-${unique()}`;
+    const created = await request(`/api/v1/matches/${myMatch.id}/events`, json('POST', { type: 'goal', team_id: mine.id, player_id: myPlayer.id, client_operation_id: operation }, admin.token));
+    expect(created.status).toBe(201);
+    const collision = await request(`/api/v1/matches/${theirMatch.id}/events`, json('POST', { type: 'goal', team_id: theirs.id, client_operation_id: operation }, admin.token));
+    expect(collision.status).toBe(409);
+    expect(await collision.json()).toMatchObject({ detail: { code: 'operation_id_conflict' } });
+  });
+});
+
 describe('every response', () => {
   it('carries headers that keep it from being framed, sniffed or leaked', async () => {
     const response = await request('/api/v1/health');
@@ -73,6 +102,7 @@ describe('every response', () => {
     expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
     expect(response.headers.get('Content-Security-Policy')).toContain("default-src 'none'");
     expect(response.headers.get('Cross-Origin-Resource-Policy')).toBe('same-origin');
+    expect(response.headers.get('Cache-Control')).toBe('no-store');
     // Refusals too, not only successes.
     expect((await request('/api/v1/matches')).headers.get('X-Frame-Options')).toBe('DENY');
   });
@@ -118,6 +148,63 @@ function limiter(allow: number) {
 }
 
 describe('the doors into an account', () => {
+  it('hashes a new password with 600,000 rounds, in calls production will run', async () => {
+    const hashed = await hashPassword('a-long-test-password');
+    expect(hashed).toMatch(/^pbkdf2_sha256_staged\$6x100000\$/u);
+    expect(await verifyPassword('a-long-test-password', hashed)).toBe(true);
+    expect(await verifyPassword('a-wrong-test-password', hashed)).toBe(false);
+    // Cloudflare refuses one PBKDF2 call above 100,000 rounds in production, and
+    // the local runtime these tests use does not. This is the only thing that notices.
+    expect(PBKDF2_ROUNDS_PER_CALL).toBeLessThanOrEqual(100_000);
+    const beyond = `pbkdf2_sha256$600000$${toBase64Url(new Uint8Array(16))}$${toBase64Url(new Uint8Array(32))}`;
+    expect(await verifyPassword('a-long-test-password', beyond)).toBe(false);
+  });
+
+  it('signs in an account hashed before the stages, and rewrites its hash in the staged form', async () => {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode('the-right-password'), 'PBKDF2', false, ['deriveBits']);
+    const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations: 100_000 }, key, 256));
+    const user = await seedUser('player');
+    await testEnv.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?')
+      .bind(`pbkdf2_sha256$100000$${toBase64Url(salt)}$${toBase64Url(bits)}`, user.id).run();
+
+    expect((await request('/api/v1/auth/login', json('POST', { email: user.email, password: 'the-right-password' }))).status).toBe(200);
+    const stored = await testEnv.DB.prepare('SELECT password_hash FROM users WHERE id = ?').bind(user.id).first<{ password_hash: string }>();
+    expect(stored?.password_hash).toMatch(/^pbkdf2_sha256_staged\$6x100000\$/u);
+    expect((await request('/api/v1/auth/login', json('POST', { email: user.email, password: 'the-right-password' }))).status).toBe(200);
+  });
+
+  it('keeps a browser refresh token in an HttpOnly cookie where the deployment allows it', async () => {
+    const user = await seedUser('player', null, 'the-right-password');
+    const bindings = { ...testEnv, REFRESH_COOKIE: 'on' } as Env;
+    const browserHeaders = { Origin: testEnv.FRONTEND_ORIGIN };
+    const login = await request('/api/v1/auth/login', json('POST', { email: user.email, password: 'the-right-password' }, undefined, browserHeaders), bindings);
+    const body = await login.json<{ refresh_token: string | null }>();
+    const setCookie = login.headers.get('Set-Cookie') ?? '';
+    expect(body.refresh_token).toBeNull();
+    expect(setCookie).toContain('HttpOnly');
+    expect(setCookie).toContain('Secure');
+    expect(setCookie).toContain('SameSite=None');
+    const cookie = setCookie.split(';')[0]!;
+    const refreshed = await request('/api/v1/auth/refresh', json('POST', {}, undefined, { ...browserHeaders, Cookie: cookie }), bindings);
+    expect(refreshed.status).toBe(200);
+    expect((await refreshed.json<{ refresh_token: string | null }>()).refresh_token).toBeNull();
+
+    // SameSite=None rides along on requests from any page; only the app's own may spend it.
+    const rotated = (refreshed.headers.get('Set-Cookie') ?? '').split(';')[0]!;
+    const forged = await request('/api/v1/auth/refresh', json('POST', {}, undefined, { Origin: 'https://elsewhere.example', Cookie: rotated }), bindings);
+    expect(forged.status).toBe(403);
+    expect(await forged.json()).toMatchObject({ detail: { code: 'invalid_origin' } });
+  });
+
+  it('hands a browser its refresh token in the body while the cookie is off', async () => {
+    const user = await seedUser('player', null, 'the-right-password');
+    const login = await request('/api/v1/auth/login', json('POST', { email: user.email, password: 'the-right-password' }, undefined, { Origin: testEnv.FRONTEND_ORIGIN }));
+    expect(login.status).toBe(200);
+    expect(login.headers.get('Set-Cookie')).toBeNull();
+    expect((await login.json<{ refresh_token: string | null }>()).refresh_token).toEqual(expect.any(String));
+  });
+
   it('limits invitation-code lookups from one address', async () => {
     const address = freshAddress();
     const invites = limiter(2);
@@ -169,6 +256,67 @@ describe('the doors into an account', () => {
       request('/api/v1/auth/refresh', json('POST', { refresh_token: session.refresh_token })),
     ]);
     expect([first.status, second.status].sort()).toEqual([200, 401]);
+  });
+
+  it('revokes the complete session family on logout', async () => {
+    const user = await seedUser('player', null, 'the-right-password');
+    const session = await (await request('/api/v1/auth/login', json('POST', { email: user.email, password: 'the-right-password' }))).json<{ access_token: string; refresh_token: string }>();
+    expect((await request('/api/v1/users/me', json('GET', undefined, session.access_token))).status).toBe(200);
+    expect((await request('/api/v1/auth/logout', json('POST', { refresh_token: session.refresh_token }))).status).toBe(204);
+    expect((await request('/api/v1/users/me', json('GET', undefined, session.access_token))).status).toBe(401);
+  });
+
+  it('ends a signed-out session on the live poll, which reads the account in a statement of its own', async () => {
+    const { myMatch } = await world();
+    const admin = await seedUser('admin', null, 'the-right-password');
+    const session = await (await request('/api/v1/auth/login', json('POST', { email: admin.email, password: 'the-right-password' }))).json<{ access_token: string; refresh_token: string }>();
+    const live = () => request(`/api/v1/matches/${myMatch.id}/live`, json('GET', undefined, session.access_token));
+    const polled = await live();
+    expect(polled.status).toBe(200);
+    // The poll chooses its own caching so it can answer 304; the default must not overwrite it.
+    expect(polled.headers.get('Cache-Control')).toBe('private, no-cache');
+    expect((await request('/api/v1/auth/logout', json('POST', { refresh_token: session.refresh_token }))).status).toBe(204);
+    expect((await live()).status).toBe(401);
+  });
+
+  it('ends every sign-in when the password changes, and a replayed refresh token ends its own', async () => {
+    const user = await seedUser('player', null, 'the-right-password');
+    const signIn = async () => (await request('/api/v1/auth/login', json('POST', { email: user.email, password: 'the-right-password' }))).json<{ access_token: string; refresh_token: string }>();
+    const me = (token: string) => request('/api/v1/users/me', json('GET', undefined, token));
+
+    const phone = await signIn();
+    const rotated = await (await request('/api/v1/auth/refresh', json('POST', { refresh_token: phone.refresh_token }))).json<{ access_token: string; refresh_token: string }>();
+    expect((await me(rotated.access_token)).status).toBe(200);
+    // The spent token comes back: the whole sign-in ends, including what it was rotated into.
+    expect((await request('/api/v1/auth/refresh', json('POST', { refresh_token: phone.refresh_token }))).status).toBe(401);
+    expect((await me(rotated.access_token)).status).toBe(401);
+    expect((await request('/api/v1/auth/refresh', json('POST', { refresh_token: rotated.refresh_token }))).status).toBe(401);
+
+    const laptop = await signIn();
+    const tablet = await signIn();
+    expect((await request('/api/v1/auth/password/change', json('POST', { current_password: 'the-right-password', new_password: 'another-long-password' }, laptop.access_token))).status).toBe(200);
+    expect((await me(laptop.access_token)).status).toBe(401);
+    expect((await me(tablet.access_token)).status).toBe(401);
+  });
+
+  it('refuses an unauthenticated request for a player photo, and a stranger’s', async () => {
+    const { myPlayer } = await world();
+    const key = `players/${myPlayer.id}/${crypto.randomUUID()}.png`;
+    await testEnv.DB.prepare('UPDATE players SET photo_key = ? WHERE id = ?').bind(key, myPlayer.id).run();
+    const anonymous = await request(`/api/v1/media/${key}`);
+    expect(anonymous.status).toBe(401);
+    const stranger = await seedUser('coach');
+    const refused = await request(`/api/v1/media/${key}`, json('GET', undefined, stranger.token));
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ detail: { code: 'media_access_denied' } });
+  });
+
+  it('fails malformed and oversized JWTs closed as 401', async () => {
+    for (const token of ['abc.%%%%.def', 'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.e30.', 'x'.repeat(4097)]) {
+      const response = await request('/api/v1/users/me', json('GET', undefined, token));
+      expect(response.status).toBe(401);
+      expect(await response.json()).toMatchObject({ detail: { code: 'invalid_token' } });
+    }
   });
 });
 
@@ -270,8 +418,8 @@ describe('reads held to the caller’s squad', () => {
 describe('uploaded images', () => {
   const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13]);
 
-  async function presigned(admin: { token: string }, teamId: string) {
-    const response = await request('/api/v1/media/uploads/presign', json('POST', { entity: 'team', entity_id: teamId, content_type: 'image/png' }, admin.token));
+  async function presigned(admin: { token: string }, entityId: string, entity: 'team' | 'player' = 'team') {
+    const response = await request('/api/v1/media/uploads/presign', json('POST', { entity, entity_id: entityId, content_type: 'image/png' }, admin.token));
     return response.json<{ fields: Record<string, string>; object_key: string }>();
   }
   const upload = (fields: Record<string, string>, bytes: Uint8Array) => {
@@ -306,6 +454,20 @@ describe('uploaded images', () => {
     const { admin } = await world();
     const response = await request('/api/v1/media/uploads/presign', json('POST', { entity: 'team', entity_id: '../players', content_type: 'image/png' }, admin.token));
     expect(response.status).toBe(404);
+  });
+
+  it('keeps player photos private while team crests remain public', async () => {
+    const { admin, myPlayer, theirPlayer, coach } = await world();
+    const slot = await presigned(admin, myPlayer.id, 'player');
+    expect((await upload(slot.fields, png)).status).toBe(204);
+    await testEnv.DB.prepare('UPDATE players SET photo_key=? WHERE id=?').bind(slot.object_key, myPlayer.id).run();
+    const path = `/api/v1/media/${slot.object_key}`;
+    expect((await request(path)).status).toBe(401);
+    expect((await request(path, json('GET', undefined, (await seedUser('player', theirPlayer.id)).token))).status).toBe(403);
+    const own = await request(path, json('GET', undefined, (await seedUser('player', myPlayer.id)).token));
+    expect(own.status).toBe(200);
+    expect(own.headers.get('Cache-Control')).toBe('no-store');
+    expect((await request(path, json('GET', undefined, coach.token))).status).toBe(200);
   });
 });
 

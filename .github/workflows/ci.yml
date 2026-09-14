@@ -2,8 +2,10 @@ name: CI
 
 on:
   pull_request:
+  # Launch and release branches are checked on every push, with or without a
+  # pull request. Only main deploys: the deploy jobs below say so themselves.
   push:
-    branches: [main]
+    branches: [main, "launch/**", "release/**"]
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}

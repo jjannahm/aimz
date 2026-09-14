@@ -1,5 +1,6 @@
 import { clientAddress, enforce } from "./rate-limit";
 import type { Context, Hono } from "hono";
+import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { InviteRead, TokenResponse } from "../../mobile/src/types/contract";
 import { HEALTH_COLUMNS, sealField } from "./field-crypto";
 import { ApiProblem, USER_SELECT, adminUser, assertNotExpired, currentUser, enumField, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
@@ -10,6 +11,7 @@ import {
   hashPassword,
   hashSecret,
   newToken,
+  passwordNeedsRehash,
   publicUser,
   verifyPassword,
 } from "./security";
@@ -96,22 +98,66 @@ async function ensureSeeded(env: Env): Promise<void> {
   ).bind(crypto.randomUUID(), inviteHash, adminId, nowIso()).run();
 }
 
-async function issueTokens(env: Env, user: UserRow): Promise<TokenResponse> {
+interface IssuedTokens { body: TokenResponse; refreshToken: string }
+
+/**
+ * Whether this request comes from the web app and may keep its refresh token
+ * in an HttpOnly cookie, out of reach of any script on the page.
+ *
+ * Only where the deployment allows it. A browser sends a cookie back to the API
+ * only when the API is the same site as the page, or when it accepts
+ * third-party cookies — and Safari accepts none. pages.dev and workers.dev are
+ * public suffixes, so a web app on one and this API on the other are two sites,
+ * and turning the cookie on there would end every Safari session at its first
+ * refresh. `REFRESH_COOKIE` stays "off" until both are served from one domain.
+ */
+function cookieSessions(c: Context<{ Bindings: Env }>): boolean {
+  if (c.env.REFRESH_COOKIE !== "on") return false;
+  const origin = c.req.header("Origin");
+  return Boolean(origin && (origin === c.env.FRONTEND_ORIGIN || origin === c.env.PUBLIC_FORM_ORIGIN));
+}
+
+/** The refresh token a request presents: in its body, or in the web app's cookie. */
+function presentedRefreshToken(c: Context<{ Bindings: Env }>, body: Record<string, unknown>): string | undefined {
+  const bodyToken = stringField(body, "refresh_token", { optional: true, nullable: true, min: 16, max: 256 });
+  if (bodyToken) return bodyToken;
+  if (c.env.REFRESH_COOKIE !== "on") return undefined;
+  const cookieToken = getCookie(c, "aimz_refresh");
+  // The cookie is SameSite=None, so a browser attaches it to requests from any
+  // page. Only the web app's own origin may spend it.
+  if (cookieToken && !cookieSessions(c)) throw new ApiProblem(403, "invalid_origin", "This browser request is not allowed.");
+  return cookieToken;
+}
+
+function deliverTokens(c: Context<{ Bindings: Env }>, issued: IssuedTokens): TokenResponse {
+  if (!cookieSessions(c)) return issued.body;
+  setCookie(c, "aimz_refresh", issued.refreshToken, {
+    httpOnly: true, secure: true, sameSite: "None", path: "/api/v1/auth",
+    maxAge: Number(c.env.REFRESH_TOKEN_DAYS) * 86_400,
+  });
+  return { ...issued.body, refresh_token: null };
+}
+
+async function issueTokens(env: Env, user: UserRow, familyId = crypto.randomUUID()): Promise<IssuedTokens> {
   const expiresIn = Number(env.ACCESS_TOKEN_SECONDS);
-  const accessToken = await createAccessToken(user.id, user.role, env.JWT_SECRET, expiresIn);
+  const accessToken = await createAccessToken(user.id, user.role, familyId, env.JWT_SECRET, expiresIn);
   const refreshToken = newToken();
   const refreshHash = await hashSecret(refreshToken);
   const expiresAt = new Date(Date.now() + Number(env.REFRESH_TOKEN_DAYS) * 86_400_000).toISOString();
-  await env.DB.prepare(
-    "INSERT INTO refresh_sessions (id, user_id, token_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
-  ).bind(crypto.randomUUID(), user.id, refreshHash, expiresAt, nowIso()).run();
-  return {
+  const sessionId = crypto.randomUUID();
+  const createdAt = nowIso();
+  await env.DB.batch([
+    env.DB.prepare("INSERT OR IGNORE INTO refresh_families (id,user_id,created_at) VALUES (?,?,?)").bind(familyId, user.id, createdAt),
+    env.DB.prepare("INSERT INTO refresh_sessions (id,user_id,token_hash,expires_at,created_at,family_id) VALUES (?,?,?,?,?,?)")
+      .bind(sessionId, user.id, refreshHash, expiresAt, createdAt, familyId),
+  ]);
+  return { refreshToken, body: {
     access_token: accessToken,
     refresh_token: refreshToken,
     token_type: "bearer",
     expires_in: expiresIn,
     user: publicUser(user),
-  };
+  } };
 }
 
 function emailField(body: Record<string, unknown>): string {
@@ -142,7 +188,11 @@ async function passwordLogin(c: Context<{ Bindings: Env }>): Promise<Response> {
   // After the password, so an expired account cannot be told apart from a wrong
   // one by anybody who does not already hold the password for it.
   assertNotExpired(user);
-  return c.json(await issueTokens(c.env, user));
+  if (passwordNeedsRehash(user.password_hash)) {
+    await c.env.DB.prepare("UPDATE users SET password_hash=?,updated_at=? WHERE id=?")
+      .bind(await hashPassword(password), nowIso(), user.id).run();
+  }
+  return c.json(deliverTokens(c, await issueTokens(c.env, user)));
 }
 
 export function registerAuthRoutes(app: App): void {
@@ -281,14 +331,14 @@ export function registerAuthRoutes(app: App): void {
       throw error;
     }
     if ((results[1].meta.changes ?? 0) !== 1) throw new ApiProblem(409, "invalid_invite", "This invitation code is no longer available.");
-    return c.json(await issueTokens(c.env, user), 201);
+    return c.json(deliverTokens(c, await issueTokens(c.env, user)), 201);
   });
 
   app.post("/api/v1/auth/login", passwordLogin);
 
   app.post("/api/v1/auth/refresh", async (c) => {
     const body = await jsonObject(c);
-    const refreshToken = stringField(body, "refresh_token", { min: 16, max: 256 });
+    const refreshToken = presentedRefreshToken(c, body);
     if (!refreshToken) throw new ApiProblem(401, "invalid_refresh_token", "Sign in again.");
     const tokenHash = await hashSecret(refreshToken);
     // Keyed on the token itself, which is what makes this safe for normal use:
@@ -297,23 +347,62 @@ export function registerAuthRoutes(app: App): void {
     // Ten a minute against one token is a stuck client or a replay, not a phone.
     await enforce(c.env.REFRESH_BY_TOKEN, `refresh:${tokenHash}`, "account", "This session is refreshing too often. Sign in again.");
     await enforce(c.env.REFRESH_BY_IP, `refresh-ip:${clientAddress(c)}`, "address", "Too many refreshes from this network. Wait a minute and try again.");
-    // Spent in the same statement that finds it. Read first and revoked after,
-    // two requests racing one stolen token could each be handed a new session.
+    // A token that was already rotated away is being replayed, by a thief or by
+    // whoever it was stolen from. There is no telling which, so the whole sign-in
+    // it belongs to ends, and every access token minted from it with it.
     const now = nowIso();
-    const session = await c.env.DB.prepare(
-      "UPDATE refresh_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ? RETURNING user_id",
-    ).bind(now, tokenHash, now).first<{ user_id: string }>();
-    if (!session) throw new ApiProblem(401, "invalid_refresh_token", "Your session has expired. Sign in again.");
+    const session = await c.env.DB.prepare("SELECT id,user_id,family_id,revoked_at,revocation_reason,expires_at FROM refresh_sessions WHERE token_hash=?")
+      .bind(tokenHash).first<{ id: string; user_id: string; family_id: string | null; revoked_at: string | null; revocation_reason: string | null; expires_at: string }>();
+    if (session?.family_id && session.revoked_at && session.revocation_reason === "rotated") {
+      await c.env.DB.batch([
+        c.env.DB.prepare("UPDATE refresh_families SET revoked_at=?,revocation_reason='reuse_detected' WHERE id=? AND revoked_at IS NULL").bind(now, session.family_id),
+        c.env.DB.prepare("UPDATE refresh_sessions SET revoked_at=COALESCE(revoked_at,?),revocation_reason=CASE WHEN revoked_at IS NULL THEN 'reuse_detected' ELSE revocation_reason END WHERE family_id=?").bind(now, session.family_id),
+      ]);
+    }
+    if (!session?.family_id || session.revoked_at || session.expires_at <= now) throw new ApiProblem(401, "invalid_refresh_token", "Your session has expired. Sign in again.");
+    const family = await c.env.DB.prepare("SELECT id FROM refresh_families WHERE id=? AND user_id=? AND revoked_at IS NULL").bind(session.family_id, session.user_id).first();
+    if (!family) throw new ApiProblem(401, "invalid_refresh_token", "Your session has expired. Sign in again.");
     const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.id = ? AND u.is_active = 1`).bind(session.user_id).first<UserRow>();
     if (!user) throw new ApiProblem(401, "invalid_refresh_token", "Your account is unavailable.");
     assertNotExpired(user);
-    return c.json(await issueTokens(c.env, user));
+    const nextId = crypto.randomUUID();
+    const nextToken = newToken();
+    const nextHash = await hashSecret(nextToken);
+    const expiresAt = new Date(Date.now() + Number(c.env.REFRESH_TOKEN_DAYS) * 86_400_000).toISOString();
+    // Spent and replaced in one batch: the old session is spent only if it is
+    // still live, and the new one is written only if that spend was this
+    // request's. Two requests racing one token cannot both come away with a
+    // session, and the loser is treated as the replay it cannot be told from.
+    const results = await c.env.DB.batch([
+      c.env.DB.prepare("UPDATE refresh_sessions SET revoked_at=?,revocation_reason='rotated',replaced_by_session_id=? WHERE id=? AND revoked_at IS NULL AND expires_at>?").bind(now, nextId, session.id, now),
+      c.env.DB.prepare(`INSERT INTO refresh_sessions (id,user_id,token_hash,expires_at,created_at,family_id)
+        SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM refresh_sessions WHERE id=? AND replaced_by_session_id=? AND revocation_reason='rotated')
+        AND EXISTS (SELECT 1 FROM refresh_families WHERE id=? AND revoked_at IS NULL)`)
+        .bind(nextId, user.id, nextHash, expiresAt, now, session.family_id, session.id, nextId, session.family_id),
+    ]);
+    if ((results[0].meta.changes ?? 0) !== 1 || (results[1].meta.changes ?? 0) !== 1) {
+      await c.env.DB.prepare("UPDATE refresh_families SET revoked_at=?,revocation_reason='reuse_detected' WHERE id=? AND revoked_at IS NULL").bind(now, session.family_id).run();
+      throw new ApiProblem(401, "invalid_refresh_token", "Your session has expired. Sign in again.");
+    }
+    const expiresIn = Number(c.env.ACCESS_TOKEN_SECONDS);
+    const response: TokenResponse = { access_token: await createAccessToken(user.id, user.role, session.family_id, c.env.JWT_SECRET, expiresIn), refresh_token: nextToken, token_type: "bearer", expires_in: expiresIn, user: publicUser(user) };
+    return c.json(deliverTokens(c, { body: response, refreshToken: nextToken }));
   });
 
   app.post("/api/v1/auth/logout", async (c) => {
     const body = await jsonObject(c);
-    const token = stringField(body, "refresh_token", { min: 16, max: 256 });
-    if (token) await c.env.DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE token_hash = ? AND revoked_at IS NULL").bind(nowIso(), await hashSecret(token)).run();
+    const token = presentedRefreshToken(c, body);
+    if (token) {
+      const session = await c.env.DB.prepare("SELECT family_id FROM refresh_sessions WHERE token_hash=?").bind(await hashSecret(token)).first<{ family_id: string | null }>();
+      if (session?.family_id) {
+        const now = nowIso();
+        await c.env.DB.batch([
+          c.env.DB.prepare("UPDATE refresh_families SET revoked_at=?,revocation_reason='logout' WHERE id=? AND revoked_at IS NULL").bind(now, session.family_id),
+          c.env.DB.prepare("UPDATE refresh_sessions SET revoked_at=COALESCE(revoked_at,?),revocation_reason=CASE WHEN revoked_at IS NULL THEN 'logout' ELSE revocation_reason END WHERE family_id=?").bind(now, session.family_id),
+        ]);
+      }
+    }
+    deleteCookie(c, "aimz_refresh", { path: "/api/v1/auth", secure: true });
     return c.body(null, 204);
   });
 
@@ -331,7 +420,8 @@ export function registerAuthRoutes(app: App): void {
     const changedAt = nowIso();
     await c.env.DB.batch([
       c.env.DB.prepare("UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?").bind(await hashPassword(next), changedAt, user.id),
-      c.env.DB.prepare("UPDATE refresh_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL").bind(changedAt, user.id),
+      c.env.DB.prepare("UPDATE refresh_families SET revoked_at=?,revocation_reason='password_change' WHERE user_id=? AND revoked_at IS NULL").bind(changedAt, user.id),
+      c.env.DB.prepare("UPDATE refresh_sessions SET revoked_at=COALESCE(revoked_at,?),revocation_reason=CASE WHEN revoked_at IS NULL THEN 'password_change' ELSE revocation_reason END WHERE user_id=?").bind(changedAt, user.id),
     ]);
     return c.json({ message: "Password updated." });
   });

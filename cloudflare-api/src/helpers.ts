@@ -226,29 +226,46 @@ export function assertNotExpired(user: UserRow): UserRow {
 }
 
 /**
- * Who the bearer token says this is, without asking the database.
+ * Who the bearer token says this is, and which sign-in minted it, without
+ * asking the database.
  *
  * Split out so a caller that is about to read the account anyway — as part of
  * a larger statement — does not have to read it twice. It proves the signature
  * and the expiry of the token and nothing else: whether that account still
- * exists, is active and is in date is a question for the row, and every caller
- * still asks it.
+ * exists, is active and is in date, and whether its sign-in is still live, are
+ * questions for the row, and every caller still asks them.
  */
-export async function bearerSubject(c: Context<{ Bindings: Env }>): Promise<string> {
+export async function bearerSubject(c: Context<{ Bindings: Env }>): Promise<{ userId: string; familyId: string }> {
   const authorization = c.req.header("Authorization");
   if (!authorization?.startsWith("Bearer ")) throw new ApiProblem(401, "authentication_required", "Sign in to continue.");
   const payload = await verifyAccessToken(authorization.slice(7), c.env.JWT_SECRET);
   if (!payload) throw new ApiProblem(401, "invalid_token", "Your session has expired. Sign in again.");
-  return payload.sub;
+  return { userId: payload.sub, familyId: payload.sid };
+}
+
+/**
+ * A condition on `users u`: the sign-in an access token came from is still live.
+ *
+ * Logging out, changing the password or replaying a spent refresh token ends
+ * the sign-in, and every access token it minted has to stop working then, not
+ * fifteen minutes later when it expires. A condition on the account read rather
+ * than a query of its own, so a path that reads the account once still does.
+ * Takes the placeholders for the token's family id and for the current time.
+ */
+export function liveSession(familyParam: string, nowParam: string): string {
+  return `EXISTS (
+    SELECT 1 FROM refresh_families f
+    WHERE f.id = ${familyParam} AND f.user_id = u.id AND f.revoked_at IS NULL
+      AND EXISTS (SELECT 1 FROM refresh_sessions s WHERE s.family_id = f.id AND s.revoked_at IS NULL AND s.expires_at > ${nowParam})
+  )`;
 }
 
 export async function currentUser(c: Context<{ Bindings: Env }>): Promise<UserRow> {
-  const authorization = c.req.header("Authorization");
-  if (!authorization?.startsWith("Bearer ")) throw new ApiProblem(401, "authentication_required", "Sign in to continue.");
-  const payload = await verifyAccessToken(authorization.slice(7), c.env.JWT_SECRET);
-  if (!payload) throw new ApiProblem(401, "invalid_token", "Your session has expired. Sign in again.");
-  const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.id = ? AND u.is_active = 1`).bind(payload.sub).first<UserRow>();
-  if (!user) throw new ApiProblem(401, "invalid_token", "Your account is unavailable.");
+  const { userId, familyId } = await bearerSubject(c);
+  const user = await c.env.DB.prepare(`${USER_SELECT} WHERE u.id = ? AND u.is_active = 1 AND ${liveSession("?", "?")}`)
+    .bind(userId, familyId, nowIso()).first<UserRow>();
+  // Missing, deactivated or signed out: the token no longer speaks for anyone.
+  if (!user) throw new ApiProblem(401, "invalid_token", "Your session has expired. Sign in again.");
   return assertNotExpired(user);
 }
 
