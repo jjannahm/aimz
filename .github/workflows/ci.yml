@@ -145,7 +145,13 @@ jobs:
       - name: Apply D1 migrations and deploy staging API
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Staging-scoped, and only staging-scoped. This job runs on every
+          # push to main with no human in the loop, so the credential it holds
+          # is the blast radius of a bad merge or a compromised build
+          # dependency. Production deploys use CLOUDFLARE_API_TOKEN_PRODUCTION
+          # from a separate, reviewer-gated environment -- see
+          # docs/deployment-credentials.md.
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: cloudflare-api
           wranglerVersion: "4.124.0"
@@ -183,7 +189,7 @@ jobs:
       - name: Deploy staging web app
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_STAGING }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy mobile/dist --project-name=aimz-egypt-staging --branch=main --commit-hash=${{ github.sha }}
           gitHubToken: ${{ secrets.GITHUB_TOKEN }}

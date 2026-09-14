@@ -17,7 +17,7 @@ Method: `mjmirza/app-store-compliance` automated guard, Expo native-config intro
 3. **Universal-link credentials.** Replace `TEAMID` in `mobile/public/.well-known/apple-app-site-association`, use the production host in `mobile/app.json`, and serve the file over HTTPS without redirects. Until this is complete, remove the associated-domains entitlement from a submission rather than claim a broken link feature.
 4. **Reviewer access.** Seed a non-expiring, fully populated review account. Put its credentials and a working invitation code in App Store Connect Review Notes, never in the repository. Keep the production backend available throughout review.
 5. **Store metadata.** Provide truthful screenshots of real app functionality using fictional or properly consented player data; complete the current age-rating questionnaire; add the privacy and support URLs; and use an international-format review phone number.
-6. **Children and image rights.** Keep written parent/guardian authority for minor accounts, health details, player photographs, and any club badges or third-party marks. Do not submit screenshots containing identifiable minors without documented permission.
+6. **Children and image rights.** Keep written parent/guardian authority for minor accounts, health details, squad crestsotographs, and any club badges or third-party marks. Do not submit screenshots containing identifiable minors without documented permission.
 7. **Device evidence.** Test the archive on supported physical iPhone and iPad devices with VoiceOver, Larger Text, Reduce Motion, denied photo permission, offline/slow networking, and every role. Because `supportsTablet` is true, iPad operation and screenshots are part of review.
 
 ## App Privacy answers to mirror in App Store Connect
@@ -26,7 +26,7 @@ The app declares no tracking and contains no advertising or analytics SDK. All l
 
 - Contact Info: Name, Email Address, Phone Number, Physical Address.
 - Health & Fitness: Health and Fitness.
-- User Content: Photos or Videos and Other User Content.
+- User Content: Other User Content. (No photographs of players are collected; the only image the app uploads is a squad crest.)
 - Identifiers: User ID.
 - Purchases: Payment Info and Purchase History (academy fee/payment records and kit orders; no card credentials are collected by the app).
 - Other Data: date of birth, nationality, academy/school history, role, squad and operational sports records.
@@ -42,7 +42,7 @@ Use the following structure in App Store Connect and replace each bracketed owne
 >
 > Player/parent flow: sign in, view the linked squad, fixtures, results, attendance and player information. Administrator flow: manage teams and players, start a match, add or correct events, enter lineup minutes, and finish the match. Account deletion is at Settings > Delete account and permanently removes the login while personal newcomer-application fields are redacted. Privacy Policy, Terms, and Cookie and Storage Policy are linked in Settings.
 >
-> The photo-library permission appears only when an authorised administrator chooses to upload a player or team image. The app does not request camera, microphone, location, contacts, advertising identifier, or tracking permission. It contains no advertising, analytics, in-app purchase, external payment, social login, or generative AI integration.
+> The photo-library permission appears only when an authorised administrator chooses to upload a squad crest. Photographs of players are not collected at all. The app does not request camera, microphone, location, contacts, advertising identifier, or tracking permission. It contains no advertising, analytics, in-app purchase, external payment, social login, or generative AI integration.
 
 ## Automated-guard interpretation
 

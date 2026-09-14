@@ -117,7 +117,6 @@ export interface PlayerRow {
   team_id: string;
   position: string;
   jersey_number: number | null;
-  photo_key: string | null;
   date_of_birth: string | null;
   is_active: number;
   created_at: string;

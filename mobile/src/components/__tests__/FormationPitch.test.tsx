@@ -6,7 +6,7 @@ import { FORMATIONS, LINEUP_FORMATS, formationRows, outfieldCount, type Player }
 jest.mock('@expo/vector-icons', () => ({ Ionicons: 'Ionicons' }));
 
 const player = (id: string, name: string, position: string, jersey: number): Player => ({
-  id, name, position, jersey_number: jersey, team_id: 't', photo_key: null, photo_url: null,
+  id, name, position, jersey_number: jersey, team_id: 't',
   is_active: true, created_at: '', updated_at: '',
 });
 

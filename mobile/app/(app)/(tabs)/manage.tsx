@@ -408,7 +408,7 @@ export default function ManageScreen() {
         else if (saved.team_count) finished = saved;
       } else if (resource === 'players') {
         if (!values.name.trim() || !values.teamId || !values.position.trim()) throw new Error('Enter the player name, squad and position.');
-        const payload = { name: values.name.trim(), team_id: values.teamId, position: values.position.trim(), jersey_number: values.jersey ? Number(values.jersey) : null, photo_key: editing && 'photo_key' in editing ? editing.photo_key : null, is_active: true };
+        const payload = { name: values.name.trim(), team_id: values.teamId, position: values.position.trim(), jersey_number: values.jersey ? Number(values.jersey) : null, is_active: true };
         editing ? await api.updatePlayer(editing.id, payload) : await api.createPlayer(payload);
       } else if (resource === 'matches') {
         if (!values.competitionId || !values.homeTeamId || !values.awayTeamId || !values.venue.trim() || Number.isNaN(Date.parse(values.kickoff))) throw new Error('Complete the competition, teams, kickoff and venue.');
@@ -491,22 +491,23 @@ export default function ManageScreen() {
     }, { destructive: true });
   };
 
-  const uploadPhoto = async (item: Team | Player, entity: 'team' | 'player') => {
+  /** A squad's crest. Players have no photograph, by design. */
+  const uploadCrest = async (item: Team) => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { showMessage('Photo access needed', 'Allow photo access to upload a roster image.'); return; }
+    if (!permission.granted) { showMessage('Photo access needed', 'Allow photo access to upload a squad crest.'); return; }
     const picked = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.85 });
     if (picked.canceled) return;
     try {
       const asset = picked.assets[0];
       if (!asset) return;
       const image = await ImageManipulator.manipulateAsync(asset.uri, [{ resize: { width: 1200 } }], { compress: 0.82, format: ImageManipulator.SaveFormat.JPEG });
-      const presign = await api.presign(entity, item.id, 'image/jpeg');
-      const data = new FormData(); Object.entries(presign.fields).forEach(([key, value]) => data.append(key, value)); data.append('file', { uri: image.uri, name: 'aimz-photo.jpg', type: 'image/jpeg' } as unknown as Blob);
+      const presign = await api.presign('team', item.id, 'image/jpeg');
+      const data = new FormData(); Object.entries(presign.fields).forEach(([key, value]) => data.append(key, value)); data.append('file', { uri: image.uri, name: 'aimz-crest.jpg', type: 'image/jpeg' } as unknown as Blob);
       const uploaded = await fetch(presign.upload_url, { method: 'POST', body: data });
       if (!uploaded.ok) throw new Error('The storage service rejected the upload.');
-      if (entity === 'team') await api.updateTeam(item.id, { ...(item as Team), logo_key: presign.object_key }); else await api.updatePlayer(item.id, { ...(item as Player), photo_key: presign.object_key });
+      await api.updateTeam(item.id, { ...item, logo_key: presign.object_key });
       await invalidate();
-      confirmManageWrite('photo', 'saved');
+      confirmManageWrite('crest', 'saved');
     } catch (error) { showMessage('Upload failed', (error as Error).message); }
   };
 
@@ -514,12 +515,12 @@ export default function ManageScreen() {
     {resourceChips}
     {subTabs}
     <View style={styles.content} testID="manage-content">
-      {!appConfig.enableMedia && (resource === 'teams' || resource === 'players') ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}
+      {!appConfig.enableMedia && resource === 'teams' ? <View style={styles.previewNote}><Text style={styles.previewNoteTitle}>Placeholder images only</Text><Text style={styles.previewNoteCopy}>Photo uploads are disabled in the free staging preview.</Text></View> : null}
       <CollapsibleCard onOpenChange={setFormOpen} open={formOpen} summary={formSummary[resource]} title={`${editing ? 'Edit' : 'Add'} ${listLabel}`} tone="raised">{editing ? <View style={styles.editingBanner}><Text numberOfLines={1} style={styles.editingText}>Editing {entityTitle(editing)}</Text><AppButton compact label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); setFormError(null); }} variant="ghost" /></View> : null}{formError ? <Text accessibilityLiveRegion="assertive" style={styles.error}>{formError}</Text> : null}<ResourceFields competitions={competitions.data?.items ?? []} control={form.control} editingId={editing && resource === 'competitions' ? editing.id : null} players={players.data?.items ?? []} resource={resource} setValue={form.setValue} teams={teams.data?.items ?? []} /><View style={styles.actions}><AppButton label={editing ? 'Save changes' : resource === 'invites' ? 'Generate invitation' : 'Add item'} loading={form.formState.isSubmitting} onPress={save} style={styles.flexButton} />{editing ? <AppButton label="Cancel" onPress={() => { setEditing(null); form.reset(defaults); }} variant="ghost" /> : null}</View></CollapsibleCard>
       {resource === 'players' ? <BulkPlayerImport teams={allTeams} /> : null}
       {resource === 'competitions' ? <SeasonControls competitions={competitions.data?.items ?? []} /> : null}
       {query.isError ? <ErrorState message={(query.error as ApiError).message} onRetry={() => query.refetch()} /> : <CollapsibleSection count={items.length} search={{ label: `Search ${listLabel}`, onChange: setSearch, placeholder: `Search ${listLabel}…`, resultCount: shown.length, value: search }} title={`Current ${listLabel}`}>
-      {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : shown.length === 0 ? <Text style={styles.empty}>Nothing matches that.</Text> : <ManagedEntityList items={shown} onEdit={beginEdit} onRemove={remove} onUploadPhoto={uploadPhoto} resource={resource} />}
+      {query.isLoading ? <LoadingState /> : items.length === 0 ? <Text style={styles.empty}>Nothing has been added yet.</Text> : shown.length === 0 ? <Text style={styles.empty}>Nothing matches that.</Text> : <ManagedEntityList items={shown} onEdit={beginEdit} onRemove={remove} onUploadCrest={uploadCrest} resource={resource} />}
       </CollapsibleSection>}
       {/* An invitation says who an account will be; the accounts below say who
           took one up, and are where a link made against the wrong player is put
@@ -546,10 +547,10 @@ function ActivityManager() {
   </View>;
 }
 
-function ManagedEntityList({ items, resource, onEdit, onRemove, onUploadPhoto }: { items: Entity[]; resource: LegacyResource; onEdit: (item: Entity) => void; onRemove: (item: Entity) => void; onUploadPhoto: (item: Team | Player, entity: 'team' | 'player') => Promise<void> }) {
+function ManagedEntityList({ items, resource, onEdit, onRemove, onUploadCrest }: { items: Entity[]; resource: LegacyResource; onEdit: (item: Entity) => void; onRemove: (item: Entity) => void; onUploadCrest: (item: Team) => Promise<void> }) {
   const styles = useThemedStyles(stylesheet);
   const onTheApp = useOnTheApp(resource === 'players');
-  const row = (item: Entity) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text>{resource === 'players' && onTheApp.known ? <AppStatus on={onTheApp.ids.has(item.id)} /> : null}</View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => onEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'kickoff_datetime' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={!item.home_team?.is_aimz && !item.away_team?.is_aimz ? (item.status === 'finished' ? 'Edit final score' : 'Enter final score') : (item.status === 'scheduled' ? 'Start' : 'Score')} onPress={() => router.push({ pathname: !item.home_team?.is_aimz && !item.away_team?.is_aimz ? '/result/[id]' : '/live/[id]', params: { id: item.id } })} variant="secondary" /> : null}{appConfig.enableMedia && resource === 'teams' ? <AppButton compact icon="camera" iconOnly label="Photo" onPress={() => void onUploadPhoto(item as Team, 'team')} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => onRemove(item)} variant="danger" /></View></View>;
+  const row = (item: Entity) => <View key={item.id} style={styles.item}><View style={styles.itemCopy}><Text style={styles.itemTitle}>{entityTitle(item)}</Text><Text style={styles.itemMeta}>{entityMeta(item)}</Text>{resource === 'players' && onTheApp.known ? <AppStatus on={onTheApp.ids.has(item.id)} /> : null}</View><View style={styles.rowActions}>{resource !== 'invites' ? <AppButton compact icon="pencil" iconOnly label="Edit" onPress={() => onEdit(item)} variant="ghost" /> : null}{resource === 'matches' && 'kickoff_datetime' in item ? <AppButton compact icon={item.status === 'scheduled' ? 'play' : 'trophy'} iconOnly label={!item.home_team?.is_aimz && !item.away_team?.is_aimz ? (item.status === 'finished' ? 'Edit final score' : 'Enter final score') : (item.status === 'scheduled' ? 'Start' : 'Score')} onPress={() => router.push({ pathname: !item.home_team?.is_aimz && !item.away_team?.is_aimz ? '/result/[id]' : '/live/[id]', params: { id: item.id } })} variant="secondary" /> : null}{appConfig.enableMedia && resource === 'teams' ? <AppButton compact icon="camera" iconOnly label="Crest" onPress={() => void onUploadCrest(item as Team)} variant="secondary" /> : null}<AppButton compact icon="trash" iconOnly label={resource === 'invites' ? 'Revoke' : 'Delete'} onPress={() => onRemove(item)} variant="danger" /></View></View>;
   if (resource !== 'teams') return <View style={styles.list}>{items.map(row)}</View>;
   const byBranch = new Map<string, Team[]>();
   for (const squad of items as Team[]) {

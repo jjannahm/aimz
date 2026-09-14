@@ -3,7 +3,7 @@ import type { Context, Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { InviteRead, TokenResponse } from "../../mobile/src/types/contract";
 import { HEALTH_COLUMNS, sealField } from "./field-crypto";
-import { ApiProblem, USER_SELECT, adminUser, assertNotExpired, currentUser, enumField, jsonObject, nowIso, parsePagination, stringField } from "./helpers";
+import { ApiProblem, USER_SELECT, adminUser, assertNotExpired, currentUser, enumField, jsonObject, nowIso, parsePagination, stringField, isProduction } from "./helpers";
 import { APPLICATION_FIELD_LIMITS } from "./newcomers";
 import {
   createAccessToken,
@@ -79,7 +79,20 @@ function expiryField(body: Record<string, unknown>): string | null {
   return when;
 }
 
+/**
+ * The staging convenience that makes a preview usable from nothing: an
+ * administrator to sign in as, and one invitation code to register against.
+ *
+ * Never in production, whatever the environment says. Setting those three
+ * secrets on the production Worker by copying a staging deploy command would
+ * otherwise mint an administrator on the next sign-in attempt — with a password
+ * that has been written down somewhere — plus an invitation with no expiry and
+ * no use limit. The cost of that mistake is the whole academy, and the value of
+ * allowing it in production is nothing, so it is refused at the door rather
+ * than guarded by remembering not to set the variables.
+ */
 async function ensureSeeded(env: Env): Promise<void> {
+  if (isProduction(env)) return;
   if (!env.ADMIN_EMAIL || !env.ADMIN_PASSWORD || !env.INITIAL_INVITE_CODE) return;
   const email = env.ADMIN_EMAIL.trim().toLowerCase();
   const existing = await env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first<{ id: string }>();
@@ -497,7 +510,7 @@ export function registerAuthRoutes(app: App): void {
       c.env.DB.prepare("SELECT COUNT(*) total FROM users").first<{ total: number }>(),
       c.env.DB.prepare(`SELECT u.*, p.name player_name, p.team_id player_team_id,
         p.position player_position, p.jersey_number player_jersey_number,
-        p.photo_key player_photo_key, p.is_active player_is_active,
+        p.is_active player_is_active,
         p.created_at player_created_at, p.updated_at player_updated_at,
         t.name team_name, t.squad_code team_squad_code, t.age_group team_age_group,
         t.season team_season, t.is_aimz team_is_aimz, t.is_active team_is_active,
@@ -782,7 +795,6 @@ interface AdminAccountRow extends UserRow {
   player_team_id: string | null;
   player_position: string | null;
   player_jersey_number: number | null;
-  player_photo_key: string | null;
   player_is_active: number | null;
   player_created_at: string | null;
   player_updated_at: string | null;
@@ -803,7 +815,7 @@ interface AdminAccountRow extends UserRow {
 
 function publicAdminAccount(row: AdminAccountRow): Record<string, unknown> {
   const player = row.player_name && row.player_team_id && row.player_position && row.player_created_at && row.player_updated_at
-    ? { id: row.player_id, name: row.player_name, team_id: row.player_team_id, position: row.player_position, jersey_number: row.player_jersey_number, photo_key: row.player_photo_key, photo_url: null, is_active: Boolean(row.player_is_active), created_at: row.player_created_at, updated_at: row.player_updated_at }
+    ? { id: row.player_id, name: row.player_name, team_id: row.player_team_id, position: row.player_position, jersey_number: row.player_jersey_number, is_active: Boolean(row.player_is_active), created_at: row.player_created_at, updated_at: row.player_updated_at }
     : null;
   const team = row.player_team_id && row.team_name && row.team_created_at && row.team_updated_at
     ? { id: row.player_team_id, name: row.team_name, squad_code: row.team_squad_code, age_group: row.team_age_group, season: row.team_season, is_aimz: Boolean(row.team_is_aimz), is_active: Boolean(row.team_is_active), logo_key: row.team_logo_key, logo_url: null, coach: row.team_coach, assistant_coach: row.team_assistant_coach, competition_id: row.team_competition_id, competition_group_id: row.team_competition_group_id, created_at: row.team_created_at, updated_at: row.team_updated_at }

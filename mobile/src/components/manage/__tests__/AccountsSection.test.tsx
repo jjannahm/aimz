@@ -19,7 +19,7 @@ jest.mock('@/src/lib/platformAlert', () => ({
 }));
 
 const player = (id: string, name: string): Player => ({
-  id, name, team_id: 'team-u14', position: 'CM', jersey_number: 7, photo_key: null, photo_url: null,
+  id, name, team_id: 'team-u14', position: 'CM', jersey_number: 7,
   is_active: true, created_at: '', updated_at: '',
 });
 

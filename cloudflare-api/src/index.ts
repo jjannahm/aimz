@@ -35,6 +35,22 @@ const MEDIA_READ = /^\/api\/v1\/media\/(?!uploads(\/|$))/u;
 const JSON_BODY_LIMIT = 1_048_576;
 
 /**
+ * The rate limiters production will not start without.
+ *
+ * Named here rather than inferred, so adding a limiter to the config without
+ * adding it to this list is a deliberate omission rather than an oversight.
+ */
+const REQUIRED_LIMITERS = [
+  "LOGIN_BY_ACCOUNT",
+  "LOGIN_BY_IP",
+  "REFRESH_BY_TOKEN",
+  "REFRESH_BY_IP",
+  "INVITE_BY_IP",
+  "REGISTER_BY_IP",
+  "PASSWORD_BY_ACCOUNT",
+] as const satisfies readonly (keyof Env)[];
+
+/**
  * Headers every response carries, whatever route produced it.
  *
  * The API serves JSON, a calendar file and images, and none of them is ever a
@@ -107,9 +123,15 @@ app.use("/api/*", async (c, next) => {
   const missing = [
     ...(c.env.JWT_SECRET?.length >= 32 ? [] : ["JWT_SECRET"]),
     ...(encryptionConfigured(c.env) ? [] : ["DATA_ENCRYPTION_KEY"]),
+    // Every limiter is optional in `Env` so that `wrangler dev` and the tests
+    // run unguarded rather than failing closed on sign-in. That is the right
+    // trade there and the wrong one here: a `ratelimits` block dropped from
+    // wrangler.jsonc would take the brakes off login and off invitation-code
+    // guessing, and nothing would say so. Production insists on them.
+    ...REQUIRED_LIMITERS.filter((name) => !c.env[name]),
   ];
   if (!missing.length) return next();
-  console.error(JSON.stringify({ message: "production secrets missing or too short", secrets: missing }));
+  console.error(JSON.stringify({ message: "production configuration incomplete", missing }));
   throw new ApiProblem(503, "service_misconfigured", "The AIMZ API is not ready yet.");
 });
 

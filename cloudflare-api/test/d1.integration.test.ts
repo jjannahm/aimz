@@ -42,7 +42,11 @@ beforeEach(async () => {
 describe('D1 migrations and opponent results', () => {
   it('applies the numbered migration chain and uses result as the only score path', async () => {
     const applied = await testEnv.DB.prepare('SELECT name FROM d1_migrations ORDER BY id').all<{ name: string }>();
-    expect(applied.results.at(-1)?.name).toBe('0048_drop_unused_rate_limits.sql');
+    // The tip of the chain, whatever it is called today. Named literally, this
+    // line failed on every migration anybody added and taught its next reader
+    // to update it without looking at what else had broken.
+    const chain = (JSON.parse(testEnv.TEST_MIGRATIONS) as { name: string }[]).map((migration) => migration.name).sort();
+    expect(applied.results.at(-1)?.name).toBe(chain.at(-1));
     expect(applied.results.map((row) => row.name)).toContain('0013_invite_player_link.sql');
     // 0017 raised the volunteer assignments table and 0042 drops it. Both are
     // still in the chain, so the schema a fresh database ends on is the test:

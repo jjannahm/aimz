@@ -25,7 +25,7 @@ export type ManageEntity =
   | 'schedule'
   | 'session'
   | 'series'
-  | 'photo'
+  | 'crest'
   | 'roster'
   | 'account'
   | 'charge'
@@ -56,7 +56,7 @@ const WORDING: Record<ManageEntity, { noun: string; created?: string; deleted?: 
   schedule: { noun: 'Training schedule', created: 'saved' },
   session: { noun: 'Session' },
   series: { noun: 'Series' },
-  photo: { noun: 'Photo' },
+  crest: { noun: 'Crest' },
   roster: { noun: 'Private roster details' },
   // A charge is cancelled rather than deleted: the row stays, marked, so a
   // receipt a family has already seen still makes sense.

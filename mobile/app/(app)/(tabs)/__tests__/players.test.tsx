@@ -27,7 +27,7 @@ const team = (id: string, name: string, age_group: string, competition_id: strin
 });
 
 const player = (id: string, name: string, team_id: string, jersey_number: number, position = 'ST'): Player => ({
-  id, name, team_id, position, jersey_number, photo_key: null, photo_url: null,
+  id, name, team_id, position, jersey_number,
   is_active: true, created_at: '', updated_at: '',
 });
 

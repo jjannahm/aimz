@@ -9,7 +9,7 @@ export default function PrivacyPolicyScreen() {
       <Bullet>Account details: name, email address, password hash, role, invitation, and sign-in/session records.</Bullet>
       <Bullet>Academy operations: team membership, attendance, availability, fixtures, scores, performance, fee and payment records, kit orders, announcements, and audit records.</Bullet>
       <Bullet>Newcomer applications: preferred branch, player name, contact details, date of birth, one parent or guardian contact, relevant football experience, and any health information you choose to provide.</Bullet>
-      <Bullet>Photos only when an authorised academy user chooses and uploads them. The app does not request camera or microphone access.</Bullet>
+      <Bullet>Squad crests only, and only when an authorised academy user chooses and uploads one. The app does not collect photographs of players, and does not request camera or microphone access.</Bullet>
       <Bullet>Technical information needed to operate and secure requests, such as IP address, request time, device/browser information supplied in network headers, and error/security logs held by our hosting providers.</Bullet>
     </Section>
     <Section title="Why we use it">

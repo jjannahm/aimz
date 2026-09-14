@@ -29,8 +29,7 @@ const opponent = team('t-opp', 'Cairo Stars', '');
 
 // She has been promoted: she is on the U16s now, but last season she was U14.
 const player: Player = {
-  id: 'p-1', name: 'Nour Hassan', team_id: 't-u16', position: 'ST', jersey_number: 9,
-  photo_key: null, photo_url: null, is_active: true, created_at: '', updated_at: '',
+  id: 'p-1', name: 'Nour Hassan', team_id: 't-u16', position: 'ST', jersey_number: 9, is_active: true, created_at: '', updated_at: '',
 };
 
 const competition: Competition = { id: 'c-1', name: 'Youth League', season: '2025/26', type: 'league', team_count: null, group_size: null, created_at: '', updated_at: '' };
