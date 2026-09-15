@@ -9,7 +9,7 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "web": "expo start --web",
-    "web:export": "expo export --platform web --clear && node scripts/inject-web-branding.mjs && node scripts/copy-web-fonts.mjs && node scripts/copy-well-known.mjs && node scripts/generate-web-discovery.mjs && node scripts/verify-web-export.mjs",
+    "web:export": "expo export --platform web --clear && node scripts/inject-web-branding.mjs && node scripts/copy-web-fonts.mjs && node scripts/generate-web-discovery.mjs && node scripts/copy-well-known.mjs && node scripts/verify-web-export.mjs",
     "web:export:staging": "EXPO_PUBLIC_API_URL=https://aimz-api-staging.shared-links.workers.dev EXPO_PUBLIC_APP_ENV=staging EXPO_PUBLIC_ENABLE_MEDIA=true EXPO_PUBLIC_ENABLE_PASSWORD_RESET=false npm run web:export",
     "web:export:production": "EXPO_PUBLIC_API_URL=https://aimz-api-production.shared-links.workers.dev EXPO_PUBLIC_WEB_ORIGIN=https://aimz-egypt-production.pages.dev EXPO_PUBLIC_APP_ENV=production EXPO_PUBLIC_ENABLE_MEDIA=true EXPO_PUBLIC_ENABLE_PASSWORD_RESET=false npm run web:export",
     "web:deploy:cloudflare": "wrangler pages deploy dist --project-name aimz-egypt-staging --branch main",
