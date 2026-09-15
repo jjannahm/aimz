@@ -129,6 +129,22 @@ jobs:
           path: mobile/dist
           if-no-files-found: error
           retention-days: 1
+      # A second bundle, built again with the production API baked in. The
+      # export writes EXPO_PUBLIC_API_URL into the JavaScript, so the staging
+      # bundle deployed to the production site would be a production site
+      # talking to the staging database. Two exports, two artifacts, no chance
+      # of the wrong one being picked up downstream.
+      - name: Export production web app
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: pnpm web:export:production
+      - name: Upload production web artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-web-dist
+          path: mobile/dist
+          if-no-files-found: error
+          retention-days: 1
 
   worker:
     name: Deploy Worker
@@ -217,3 +233,99 @@ jobs:
           done
           echo "The deployed site is not targeting $api. It may have been built with a stale cache." >&2
           exit 1
+
+  # ---------------------------------------------------------------- production
+  #
+  # Both jobs below declare `environment: production`, which is what makes them
+  # pause for a reviewer and what lets them read the production token at all --
+  # it is an environment secret, invisible to every other job here.
+  #
+  # They also need the staging deploy to have gone green first, so staging is
+  # the gate rather than a parallel track: a change that breaks staging never
+  # reaches the academy's real data.
+
+  worker-production:
+    name: Deploy Worker (production)
+    needs: [worker, pages]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: production
+      url: https://aimz-api-production.shared-links.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply D1 migrations and deploy production API
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_PRODUCTION }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: cloudflare-api
+          wranglerVersion: "4.124.0"
+          # `--env production` on both commands, and it is not optional.
+          # Without it wrangler reads the top-level config and points the
+          # production token straight at the staging database, which is the
+          # exact accident the split config in wrangler.jsonc exists to stop.
+          preCommands: wrangler d1 migrations apply aimz-production-db --remote --env production
+          command: deploy --minify --env production
+      - name: Verify the production API refuses an unauthenticated read
+        run: |
+          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}'             https://aimz-api-production.shared-links.workers.dev/api/v1/players)"
+          # 401 is a healthy Worker refusing a stranger. 503 is the Worker
+          # answering before its secrets are set, which is correct on the very
+          # first deploy and a problem on any deploy after that.
+          if [ "$status" = "503" ]; then
+            echo "::warning::Production is answering 503 -- set JWT_SECRET, DATA_ENCRYPTION_KEY and TURNSTILE_SECRET with 'wrangler secret put --env production'."
+          elif [ "$status" != "401" ]; then
+            echo "Expected 401 from an unauthenticated read, got $status"
+            exit 1
+          fi
+
+  pages-production:
+    name: Deploy Pages (production)
+    needs: [mobile, worker-production]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment:
+      name: production
+      url: https://aimz-egypt-production.pages.dev
+    steps:
+      - name: Download production web artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: production-web-dist
+          path: mobile/dist
+      - name: Deploy production web app
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN_PRODUCTION }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy mobile/dist --project-name=aimz-egypt-production --branch=main --commit-hash=${{ github.sha }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify the live site targets the production API
+        run: |
+          set -euo pipefail
+          site="https://aimz-egypt-production.pages.dev"
+          index="$(mktemp)"
+          bundle_file="$(mktemp)"
+          for attempt in 1 2 3 4 5; do
+            if curl --silent --show-error --fail "$site/" --output "$index"; then
+              bundle="$(grep -o '/_expo/static/js/web/entry-[a-f0-9]*\.js' "$index" | head -n 1 || true)"
+              if [ -n "$bundle" ] && curl --silent --show-error --fail "$site$bundle" --output "$bundle_file"; then
+                break
+              fi
+            fi
+            sleep 10
+          done
+          # The API address is compiled into the bundle, so this is the only
+          # place the mistake would show up: a production site serving the
+          # staging bundle would work perfectly and write to the wrong database.
+          if grep -q "aimz-api-staging" "$bundle_file"; then
+            echo "The production bundle points at the staging API."
+            exit 1
+          fi
+          grep -q "aimz-api-production" "$bundle_file"
