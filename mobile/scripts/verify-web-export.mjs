@@ -62,12 +62,17 @@ for (const marker of ['name="description"', 'property="og:title"', 'name="twitte
 // SPA fallback answers for them with HTML and a 200, so nothing looks wrong
 // from a browser while Apple and Android both quietly stop opening /join/CODE
 // in the app. Checked here because that failure is invisible everywhere else.
+const redirects = await readFile(new URL('_redirects', distUrl), 'utf8').catch(() => '');
 for (const association of ['apple-app-site-association', 'assetlinks.json']) {
-  const path = new URL(`.well-known/${association}`, distUrl);
   try {
-    JSON.parse(await readFile(path, 'utf8'));
+    JSON.parse(await readFile(new URL(`well-known/${association}`, distUrl), 'utf8'));
   } catch {
-    problems.push(`dist/.well-known/${association} is missing or is not JSON.`);
+    problems.push(`dist/well-known/${association} is missing or is not JSON.`);
+  }
+  // The file existing is half of it. Without the rewrite the real path still
+  // answers with the SPA fallback, which is a 200 full of HTML and looks fine.
+  if (!redirects.includes(`/.well-known/${association} /well-known/${association} 200`)) {
+    problems.push(`_redirects does not rewrite /.well-known/${association}.`);
   }
 }
 
