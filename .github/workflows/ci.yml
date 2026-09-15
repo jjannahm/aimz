@@ -134,9 +134,23 @@ jobs:
       # bundle deployed to the production site would be a production site
       # talking to the staging database. Two exports, two artifacts, no chance
       # of the wrong one being picked up downstream.
+      # Built on every pull request, not only on main. Gated to main it would
+      # first run at the moment it could do damage -- a broken production
+      # export failing this job, which the staging Pages deploy waits on -- and
+      # the export is the step that decides which API the site talks to.
       - name: Export production web app
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: pnpm web:export:production
+      - name: Verify the production bundle targets the production API
+        run: |
+          set -euo pipefail
+          bundle="$(ls dist/_expo/static/js/web/entry-*.js | head -n 1)"
+          # The address is compiled in, so this is the only place the mistake
+          # is visible before it is live.
+          if grep -q "aimz-api-staging" "$bundle"; then
+            echo "The production bundle points at the staging API."
+            exit 1
+          fi
+          grep -q "aimz-api-production" "$bundle"
       - name: Upload production web artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
