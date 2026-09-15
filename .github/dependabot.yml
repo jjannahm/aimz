@@ -1,0 +1,39 @@
+# Advisories arrive on their own rather than waiting for somebody to run an
+# audit. Weekly, grouped, and capped, because a launch team that gets twenty
+# separate pull requests every Monday stops reading them.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /cloudflare-api
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cloudflare-api:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /mobile
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    # Expo pins its own dependency graph, and a lone bump inside it breaks the
+    # SDK more often than it fixes anything. Expo packages move when the SDK
+    # moves, which is `expo install` rather than Dependabot.
+    ignore:
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+    groups:
+      mobile:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3

@@ -15,6 +15,7 @@ import { ActivityIndicator, Platform, View } from 'react-native';
 import { AuthProvider } from '@/src/auth/AuthProvider';
 import { AppErrorBoundary } from '@/src/components/AppErrorBoundary';
 import { DialogHost } from '@/src/components/DialogHost';
+import { PrivacyScreen } from '@/src/components/PrivacyScreen';
 import { ToastHost } from '@/src/components/ToastHost';
 import { ThemeProvider, useAppTheme } from '@/src/theme/ThemeProvider';
 
@@ -87,6 +88,9 @@ function ThemedRoot() {
         <Stack screenOptions={{ contentStyle: { backgroundColor: colors.background }, headerShown: false, animation: 'fade' }} />
         <DialogHost />
         <ToastHost />
+        {/* Last in the tree so it covers everything above it while the app is
+            backgrounded and the platform takes its app-switcher snapshot. */}
+        <PrivacyScreen />
       </AuthProvider>
     </QueryClientProvider>
   );

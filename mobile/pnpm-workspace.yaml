@@ -7,6 +7,7 @@ overrides:
   '@expo/xcpretty>js-yaml': 4.3.2
   '@istanbuljs/load-nyc-config>js-yaml': 3.15.2
   'metro>image-size': 2.0.3
+  'miniflare>sharp': '>=0.35.4'
   'plist>@xmldom/xmldom': 0.9.12
   'query-string>decode-uri-component': 0.5.0
   'xcode>uuid': 11.1.1
