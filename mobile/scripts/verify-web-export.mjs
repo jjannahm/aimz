@@ -58,6 +58,19 @@ for (const marker of ['name="description"', 'property="og:title"', 'name="twitte
   if (!html.includes(marker)) problems.push(`index.html is missing ${marker}.`);
 }
 
+// The two files that prove this site and the app belong together. Absent, the
+// SPA fallback answers for them with HTML and a 200, so nothing looks wrong
+// from a browser while Apple and Android both quietly stop opening /join/CODE
+// in the app. Checked here because that failure is invisible everywhere else.
+for (const association of ['apple-app-site-association', 'assetlinks.json']) {
+  const path = new URL(`.well-known/${association}`, distUrl);
+  try {
+    JSON.parse(await readFile(path, 'utf8'));
+  } catch {
+    problems.push(`dist/.well-known/${association} is missing or is not JSON.`);
+  }
+}
+
 if (problems.length > 0) {
   console.error(`\nverify-web-export failed:\n${problems.map((problem) => `  - ${problem}`).join('\n')}\n`);
   process.exit(1);
