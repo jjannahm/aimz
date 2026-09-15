@@ -63,6 +63,7 @@ for (const marker of ['name="description"', 'property="og:title"', 'name="twitte
 // from a browser while Apple and Android both quietly stop opening /join/CODE
 // in the app. Checked here because that failure is invisible everywhere else.
 const redirects = await readFile(new URL('_redirects', distUrl), 'utf8').catch(() => '');
+const headerRules = await readFile(new URL('_headers', distUrl), 'utf8').catch(() => '');
 for (const association of ['apple-app-site-association', 'assetlinks.json']) {
   try {
     JSON.parse(await readFile(new URL(`well-known/${association}`, distUrl), 'utf8'));
@@ -73,6 +74,12 @@ for (const association of ['apple-app-site-association', 'assetlinks.json']) {
   // answers with the SPA fallback, which is a 200 full of HTML and looks fine.
   if (!redirects.includes(`/.well-known/${association} /well-known/${association} 200`)) {
     problems.push(`_redirects does not rewrite /.well-known/${association}.`);
+  }
+  // And the type, on the path the client actually asks for. Apple refuses an
+  // association file served as anything but JSON, and a file with no extension
+  // defaults to application/octet-stream.
+  if (!headerRules.includes(`/.well-known/${association}`)) {
+    problems.push(`_headers does not set a content type for /.well-known/${association}.`);
   }
 }
 

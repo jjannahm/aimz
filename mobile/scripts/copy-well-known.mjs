@@ -57,7 +57,16 @@ for (const file of files) {
 const rewrites = files.map((file) => `/.well-known/${file} /well-known/${file} 200`).join('\n');
 await appendFile(new URL('_redirects', distUrl), `\n# App-association files, served from a path wrangler will upload.\n${rewrites}\n`, 'utf8');
 
-const headers = files.map((file) => `/well-known/${file}\n  Content-Type: application/json\n  X-Robots-Tag: noindex`).join('\n');
+// Both paths, because `_headers` matches the path the client asked for, not the
+// one the rewrite served from. Declared only under `/well-known`, the rewritten
+// request for `/.well-known/apple-app-site-association` kept the default for a
+// file with no extension — `application/octet-stream`, which Apple rejects —
+// even though the body was already the right JSON. `assetlinks.json` hid this
+// by carrying an extension Pages could infer a type from.
+const headers = files.flatMap((file) => [
+  `/well-known/${file}\n  Content-Type: application/json\n  X-Robots-Tag: noindex`,
+  `/.well-known/${file}\n  Content-Type: application/json\n  X-Robots-Tag: noindex`,
+]).join('\n');
 await appendFile(new URL('_headers', distUrl), `\n${headers}\n`, 'utf8');
 
 console.log(`Published ${files.length} app-association file(s) at /well-known, rewritten from /.well-known.`);
