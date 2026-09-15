@@ -22,7 +22,12 @@ import { appendFile, copyFile, mkdir, readdir } from 'node:fs/promises';
  * rewrite rather than a redirect because Apple does not follow redirects when
  * it verifies. `_headers` then sets the JSON content type: Apple requires
  * `application/json` and will reject the file without it, and the association
- * file deliberately has no extension for Pages to infer one from.
+ * file deliberately has no extension for Pages to infer one from — left alone
+ * it is served as `application/octet-stream`.
+ *
+ * This runs *after* `generate-web-discovery.mjs`, which rewrites `_headers`
+ * wholesale. Running before it, these rules were appended and then thrown away,
+ * and the only visible symptom was a content type nobody was looking at.
  */
 const source = new URL('../public/.well-known/', import.meta.url);
 const distUrl = new URL('../dist/', import.meta.url);
