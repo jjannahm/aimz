@@ -92,6 +92,23 @@ When the domain is ready, in this order:
 5. Merge, approve the production deploy, verify.
 6. Rebuild the store binaries against the new API and submit those.
 
+## Bootstrapping production
+
+Production is deliberately a locked box: an account comes from an invitation, an
+invitation comes from an administrator, and `ensureSeeded` refuses to run in
+production so a copied staging deploy command cannot mint one. That left no way
+in at all, which is what `scripts/bootstrap-admin.mjs` is for.
+
+```bash
+cd cloudflare-api && node scripts/bootstrap-admin.mjs --env production --email you@aimzegypt.com
+```
+
+It prompts for a password without echoing it, refuses outright if the database
+already has an administrator, and writes the hash in exactly the form the login
+route verifies. Run it once, sign in, change the password from Settings, and
+then create every other account — including the App Review demo account — from
+inside the app where it is audited.
+
 ## Still required before submission, and not domain-related
 
 These need information or access that only the owner has.
@@ -106,18 +123,24 @@ These need information or access that only the owner has.
    postal address, commercial-registration details and a monitored privacy
    email before launch. App Store Connect additionally requires a reachable
    privacy-policy URL and support URL.
-3. **App Review demo account.** The app is invitation-only and shows nothing
+3. **`TURNSTILE_SECRET`.** Not set. The public newcomer form verifies its
+   Turnstile token against it; until it is set that form will refuse
+   submissions. Create a Turnstile widget for the production hostname at
+   Cloudflare → Turnstile, then
+   `npx wrangler secret put TURNSTILE_SECRET --env production`. `JWT_SECRET`
+   and `DATA_ENCRYPTION_KEY` are already set.
+4. **App Review demo account.** The app is invitation-only and shows nothing
    without a sign-in, so review cannot proceed without one. It must hold
    synthetic data only — no real child's name, photograph or family contact —
    and stay active throughout review. Credentials go in Review Notes, never in
    this repository. A draft of those notes is in
    `app-store-readiness-2026-09-13.md`.
-4. **Store assets.** Screenshots at the required sizes, including iPad because
+5. **Store assets.** Screenshots at the required sizes, including iPad because
    `supportsTablet` is true. Use fictional data.
-5. **Age rating and Data Safety questionnaires.** The answers to mirror are in
+6. **Age rating and Data Safety questionnaires.** The answers to mirror are in
    `app-store-readiness-2026-09-13.md`; they were corrected to drop "Photos or
    Videos" when player photographs were removed.
-6. **Device testing.** A real iPhone and iPad, with VoiceOver, Larger Text,
+7. **Device testing.** A real iPhone and iPad, with VoiceOver, Larger Text,
    Reduce Motion, denied photo permission, and offline behaviour.
 
 ## Optional post-launch hardening

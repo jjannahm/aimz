@@ -296,7 +296,19 @@ jobs:
           command: deploy --minify --env production
       - name: Verify the production API refuses an unauthenticated read
         run: |
-          status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}'             https://aimz-api-production.shared-links.workers.dev/api/v1/players)"
+          # Retried, because the very first deploy of a Worker creates its
+          # workers.dev hostname and DNS does not resolve the instant wrangler
+          # returns. `run:` executes under `bash -e`, so an unretried curl
+          # against a name that does not resolve yet kills the step before it
+          # can judge anything -- which is exactly what happened on the first
+          # production deploy, and took the Pages job down with it.
+          status=000
+          for attempt in 1 2 3 4 5 6; do
+            status="$(curl --silent --output /dev/null --write-out '%{http_code}' --max-time 15               https://aimz-api-production.shared-links.workers.dev/api/v1/players || echo 000)"
+            [ "$status" != "000" ] && break
+            echo "No answer yet (attempt $attempt); waiting for the hostname."
+            sleep 15
+          done
           # 401 is a healthy Worker refusing a stranger. 503 is the Worker
           # answering before its secrets are set, which is correct on the very
           # first deploy and a problem on any deploy after that.
