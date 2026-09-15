@@ -34,6 +34,11 @@ jobs:
           cache: npm
           cache-dependency-path: cloudflare-api/package-lock.json
       - run: npm ci
+      # Advisory rather than blocking: a new advisory should tell us, not stop
+      # a release the morning it is published. Dependabot opens the fix.
+      - name: Audit API dependencies
+        continue-on-error: true
+        run: npm audit --audit-level=high
       - name: Typecheck
         run: npm run typecheck
       - name: Test
@@ -115,6 +120,12 @@ jobs:
           cache: pnpm
           cache-dependency-path: mobile/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # Advisory rather than blocking, and deliberately so: a new advisory
+      # published against a transitive build dependency should tell us, not
+      # stop a release the morning it lands. Dependabot opens the fix.
+      - name: Audit mobile dependencies
+        continue-on-error: true
+        run: pnpm audit --audit-level=high
       - run: pnpm typecheck
       - run: pnpm test
       - name: Check Expo dependency compatibility

@@ -220,9 +220,30 @@ registerMatchReportRoutes(app);
 registerInvoiceRoutes(app);
 
 app.notFound((c) => errorResponse(c, new ApiProblem(404, "not_found", "The requested endpoint was not found.")));
-app.onError((error, c) => {
+/**
+ * What an unexpected failure is allowed to say.
+ *
+ * The reader gets nothing: a generic 503, no stack, no SQL, no table names.
+ * The log gets enough to find the fault and no more. A D1 constraint violation
+ * reports the value that violated it — an email, a child's name — so the raw
+ * message is not written down. The error's class, the path and a short digest
+ * are enough to group failures and match a report to a log line; the digest is
+ * stable for the same message, so a recurring fault is recognisable without the
+ * message ever being stored.
+ */
+async function faultDigest(text: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(hash).slice(0, 6), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+app.onError(async (error, c) => {
   if (error instanceof ApiProblem) return errorResponse(c, error);
-  console.error(JSON.stringify({ message: "request failed", error: error instanceof Error ? error.message : String(error), path: c.req.path }));
+  console.error(JSON.stringify({
+    message: "request failed",
+    kind: error instanceof Error ? error.name : typeof error,
+    digest: await faultDigest(error instanceof Error ? error.message : String(error)),
+    path: c.req.path,
+  }));
   return errorResponse(c, new ApiProblem(503, "internal_error", "The AIMZ preview could not complete this request."));
 });
 

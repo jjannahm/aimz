@@ -12,12 +12,12 @@ Method: `mjmirza/app-store-compliance` automated guard, Expo native-config intro
 
 ## Release blockers requiring the owner
 
-1. **Production service and domain.** `mobile/eas.json` intentionally has no production API or web origin. Add the live HTTPS API and public site only after both are deployed and tested. Never substitute staging URLs in a production build.
+1. **Permanent domain.** `mobile/eas.json` now points at the temporary production endpoints (`aimz-api-production.shared-links.workers.dev` and `aimz-egypt-production.pages.dev`), and CI asserts the production bundle contains neither staging host. These are `workers.dev`/`pages.dev` addresses rather than a domain AIMZ owns. The API URL is compiled into the binary, so moving to a permanent domain after submission requires a new build and a new release — decide the domain before uploading. See `docs/launch-readiness.md`.
 2. **Legal identity and support details.** Replace the launch warnings inside the privacy policy and terms with AIMZ's registered legal name, postal address, commercial-registration details, monitored privacy email, and support contact. Publish a reachable support URL and privacy-policy URL.
 3. **Universal-link credentials.** Replace `TEAMID` in `mobile/public/.well-known/apple-app-site-association`, use the production host in `mobile/app.json`, and serve the file over HTTPS without redirects. Until this is complete, remove the associated-domains entitlement from a submission rather than claim a broken link feature.
 4. **Reviewer access.** Seed a non-expiring, fully populated review account. Put its credentials and a working invitation code in App Store Connect Review Notes, never in the repository. Keep the production backend available throughout review.
 5. **Store metadata.** Provide truthful screenshots of real app functionality using fictional or properly consented player data; complete the current age-rating questionnaire; add the privacy and support URLs; and use an international-format review phone number.
-6. **Children and image rights.** Keep written parent/guardian authority for minor accounts, health details, squad crestsotographs, and any club badges or third-party marks. Do not submit screenshots containing identifiable minors without documented permission.
+6. **Children and image rights.** Keep written parent/guardian authority for minor accounts, health details, squad crests, and any club badges or third-party marks. Do not submit screenshots containing identifiable minors without documented permission.
 7. **Device evidence.** Test the archive on supported physical iPhone and iPad devices with VoiceOver, Larger Text, Reduce Motion, denied photo permission, offline/slow networking, and every role. Because `supportsTablet` is true, iPad operation and screenshots are part of review.
 
 ## App Privacy answers to mirror in App Store Connect
